@@ -1,12 +1,12 @@
 
-CCFLAGS = "-g"
+CCFLAGS = -O4
 
 DEFS = "-DVERSION=\"v1.3\""
 
 all : ods2
 
 ods2 : ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
-	cc $(CCFLAGS) -oods2 ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
+	cc $(CCFLAGS) -o ods2 ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
 
 vmstime.o : vmstime.c vmstime.h
 	cc -c $(CCFLAGS) $(DEFS) vmstime.c

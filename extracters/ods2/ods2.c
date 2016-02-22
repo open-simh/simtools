@@ -1,5 +1,7 @@
 #define MODULE_NAME	ODS2
-#define MODULE_IDENT	"V1.3"
+#define MODULE_IDENT	"V1.3hb"
+
+/*     Jul-2003, v1.3hb, some extensions by Hartmut Becker */
 
 /*     Ods2.c v1.3   Mainline ODS2 program   */
 
@@ -1004,27 +1006,40 @@ int cmdexecute(int argc,char *argv[],int qualc,char *qualv[])
 
 /* cmdsplit: break a command line into its components */
 
+/*
+ * New feature for Unix: '//' stops qualifier parsing (similar to '--'
+ * for some Unix tools). This enables us to copy to Unix directories.
+ *     copy /bin // *.com /tmp/*
+ * is split into argv[0] -> "*.com" argv[1] -> "/tmp/*" qualv[0]-> "/bin"
+ */
+
 int cmdsplit(char *str)
 {
     int argc = 0,qualc = 0;
     char *argv[32],*qualv[32];
     char *sp = str;
     int i;
+    char q = '/';
     for (i = 0; i < 32; i++) argv[i] = qualv[i] = "";
     while (*sp != '\0') {
         while (*sp == ' ') sp++;
         if (*sp != '\0') {
-            if (*sp == '/') {
+            if (*sp == q) {
                 *sp++ = '\0';
+                if (*sp == q) {
+                      sp++;
+                      q = '\0';
+                      continue;
+              }
                 qualv[qualc++] = sp;
             } else {
                 argv[argc++] = sp;
             }
-            while (*sp != ' ' && *sp != '/' && *sp != '\0') sp++;
+            while (*sp != ' ' && *sp != q && *sp != '\0') sp++;
             if (*sp == '\0') {
                 break;
             } else {
-                if (*sp != '/') *sp++ = '\0';
+                if (*sp != q) *sp++ = '\0';
             }
         }
     }
@@ -1073,13 +1088,65 @@ char *getcmd(char *inp, char *prompt)
 
 /* main: the simple mainline of this puppy... */
 
+/*
+ * Parse the command line to read and execute commands:
+ *     ./ods2 mount scd1 $ set def [hartmut] $ copy *.com $ exit
+ * '$' is used as command delimiter because it is a familiar character
+ * in the VMS world. However, it should be used surounded by white spaces;
+ * otherwise, a token '$copy' is interpreted by the Unix shell as a shell
+ * variable. Quoting the whole command string might help:
+ *     ./ods2 'mount scd1 $set def [hartmut] $copy *.com $exit'
+ * If the ods2 reader should use any switches '-c' should be used for
+ * the command strings, then quoting will be required:
+ *     ./ods2 -c 'mount scd1 $ set def [hartmut] $ copy *.com $ exit'
+ *
+ * The same command concatenation can be implemented for the prompted input.
+ * As for indirect command files (@), it isn't checked if one of the chained
+ * commands fails. The user has to be careful, all the subsequent commands
+ * are executed!
+ */
+
 int main(int argc,char *argv[])
 {
     char str[2048];
+    char *command_line = NULL;
     FILE *atfile = NULL;
+    char *p;
     printf(" ODS2 %s\n", MODULE_IDENT);
+    if (argc>1) {
+           int i, l=0;
+           for (i=1; i<argc; i++) {
+                  if (command_line==NULL) {
+                          command_line=malloc(1);
+                          *command_line = '\0';
+                          l= 1;
+                  }
+                  l+= strlen(argv[i]);
+                  command_line= realloc(command_line,l+1);
+                  strcat (command_line, argv[i]);
+                  command_line[l-1]= ' ';
+                  command_line[l++]= '\0';
+           }
+           if (l>1)
+                  command_line[l-2]= '\0';
+    } else command_line==NULL;
     while (1) {
         char *ptr;
+       if (command_line) {
+              static int i=0;
+              int j=0;
+              for (; j<sizeof str && command_line[i]; i++)
+                      if (command_line[i]=='$') {
+                              ++i;
+                              break;
+                      } else str[j++]= command_line[i];
+              if (j<sizeof str)
+                      str[j]= '\0';
+              else str[j-1]= '\0';
+              if (command_line[i]=='\0')
+                      command_line= realloc(command_line,0);
+       } else
+{
         if (atfile != NULL) {
             if (fgets(str,sizeof(str),atfile) == NULL) {
                 fclose(atfile);
@@ -1098,7 +1165,8 @@ int main(int argc,char *argv[])
             if (gets(str) == NULL) break;
 #endif
         }
-        ptr = str;
+}
+       ptr = str;
         while (*ptr == ' ' || *ptr == '\t') ptr++;
         if (strlen(ptr) && *ptr != '!') {
             if (*ptr == '@') {

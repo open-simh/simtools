@@ -19,7 +19,7 @@ struct VCBDEV *rvn_to_dev(struct VCB *vcb,unsigned rvn);
 /* Bitmaps get accesses in 'WORK_UNITs' which can be an integer
    on a little endian machine but must be a byte on a big endian system */
 
-#ifdef BIG_ENDIAN
+#ifdef USE_BIG_ENDIAN
 #define WORK_UNIT unsigned char
 #define WORK_MASK 0xff
 #else
