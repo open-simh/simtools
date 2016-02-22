@@ -1,4 +1,4 @@
-/* Fibdef.h v1.2    Definition of 'struct fibdef' */
+/* Fibdef.h v1.3    Definition of 'struct fibdef' */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -11,11 +11,7 @@
 */
 
 
-#if defined(VMS) && !defined(__GNUC__)
-
-#include <fibdef.h>
-
-#else
+#ifndef FIM$M_WILD
 
 #define FIB$M_WILD 0x100
 

@@ -1,4 +1,4 @@
-/* Direct.h v1.2    Definitions for directory access routines */
+/* Direct.h v1.3    Definitions for directory access routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -13,19 +13,19 @@
 
 
 struct dir$rec {
-    u_word dir$size;
-    u_word dir$verlimit;
-    u_byte dir$flags;
-    u_byte dir$namecount;
+    vmsword dir$size;
+    vmsword dir$verlimit;
+    vmsbyte dir$flags;
+    vmsbyte dir$namecount;
     char dir$name[1];
 };
 
 struct dir$ent {
-    u_word dir$version;
+    vmsword dir$version;
     struct fiddef dir$fid;
 };
 
 
-unsigned direct(struct VCB *vcb,struct dsc$descriptor * fibdsc,
-                struct dsc$descriptor *filedsc,unsigned short *reslen,
-                struct dsc$descriptor *resdsc,unsigned action);
+unsigned direct(struct VCB *vcb,struct dsc_descriptor *fibdsc,
+                struct dsc_descriptor *filedsc,unsigned short *reslen,
+                struct dsc_descriptor *resdsc,unsigned action);

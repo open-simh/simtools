@@ -1,4 +1,4 @@
-/* RMS.H v1.2   RMS routine definitions */
+/* RMS.h v1.3   RMS routine definitions */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,14 +10,7 @@
         the contibution of the original author.
 */
 
-/* If not using GNU C on VMS use real RMS structures :-)...
-   otherwise define minimum subset to meet our requirements   */
-
-#if defined(VMS) && !defined(__GNUC__)
-
-#include <rms.h>
-
-#else
+#ifndef RMS$_RTB
 
 #include "vmstime.h"
 
@@ -33,6 +26,7 @@
 #define RMS$_IFI 99684
 #define RMS$_NAM 99804
 #define RMS$_RSS 99988
+#define RMS$_RSZ 100004
 #define RMS$_WLD 100164
 #define RMS$_DNF 114762
 
@@ -44,20 +38,21 @@
 #define XAB$C_FHC 29
 #define XAB$C_PRO 19
 
+
 struct XABDAT {
     void *xab$l_nxt;
     int xab$b_cod;
     int xab$w_rvn;
-    struct TIME xab$q_bdt;
-    struct TIME xab$q_cdt;
-    struct TIME xab$q_edt;
-    struct TIME xab$q_rdt;
+    VMSTIME xab$q_bdt;
+    VMSTIME xab$q_cdt;
+    VMSTIME xab$q_edt;
+    VMSTIME xab$q_rdt;
 };
 
-#ifdef RMS_INITIALIZE
+#ifdef RMS$INITIALIZE
 struct XABDAT cc$rms_xabdat = {NULL,XAB$C_DAT,0,
-        {{0,0,0,0,0,0,0,0}}, {{0,0,0,0,0,0,0,0}},
-        {{0,0,0,0,0,0,0,0}}, {{0,0,0,0,0,0,0,0}}};
+        VMSTIME_ZERO, VMSTIME_ZERO,
+        VMSTIME_ZERO, VMSTIME_ZERO};
 #else
 extern struct XABDAT cc$rms_xabdat;
 #endif
@@ -79,7 +74,7 @@ struct XABFHC {
     int xab$w_verlimit;
 };
 
-#ifdef RMS_INITIALIZE
+#ifdef RMS$INITIALIZE
 struct XABFHC cc$rms_xabfhc = {NULL,XAB$C_FHC,0,0,0,0,0,0,0,0,0,0};
 #else
 extern struct XABFHC cc$rms_xabfhc;
@@ -94,11 +89,13 @@ struct XABPRO {
     int xab$l_uic;
 };
 
-#ifdef RMS_INITIALIZE
+#ifdef RMS$INITIALIZE
 struct XABPRO cc$rms_xabpro = {NULL,XAB$C_PRO,0,0};
 #else
 extern struct XABPRO cc$rms_xabpro;
 #endif
+
+
 
 #define NAM$M_WILDCARD 0x100
 
@@ -127,16 +124,17 @@ struct NAM {
     char *nam$l_type;
     int nam$b_ver;
     char *nam$l_ver;
-    int nam$l_wcc;
+    void *nam$l_wcc;
     int nam$b_nop;
     int nam$l_fnb;
 };
 
-#ifdef RMS_INITIALIZE
+#ifdef RMS$INITIALIZE
 struct NAM cc$rms_nam = {0,0,0,0,0,0,0,0,0,0,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,0,0};
 #else
 extern struct NAM cc$rms_nam;
 #endif
+
 
 #define RAB$C_SEQ 0
 #define RAB$C_RFA 2
@@ -145,17 +143,19 @@ struct RAB {
     struct FAB *rab$l_fab;
     char *rab$l_ubf;
     char *rab$l_rhb;
+    char *rab$l_rbf;
     unsigned rab$w_usz;
     unsigned rab$w_rsz;
     int rab$b_rac;
     unsigned short rab$w_rfa[3];
 };
 
-#ifdef RMS_INITIALIZE
-struct RAB cc$rms_rab = {NULL,NULL,NULL,0,0,0,{0,0,0}};
+#ifdef RMS$INITIALIZE
+struct RAB cc$rms_rab = {NULL,NULL,NULL,NULL,0,0,0,{0,0,0}};
 #else
 extern struct RAB cc$rms_rab;
 #endif
+
 
 
 #define FAB$C_SEQ 0
@@ -167,6 +167,15 @@ extern struct RAB cc$rms_rab;
 #define FAB$M_CR  2
 #define FAB$M_PRN 4
 #define FAB$M_BLK 8
+
+#define FAB$M_PUT 0x1
+#define FAB$M_GET 0x2
+#define FAB$M_DEL 0x4
+#define FAB$M_UPD 0x8
+#define FAB$M_TRN 0x10
+#define FAB$M_BIO 0x20
+#define FAB$M_BRO 0x40
+#define FAB$M_EXE 0x80
 
 #define FAB$C_UDF 0
 #define FAB$C_FIX 1
@@ -193,17 +202,18 @@ struct FAB {
     int fab$b_org;
     int fab$b_rat;
     int fab$b_rfm;
+    int fab$b_fac;
     void *fab$l_xab;
 };
 
-#ifdef RMS_INITIALIZE
-struct FAB cc$rms_fab = {NULL,0,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,0,NULL};
+#ifdef RMS$INITIALIZE
+struct FAB cc$rms_fab = {NULL,0,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,0,0,NULL};
 #else
 extern struct FAB cc$rms_fab;
 #endif
-#endif
 
 
+#ifndef NO_DOLLAR
 #define sys$search      sys_search
 #define sys$parse       sys_parse
 #define sys$setddir     sys_setddir
@@ -213,17 +223,22 @@ extern struct FAB cc$rms_fab;
 #define sys$display     sys_display
 #define sys$close       sys_close
 #define sys$open        sys_open
+#define sys$create      sys_create
 #define sys$erase       sys_erase
-
+#endif
 
 unsigned sys_search(struct FAB *fab);
 unsigned sys_parse(struct FAB *fab);
 unsigned sys_connect(struct RAB *rab);
 unsigned sys_disconnect(struct RAB *rab);
 unsigned sys_get(struct RAB *rab);
+unsigned sys_put(struct RAB *rab);
 unsigned sys_display(struct FAB *fab);
 unsigned sys_close(struct FAB *fab);
 unsigned sys_open(struct FAB *fab);
+unsigned sys_create(struct FAB *fab);
 unsigned sys_erase(struct FAB *fab);
-unsigned sys_setddir(struct dsc$descriptor *newdir,unsigned short *oldlen,
-                     struct dsc$descriptor *olddir);
+unsigned sys_extend(struct FAB *fab);
+unsigned sys_setddir(struct dsc_descriptor *newdir,unsigned short *oldlen,
+                     struct dsc_descriptor *olddir);
+#endif

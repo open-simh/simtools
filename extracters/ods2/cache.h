@@ -1,4 +1,4 @@
-/* Cache.h v1.2    Definitions for cache routines */
+/* Cache.h v1.3    Definitions for cache routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,35 +10,38 @@
         the contibution of the original author.
 */
 
-#ifndef CACHE_WRITE
+#ifndef CACHE_LOADED
 
-#define CACHE_WRITE 1
-#define CACHE_MODIFIED 2
+#define CACHE_LOADED
+
+#ifndef VAXC	/* Stupid VAX C doesn't allow "signed" keyword */
+#define signed signed
+#else
+#define signed
+#endif
 
 struct CACHE {
-    struct CACHE **parent;
-    struct CACHE *left;
-    struct CACHE *right;
-    struct CACHE *nxtcache;
-    struct CACHE *lstcache;
-    struct CACHE *(*objmanager) (struct CACHE * cacheobj);
-    unsigned keyval;
-    unsigned status;
-    int refcount;
+    struct CACHE *nextlru;	/* next object on least recently used list */
+    struct CACHE *lastlru;	/* last object on least recently used list */
+    struct CACHE *left;		/* left branch of binary tree */
+    struct CACHE *right;	/* right branch of binary tree */
+    struct CACHE **parent;	/* address of pointer to this object */
+    void *(*objmanager) (struct CACHE * cacheobj,int flushonly);
+    unsigned hashval;		/* object hash value */
+    short refcount;		/* object reference count */
+    signed char balance;	/* object tree imbalance factor */
+    signed char objtype;	/* object type (for debugging) */
 };
 
-void cacheshow(void);
-void cachedump(void);
-void cacheprint(struct CACHE *cacheobj,int level);
-void cacheflush(void);
-int cacherefcount(struct CACHE *cacheobj);
-void cachedeltree(struct CACHE *cacheobj);
-void cachetouch(struct CACHE *cacheobj);
-unsigned cacheuntouch(struct CACHE *cacheobj,unsigned reuse,unsigned modflg);
-struct CACHE *cachefree(struct CACHE *cacheobj);
-struct CACHE *cachedelete(struct CACHE *cacheobj);
-struct CACHE *cachemake(struct CACHE **parent,unsigned length);
-void *cachesearch(void **root,unsigned keyval,unsigned keylen,void *key,
-                  int (*cmpfunc) (unsigned keylen,void *key,void *node),
-                  unsigned *createsize);
+void cache_show(void);
+int cache_refcount(struct CACHE *cacheobj);
+struct CACHE *cache_delete(struct CACHE *cacheobj);
+void cache_purge(void);
+void cache_flush(void);
+void cache_remove(struct CACHE *cacheobj);
+void cache_touch(struct CACHE * cacheobj);
+void cache_untouch(struct CACHE * cacheobj,int recycle);
+void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
+                 int (*compare_func) (unsigned hashval,void *keyval,void *node),
+                 void *(*create_func) (unsigned hashval,void *keyval,unsigned *retsts));
 #endif

@@ -1,4 +1,4 @@
-/* Device.c v1.2  Module to remember and find devices...*/
+/* Device.c v1.3  Module to remember and find devices...*/
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -23,22 +23,53 @@
 #include "access.h"
 #include "phyio.h"
 
+/* device_create() creates a device object... */
 
-int devcmp(unsigned keylen,void *key,void *node)
+void *device_create(unsigned devsiz,void *keyval,unsigned *retsts)
+{
+    register char *devnam = (char *) keyval;
+    register struct DEV *dev = (struct DEV *) malloc(sizeof(struct DEV) + devsiz + 2);
+    if (dev == NULL) {
+        *retsts = SS$_INSFMEM;
+    } else {
+        register unsigned sts;
+        struct phyio_info info;
+        dev->cache.objmanager = NULL;
+        dev->cache.objtype = 1;
+        memcpy(dev->devnam,devnam,devsiz);
+        memcpy(dev->devnam + devsiz,":",2);
+        sts = phyio_init(devsiz + 1,dev->devnam,&dev->handle,&info);
+        *retsts = sts;
+        if (sts & 1) {
+            dev->vcb = NULL;
+            dev->status = info.status;
+            dev->sectors = info.sectors;
+            dev->sectorsize = info.sectorsize;
+        } else {
+            free(dev);
+            dev = NULL;
+        }
+    }
+    return dev;
+}
+
+/* device_compare() compares a device name to that of a device object... */
+
+int device_compare(unsigned keylen,void *keyval,void *node)
 {
     register struct DEV *devnode = (struct DEV *) node;
-    register int cmp = keylen - devnode->devlen;
-    if (cmp == 0) {
-        register unsigned len = keylen;
-        register char *keynam = (char *) key;
-        register char *devnam = devnode->devnam;
-        while (len-- > 0) {
-            cmp = toupper(*keynam++) - toupper(*devnam++);
-            if (cmp != 0) break;
-        }
+    register int cmp = 0;
+    register int len = keylen;
+    register char *keynam = (char *) keyval;
+    register char *devnam = devnode->devnam;
+    while (len-- > 0) {
+        cmp = toupper(*keynam++) - toupper(*devnam++);
+        if (cmp != 0) break;
     }
     return cmp;
 }
+
+/* device_lookup() is to to find devices... */
 
 struct DEV *dev_root = NULL;
 
@@ -46,40 +77,18 @@ unsigned device_lookup(unsigned devlen,char *devnam,
                        int create,struct DEV **retdev)
 {
     register struct DEV *dev;
-    register unsigned sts,devsiz = 0;
-    unsigned devcreate = 0;
+    unsigned sts = 1,devsiz = 0;
     while (devsiz < devlen) {
         if (devnam[devsiz] == ':') break;
         devsiz++;
     }
-    if (create) devcreate = sizeof(struct DEV) + devsiz + 2;
-    dev = (struct DEV *) cachesearch((void **) &dev_root,0,devsiz,
-                                     (void *) devnam,devcmp,&devcreate);
+    dev = (struct DEV *) cache_find((void **) &dev_root,devsiz,devnam,&sts,
+                                    device_compare,create ? device_create : NULL);
     if (dev == NULL) {
-        if (create) {
-            sts = SS$_INSFMEM;
-        } else {
-            sts = SS$_NOSUCHDEV;
-        }
+        if (sts == SS$_ITEMNOTFOUND) sts = SS$_NOSUCHDEV;
     } else {
-        struct phyio_info info;
         *retdev = dev;
-        if (create && (devcreate == 0)) {
-            memcpy(dev->devnam,devnam,devsiz);
-            memcpy(dev->devnam + devsiz,":",2);
-            dev->devlen = devsiz;
-            sts = phyio_init(devsiz + 1,dev->devnam,&dev->handle,&info);
-            if (sts & 1) {
-                dev->status = info.status;
-                dev->sectors = info.sectors;
-                dev->sectorsize = info.sectorsize;
-            } else {
-                cacheuntouch((struct CACHE *) dev,0,0);
-                cachefree((struct CACHE *) dev);
-            }
-        } else {
-            sts = 1;
-        }
+        sts = SS$_NORMAL;
     }
     return sts;
 }

@@ -1,0 +1,53 @@
+
+CCFLAGS = "-Oxs"
+
+DEFS = "-DVERSION=\"v1.3\""
+
+all : ods2
+
+OBJS = ods2.obj \
+rms.obj \
+direct.obj \
+update.obj \
+access.obj \
+device.obj \
+phynt.obj \
+cache.obj \
+vmstime.obj
+
+ods2 : $(OBJS) wnaspi32.lib
+	$(CC) $(CCFLAGS) -oods2 $(OBJS) wnaspi32.lib
+
+vmstime.obj : vmstime.c vmstime.h
+	$(CC) -c $(CCFLAGS) $(DEFS) vmstime.c
+
+cache.obj : cache.c cache.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) cache.c
+
+phynt.obj : phynt.c phyio.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) phynt.c
+
+device.obj : device.c ssdef.h access.h phyio.h
+	$(CC) -c $(CCFLAGS) $(DEFS) device.c
+
+access.obj : access.c ssdef.h access.h phyio.h
+	$(CC) -c $(CCFLAGS) $(DEFS) access.c
+
+update.obj : update.c ssdef.h access.h
+	$(CC) -c $(CCFLAGS) $(DEFS) update.c
+
+direct.obj : direct.c direct.h access.h fibdef.h descrip.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) direct.c
+
+rms.obj : rms.c rms.h direct.h access.h fibdef.h descrip.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) rms.c
+
+ods2.obj : ods2.c ssdef.h descrip.h access.h rms.h
+	$(CC) -c $(CCFLAGS) $(DEFS) ods2.c
+
+wnaspi32.lib : wnaspi32.def
+	LIB /DEF:WNASPI32.DEF /MACHINE:IX86
+
+clean:
+    del *.obj
+    del *.exe

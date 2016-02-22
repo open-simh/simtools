@@ -1,4 +1,4 @@
-/* Phy.h  v1.2   Definition of Physical I/O routines */
+/* Phyio.h  v1.2-2   Definition of Physical I/O routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,

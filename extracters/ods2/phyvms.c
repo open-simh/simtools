@@ -1,4 +1,4 @@
-/* PHYVMS.C v1.2    Physical I/O module for VMS */
+/* PHYVMS.c v1.3    Physical I/O module for VMS */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -16,12 +16,27 @@
     even have different command sets depending on what mode they
     are called from!  Sigh.                                  */
 
+/* Modified by:
+ *
+ *   31-AUG-2001 01:04	Hunter Goatley <goathunter@goatley.com>
+ *
+ *	Added checks to be sure device we're mounting is a
+ *	disk and that it's already physically mounted at the
+ *	DCL level,
+ *
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
 #include <iodef.h>
 #include <descrip.h>
+#include <ssdef.h>
+#include <dcdef.h>
+#include <dvidef.h>
+#include <mntdef.h>
+#include <devdef.h>
+#include <ssdef.h>
 
 #ifdef __GNUC__
 unsigned sys$assign();
@@ -49,13 +64,64 @@ void phyio_show(void)
 unsigned phyio_init(int devlen,char *devnam,unsigned *handle,struct phyio_info *info)
 {
     struct dsc$descriptor devdsc;
+    unsigned long devclass, status;
+    char devname[65];
+    unsigned long devchar;
+    unsigned long mntflags[2];
+    struct ITMLST {
+	unsigned short length;
+	unsigned short itmcod;
+	void *buffer;
+	unsigned long *retlen;
+	} dvi_itmlst[4] = {{sizeof(devclass), DVI$_DEVCLASS, &devclass, 0},
+			   {sizeof(devname), DVI$_ALLDEVNAM, &devname, 0},
+			   {sizeof(devchar), DVI$_DEVCHAR, &devchar, 0},
+			   {0, 0, 0, 0}},
+	  mnt_itmlst[3] = {{0, MNT$_DEVNAM, 0, 0},
+			   {sizeof(mntflags), MNT$_FLAGS, &mntflags, 0},
+			   {0, 0, 0, 0}};
+
     devdsc.dsc$w_length = devlen;
     devdsc.dsc$a_pointer = devnam;
+
     init_count++;
     info->status = 0;           /* We don't know anything about this device! */
     info->sectors = 0;
     info->sectorsize = 0;
     *handle = 0;
+
+    /*  Get some device information: device name, class, and mount status */
+    status = sys$getdviw(0,0,&devdsc, &dvi_itmlst, 0,0,0,0);
+    if (status & 1)
+	{
+	if (devclass != DC$_DISK)	/* If not a disk, return an error */
+	    return (SS$_IVDEVNAM);
+
+	if (!(devchar & DEV$M_MNT))
+	    return (SS$_DEVNOTMOUNT);
+#if 0
+/*
+ *  This code will mount the disk if it's not already mounted.  However,
+ *  there's no good way to ensure we dismount a disk we mounted (no
+ *  easy way to walk the list of devices at exit), so it's been #ifdefed
+ *  out.  If you enable it, the "mount" command will mount the disk, but
+ *  it'll stay mounted by the process running ODS2, even after image exit.
+ */
+	    {
+	    mnt_itmlst[0].length = strlen(devname);
+	    mnt_itmlst[0].buffer = &devname;
+	    mntflags[0] = MNT$M_FOREIGN | MNT$M_NOWRITE | MNT$M_NOASSIST |
+			MNT$M_NOMNTVER;
+	    mntflags[1] = 0;
+
+	    status = sys$mount(&mnt_itmlst);
+	    }
+#endif
+	}
+
+    if (!(status & 1))
+	return (status);
+
     return sys$assign(&devdsc,handle,0,0,0,0);
 }
 

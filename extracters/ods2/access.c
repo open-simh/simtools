@@ -1,4 +1,4 @@
-/* Access.c v1.2 */
+/* Access.c v1.3 */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,15 +10,11 @@
         the contibution of the original author.
 */
 
-/*      This module implements 'accessing' files on an ODS2
+/*
+        This module implements 'accessing' files on an ODS2
         disk volume. It uses its own low level interface to support
         'higher level' APIs. For example it is called by the
-        'RMS' routines. I also had a module to implement
-        SYS$ASSIGN, SYS$QIOW, etc which called these routines,
-        the directory routines, physical I/O etc.... */
-
-/*
-        Oh to have time to make mount do a bit more checking... :-(
+        'RMS' routines.
 */
 
 #include <stdio.h>
@@ -30,97 +26,116 @@
 #include "phyio.h"
 
 
-#define DEBUGx on
+#define DEBUGx
 
 
+/* checksum() to produce header checksum values... */
 
-
-
-
-/* checksum: to produce block checksum values... */
-
-unsigned short checksum(unsigned short *block)
+unsigned short checksum(vmsword *block)
 {
     register int count = 255;
     register unsigned result = 0;
     register unsigned short *ptr = block;
     do {
-        result += *ptr++;
+	register unsigned data = *ptr++;
+        result += VMSWORD(data);
     } while (--count > 0);
     return result;
 }
 
 
+/* rvn_to_dev() find device from relative volume number */
 
-/* deaccesshead: release header from INDEXF... */
-
-unsigned deaccesshead(struct VIOC *vioc,struct HEAD *head,unsigned modmask)
+struct VCBDEV *rvn_to_dev(struct VCB *vcb,unsigned rvn)
 {
-#ifdef DEBUG
-    printf("Deaccessing header %x\n",vioc->cache.keyval);
-#endif
-    if (modmask) head->fh2$w_checksum = checksum((u_word *) head);
-    return deaccesschunk(vioc,modmask,1);
+    if (rvn < 2) {
+        if (vcb->vcbdev[0].dev != NULL) return vcb->vcbdev;
+    } else {
+        if (rvn <= vcb->devices) {
+            if (vcb->vcbdev[rvn - 1].dev != NULL)
+                return &vcb->vcbdev[rvn - 1];
+        }
+    }
+    return NULL;                /* RVN illegal or device not mounted */
+}
+
+/* fid_copy() copy fid from file header with default rvn! */
+
+void fid_copy(struct fiddef *dst,struct fiddef *src,unsigned rvn)
+{
+    dst->fid$w_num = VMSWORD(src->fid$w_num);
+    dst->fid$w_seq = VMSWORD(src->fid$w_seq);
+    if (src->fid$b_rvn == 0) {
+        dst->fid$b_rvn = rvn;
+    } else {
+        dst->fid$b_rvn = src->fid$b_rvn;
+    }
+    dst->fid$b_nmx = src->fid$b_nmx;
+}
+
+/* deaccesshead() release header from INDEXF... */
+
+unsigned deaccesshead(struct VIOC *vioc,struct HEAD *head,unsigned idxblk)
+{
+    if (head && idxblk) {
+	unsigned short check = checksum((vmsword *) head);
+	head->fh2$w_checksum = VMSWORD(check);
+    }
+    return deaccesschunk(vioc,idxblk,1,1);
 }
 
 
-/* accesshead: find file or extension header from INDEXF... */
+/* accesshead() find file or extension header from INDEXF... */
 
-unsigned accesshead(struct VCB *vcb,struct fiddef *fid,
+unsigned accesshead(struct VCB *vcb,struct fiddef *fid,unsigned seg_num,
                     struct VIOC **vioc,struct HEAD **headbuff,
-                    unsigned *modmask,unsigned wrtflg)
+                    unsigned *retidxblk,unsigned wrtflg)
 {
     register unsigned sts;
     register struct VCBDEV *vcbdev;
-    register unsigned idxblk = fid->fid$w_num + (fid->fid$b_nmx << 16) - 1;
-    if (fid->fid$b_rvn > vcb->devices) return SS$_NOSUCHFILE;
-    if (fid->fid$b_rvn < 2) {
-        vcbdev = vcb->vcbdev;
-    } else {
-        vcbdev = &vcb->vcbdev[fid->fid$b_rvn - 1];
-    }
-    if (vcbdev->dev == NULL) return SS$_NOSUCHFILE;
+    register unsigned idxblk;
+    vcbdev = rvn_to_dev(vcb,fid->fid$b_rvn);
+    if (vcbdev == NULL) return SS$_DEVNOTMOUNT;
     if (wrtflg && ((vcb->status & VCB_WRITE) == 0)) return SS$_WRITLCK;
-#ifdef DEBUG
-    printf("Accessing header (%d,%d,%d)\n",(fid->fid$b_nmx << 16) +
-           fid->fid$w_num,fid->fid$w_seq,fid->fid$b_rvn);
-#endif
-    idxblk += vcbdev->home.hm2$w_ibmapvbn + vcbdev->home.hm2$w_ibmapsize;
-    if (idxblk >= swapw(vcbdev->idxfcb->head->fh2$w_recattr.fat$l_efblk)) return SS$_NOSUCHFILE;
+    idxblk = fid->fid$w_num + (fid->fid$b_nmx << 16) - 1 +
+        VMSWORD(vcbdev->home.hm2$w_ibmapvbn) + VMSWORD(vcbdev->home.hm2$w_ibmapsize);
+    if (vcbdev->idxfcb->head != NULL) {
+        if (idxblk >= VMSSWAP(vcbdev->idxfcb->head->fh2$w_recattr.fat$l_efblk)) {
+            printf("Not in index file\n");
+            return SS$_NOSUCHFILE;
+        }
+    }
     sts = accesschunk(vcbdev->idxfcb,idxblk,vioc,(char **) headbuff,
-                      NULL,wrtflg ? 1 : 0,modmask);
+                      NULL,wrtflg ? 1 : 0);
     if (sts & 1) {
         register struct HEAD *head = *headbuff;
-        if (checksum((u_word *) head) != head->fh2$w_checksum) {
-#ifdef DEBUG
-            printf("Accesshead checksum %d != %d\n",checksum((u_word *) head),head->fh2$w_checksum);
-#endif
+        if (retidxblk) {
+            if (wrtflg) {
+                *retidxblk = idxblk;
+            } else {
+                *retidxblk = 0;
+            }
+        }
+        if (VMSWORD(head->fh2$w_fid.fid$w_num) != fid->fid$w_num ||
+            head->fh2$w_fid.fid$b_nmx != fid->fid$b_nmx ||
+            VMSWORD(head->fh2$w_fid.fid$w_seq) != fid->fid$w_seq ||
+            (head->fh2$w_fid.fid$b_rvn != fid->fid$b_rvn &&
+             head->fh2$w_fid.fid$b_rvn != 0)) {
+            /* lib$signal(SS$_NOSUCHFILE); */
             sts = SS$_NOSUCHFILE;
         } else {
-            if (head->fh2$w_fid.fid$w_num != fid->fid$w_num ||
-                head->fh2$w_fid.fid$b_nmx != fid->fid$b_nmx ||
-                head->fh2$w_fid.fid$w_seq != fid->fid$w_seq ||
-                (head->fh2$w_fid.fid$b_rvn != fid->fid$b_rvn &&
-                 head->fh2$w_fid.fid$b_rvn != 0)) {
-#ifdef DEBUG
-                printf("Accesshead fileid doesn't match %d %d %d\n",
-                       fid->fid$w_num,fid->fid$w_seq,fid->fid$b_rvn);
-#endif
-                sts = SS$_NOSUCHFILE;
+            if (head->fh2$b_idoffset < 38 ||
+                head->fh2$b_idoffset > head->fh2$b_mpoffset ||
+                head->fh2$b_mpoffset > head->fh2$b_acoffset ||
+                head->fh2$b_acoffset > head->fh2$b_rsoffset ||
+                head->fh2$b_map_inuse > head->fh2$b_acoffset - head->fh2$b_mpoffset ||
+                checksum((vmsword *) head) != VMSWORD(head->fh2$w_checksum)) {
+                sts = SS$_DATACHECK;
             } else {
-                if (head->fh2$b_idoffset < 38 ||
-                    head->fh2$b_idoffset > head->fh2$b_mpoffset ||
-                    head->fh2$b_mpoffset > head->fh2$b_acoffset ||
-                    head->fh2$b_acoffset > head->fh2$b_rsoffset ||
-                    head->fh2$b_map_inuse > (head->fh2$b_acoffset - head->fh2$b_mpoffset)) {
-#ifdef DEBUG
-                    printf("Accesshead areas incorrect\n");
-#endif
-                    sts = SS$_NOSUCHFILE;
-                }
+                if (VMSWORD(head->fh2$w_seg_num) != seg_num) sts = SS$_FILESEQCHK;
             }
         }
-        if ((sts & 1) == 0) deaccesschunk(*vioc,0,0);
+        if ((sts & 1) == 0) deaccesschunk(*vioc,0,0,0);
     }
     return sts;
 }
@@ -129,153 +144,427 @@ unsigned accesshead(struct VCB *vcb,struct fiddef *fid,
 
 
 
+struct WCBKEY {
+    unsigned vbn;
+    struct FCB *fcb;
+    struct WCB *prevwcb;
+};                              /* WCBKEY passes info to compare/create routines... */
 
-unsigned getwindow(struct FCB *fcb,unsigned vbn,unsigned *phyrvn,unsigned *phyblk,unsigned *phylen);
+/* wcb_compare() compare two windows routine - return -1 for less, 0 for match... */
+/*    as a by product keep highest previous entry so that if a new window
+      is required we don't have to go right back to the initial file header */
 
-/* This routine has bugs and does NOT work properly yet!!!!
-   It may be something simple but I haven't had time to look...
-   So DON'T use mount/write!!!  */
-
-unsigned deallocfile(struct FCB *fcb)
+int wcb_compare(unsigned hashval,void *keyval,void *thiswcb)
 {
-    register unsigned sts = 1;
-    /*
-        First mark all file clusters as free in BITMAP.SYS
-    */
-    register unsigned vbn = 1;
-    while (vbn <= fcb->hiblock) {
-        register unsigned sts;
-        unsigned rvn,mapblk,maplen;
-        register struct VCBDEV *vcbdev;
-        sts = getwindow(fcb,vbn,&rvn,&mapblk,&maplen);
-        if ((sts & 1) == 0) break;
-        if (rvn > fcb->vcb->devices) break;
-        if (rvn < 2) {
-            vcbdev = fcb->vcb->vcbdev;
+    register struct WCBKEY *wcbkey = (struct WCBKEY *) keyval;
+    register struct WCB *wcb = (struct WCB *) thiswcb;
+    if (wcbkey->vbn < wcb->loblk) {
+        return -1;              /* Search key is less than this window maps... */
+    } else {
+        if (wcbkey->vbn <= wcb->hiblk) {
+            return 0;           /* Search key must be in this window... */
         } else {
-            vcbdev = &fcb->vcb->vcbdev[rvn - 1];
+            if (wcbkey->prevwcb == NULL) {
+                wcbkey->prevwcb = wcb;
+            } else {
+                if (wcb->loblk != 0 && wcb->hiblk > wcbkey->prevwcb->hiblk) wcbkey->prevwcb = wcb;
+            }
+            return 1;           /* Search key is higher than this window... */
         }
-        if (vcbdev->dev == NULL) {
-            break;
+    }
+}
+
+/* premap_indexf() called to physically read the header for indexf.sys
+   so that indexf.sys can be mapped and read into virtual cache.. */
+
+struct HEAD *premap_indexf(struct FCB *fcb,unsigned *retsts)
+{
+    struct HEAD *head;
+    struct VCBDEV *vcbdev = rvn_to_dev(fcb->vcb,fcb->rvn);
+    if (vcbdev == NULL) {
+        *retsts = SS$_DEVNOTMOUNT;
+        return NULL;
+    }
+    head = (struct HEAD *) malloc(sizeof(struct HEAD));
+    if (head == NULL) {
+        *retsts = SS$_INSFMEM;
+    } else {
+        *retsts = phyio_read(vcbdev->dev->handle,VMSLONG(vcbdev->home.hm2$l_ibmaplbn) +
+                             VMSWORD(vcbdev->home.hm2$w_ibmapsize),sizeof(struct HEAD),
+                             (char *) head);
+        if (!(*retsts & 1)) {
+            free(head);
+            head = NULL;
         } else {
-            unsigned *bitmap,blkcount,modmask;
-            struct VIOC *vioc;
-            register unsigned clustersz = vcbdev->home.hm2$w_cluster;
-            register unsigned clusterno = mapblk / clustersz;
-            sts = accesschunk(vcbdev->mapfcb,clusterno / 4096 + 2,
-                              &vioc,(char **) &bitmap,&blkcount,1,&modmask);
-            if (sts & 1) {
-                register unsigned wordno = (clusterno % 4096) / (sizeof(unsigned) * 8);
-                register unsigned bitno = clusterno % (sizeof(unsigned) * 8);
-                do {
-                    register unsigned mask = 1 << bitno;
-                    vbn += clustersz;
-                    maplen -= clustersz;
-                    while (maplen > 0 && ++bitno < (sizeof(unsigned) * 8)) {
-                        mask |= (mask << 1);
-                        vbn += clustersz;
-                        maplen -= clustersz;
-                    }
-                    bitmap[wordno++] |= mask;
-                    bitno = 0;
-                } while (maplen > 0 && wordno < blkcount / (sizeof(unsigned) * 8));
-                sts = deaccesschunk(vioc,modmask,1);
+            if (VMSWORD(head->fh2$w_fid.fid$w_num) != 1 ||
+                head->fh2$w_fid.fid$b_nmx != 0 ||
+                VMSWORD(head->fh2$w_fid.fid$w_seq) != 1 ||
+                VMSWORD(head->fh2$w_checksum) != checksum((unsigned short *) head)) {
+                *retsts = SS$_DATACHECK;
+                free(head);
+                head = NULL;
             }
         }
     }
-    /*
-        Now reset file header bit map in INDEXF.SYS and
-        update each of the file headers...
-    */
-    {
-        unsigned rvn = fcb->rvn;
-        unsigned modmask = fcb->modmask;
-        struct HEAD *head = fcb->head;
-        struct VIOC *headvioc = fcb->headvioc;
-        do {
-            struct fiddef extfid;
-            register struct VCBDEV *vcbdev;
-            if (rvn > fcb->vcb->devices) break;
-            if (rvn < 2) {
-                vcbdev = fcb->vcb->vcbdev;
-            } else {
-                vcbdev = &fcb->vcb->vcbdev[rvn - 1];
+    return head;
+}
+
+/* wcb_create() creates a window control block by reading appropriate
+   file headers... */
+
+void *wcb_create(unsigned hashval,void *keyval,unsigned *retsts)
+{
+    register struct WCB *wcb = (struct WCB *) malloc(sizeof(struct WCB));
+    if (wcb == NULL) {
+        *retsts = SS$_INSFMEM;
+    } else {
+        unsigned curvbn;
+        unsigned extents = 0;
+        struct HEAD *head;
+        struct VIOC *vioc = NULL;
+        register struct WCBKEY *wcbkey = (struct WCBKEY *) keyval;
+        wcb->cache.objmanager = NULL;
+        wcb->cache.objtype = 3;
+        if (wcbkey->prevwcb == NULL) {
+            curvbn = wcb->loblk = 1;
+            wcb->hd_seg_num = 0;
+            head = wcbkey->fcb->head;
+            if (head == NULL) {
+                head = premap_indexf(wcbkey->fcb,retsts);
+                if (head == NULL) return NULL;
+                head->fh2$w_ext_fid.fid$w_num = 0;
+                head->fh2$w_ext_fid.fid$b_nmx = 0;
             }
-            if (vcbdev->dev == NULL) {
-                break;
-            } else {
-                unsigned *bitmap,viocmask;
-                struct VIOC *vioc;
-                register unsigned fileno = (head->fh2$w_fid.fid$b_nmx << 16) +
-                         head->fh2$w_fid.fid$w_num - 1;
-                register unsigned idxblk = fileno / 4096 +
-                    vcbdev->home.hm2$w_cluster * 4 + 1;
-                sts = accesschunk(vcbdev->idxfcb,idxblk,&vioc,
-                                  (char **) &bitmap,NULL,1,&viocmask);
-                if (sts & 1) {
-                    bitmap[(fileno % 4096) / (sizeof(unsigned) * 8)] &=
-                         ~(1 << (fileno % (sizeof(unsigned) * 8)));
-                    sts = deaccesschunk(vioc,viocmask,1);
-                } else {
-                    break;
+            fid_copy(&wcb->hd_fid,&head->fh2$w_fid,wcbkey->fcb->rvn);
+        } else {
+            wcb->loblk = wcbkey->prevwcb->hiblk + 1;
+            curvbn = wcbkey->prevwcb->hd_basevbn;
+            wcb->hd_seg_num = wcbkey->prevwcb->hd_seg_num;
+            memcpy(&wcb->hd_fid,&wcbkey->prevwcb->hd_fid,sizeof(struct fiddef));
+        }
+        do {
+            register unsigned short *mp;
+            register unsigned short *me;
+            wcb->hd_basevbn = curvbn;
+            if (wcb->hd_seg_num != 0) {
+                *retsts = accesshead(wcbkey->fcb->vcb,&wcb->hd_fid,wcb->hd_seg_num,&vioc,&head,NULL,0);
+                if ((*retsts & 1) == 0) {
+                    free(wcb);
+                    return NULL;
                 }
             }
-            head->fh2$w_fid.fid$w_num = 0;
-            head->fh2$w_fid.fid$b_rvn = 0;
-            head->fh2$w_fid.fid$b_nmx = 0;
-            head->fh2$w_checksum = 0;
-            memcpy(&extfid,&fcb->head->fh2$w_ext_fid,sizeof(struct fiddef));
-            sts = deaccesshead(headvioc,head,modmask);
-            if ((sts & 1) == 0) break;
-            if (extfid.fid$b_rvn == 0) {
-                extfid.fid$b_rvn = rvn;
-            } else {
-                rvn = extfid.fid$b_rvn;
+            mp = (unsigned short *) head + head->fh2$b_mpoffset;
+            me = mp + head->fh2$b_map_inuse;
+            while (mp < me) {
+                register unsigned phylen,phyblk;
+                switch (VMSWORD(*mp) >> 14) {
+                    case 0:
+                        phylen = 0;
+                        mp++;
+                        break;
+                    case 1:
+                        phylen = (VMSWORD(*mp) & 0377) + 1;
+                        phyblk = ((VMSWORD(*mp) & 037400) << 8) | VMSWORD(mp[1]);
+                        mp += 2;
+                        break;
+                    case 2:
+                        phylen = (VMSWORD(*mp) & 037777) + 1;
+                        phyblk = (VMSWORD(mp[2]) << 16) | VMSWORD(mp[1]);
+                        mp += 3;
+                        break;
+                    case 3:
+                        phylen = ((VMSWORD(*mp) & 037777) << 16) + VMSWORD(mp[1]) + 1;
+                        phyblk = (VMSWORD(mp[3]) << 16) | VMSWORD(mp[2]);
+                        mp += 4;
+                }
+                curvbn += phylen;
+                if (phylen != 0 && curvbn > wcb->loblk) {
+                    wcb->phylen[extents] = phylen;
+                    wcb->phyblk[extents] = phyblk;
+                    wcb->rvn[extents] = wcb->hd_fid.fid$b_rvn;
+                    if (++extents >= EXTMAX) {
+                        if (curvbn > wcbkey->vbn) {
+                            break;
+                        } else {
+                            extents = 0;
+                            wcb->loblk = curvbn;
+                        }
+                    }
+                }
             }
-            if (extfid.fid$w_num != 0 || extfid.fid$b_nmx != 0) {
-                sts = accesshead(fcb->vcb,&extfid,&headvioc,&head,&modmask,1);
-                if ((sts & 1) == 0) break;
-            } else {
+            if (extents >= EXTMAX || (VMSWORD(head->fh2$w_ext_fid.fid$w_num) == 0
+                                      && head->fh2$w_ext_fid.fid$b_nmx == 0)) {
                 break;
+            } else {
+                register unsigned rvn;
+                wcb->hd_seg_num++;
+                rvn = wcb->hd_fid.fid$b_rvn;
+                fid_copy(&wcb->hd_fid,&head->fh2$w_ext_fid,rvn);
+                if (vioc != NULL) deaccesshead(vioc,NULL,0);
             }
         } while (1);
-        if (sts & 1) {
-            fcb->headvioc = NULL;
-            cacheuntouch(&fcb->cache,0,1);
-            cachedelete(&fcb->cache);
+        if (vioc != NULL) {
+            deaccesshead(vioc,NULL,0);
+        } else {
+            if (wcbkey->fcb->head == NULL) free(head);
+        }
+        wcb->hiblk = curvbn - 1;
+        wcb->extcount = extents;
+        *retsts = SS$_NORMAL;
+        if (curvbn <= wcbkey->vbn) {
+            free(wcb);
+            *retsts = SS$_DATACHECK;
+            wcb = NULL;
         }
     }
-    return sts;
+    return wcb;
+}
+
+
+/* getwindow() find a window to map VBN to LBN ... */
+
+unsigned getwindow(struct FCB * fcb,unsigned vbn,struct VCBDEV **devptr,
+                   unsigned *phyblk,unsigned *phylen,struct fiddef *hdrfid,
+                   unsigned *hdrseq)
+{
+    unsigned sts;
+    struct WCB *wcb;
+    struct WCBKEY wcbkey;
+#ifdef DEBUG
+    printf("Accessing window for vbn %d, file (%x)\n",vbn,fcb->cache.hashval);
+#endif
+    wcbkey.vbn = vbn;
+    wcbkey.fcb = fcb;
+    wcbkey.prevwcb = NULL;
+    wcb = cache_find((void *) &fcb->wcb,0,&wcbkey,&sts,wcb_compare,wcb_create);
+    if (wcb == NULL) return sts;
+    {
+        register unsigned extent = 0;
+        register unsigned togo = vbn - wcb->loblk;
+        while (togo >= wcb->phylen[extent]) {
+            togo -= wcb->phylen[extent];
+            if (++extent > wcb->extcount) return SS$_BUGCHECK;
+        }
+        *devptr = rvn_to_dev(fcb->vcb,wcb->rvn[extent]);
+        *phyblk = wcb->phyblk[extent] + togo;
+        *phylen = wcb->phylen[extent] - togo;
+        if (hdrfid != NULL) memcpy(hdrfid,&wcb->hd_fid,sizeof(struct fiddef));
+        if (hdrseq != NULL) *hdrseq = wcb->hd_seg_num;
+#ifdef DEBUG
+        printf("Mapping vbn %d to %d (%d -> %d)[%d] file (%x)\n",
+               vbn,*phyblk,wcb->loblk,wcb->hiblk,wcb->hd_basevbn,fcb->cache.hashval);
+#endif
+        cache_untouch(&wcb->cache,1);
+    }
+    if (*devptr == NULL) return SS$_DEVNOTMOUNT;
+    return SS$_NORMAL;
+}
+
+
+/* Object manager for VIOC objects:- if the object has been
+   modified then we need to flush it to disk before we let
+   the cache routines do anything to it... */
+
+void *vioc_manager(struct CACHE * cacheobj,int flushonly)
+{
+    register struct VIOC *vioc = (struct VIOC *) cacheobj;
+    if (vioc->modmask != 0) {
+        register struct FCB *fcb = vioc->fcb;
+        register int length = VIOC_CHUNKSIZE;
+        register unsigned curvbn = vioc->cache.hashval + 1;
+        register char *address = (char *) vioc->data;
+        register unsigned modmask = vioc->modmask;
+        printf("\nvioc_manager writing vbn %d\n",curvbn);
+        do {
+            register unsigned sts;
+            int wrtlen = 0;
+            unsigned phyblk,phylen;
+            struct VCBDEV *vcbdev;
+            while (length > 0 && (1 & modmask) == 0) {
+                length--;
+                curvbn++;
+                address += 512;
+                modmask = modmask >> 1;
+            }
+            while (wrtlen < length && (1 & modmask) != 0) {
+                wrtlen++;
+                modmask = modmask >> 1;
+            }
+            length -= wrtlen;
+            while (wrtlen > 0) {
+                if (fcb->highwater != 0 && curvbn >= fcb->highwater) {
+                    length = 0;
+                    break;
+                }
+                sts = getwindow(fcb,curvbn,&vcbdev,&phyblk,&phylen,NULL,NULL);
+                if (!(sts & 1)) return NULL;
+                if (phylen > wrtlen) phylen = wrtlen;
+                if (fcb->highwater != 0 && curvbn + phylen > fcb->highwater) {
+                    phylen = fcb->highwater - curvbn;
+                }
+                sts = phyio_write(vcbdev->dev->handle,phyblk,phylen * 512,address);
+                if (!(sts & 1)) return NULL;
+                wrtlen -= phylen;
+                curvbn += phylen;
+                address += phylen * 512;
+            }
+        } while (length > 0 && modmask != 0);
+        vioc->modmask = 0;
+        vioc->cache.objmanager = NULL;
+    }
+    return cacheobj;
+}
+
+
+/* deaccesschunk() to deaccess a VIOC (chunk of a file) */
+
+unsigned deaccesschunk(struct VIOC *vioc,unsigned wrtvbn,
+                       int wrtblks,int reuse)
+{
+#ifdef DEBUG
+    printf("Deaccess chunk %8x\n",vioc->cache.hashval);
+#endif
+    if (wrtvbn) {
+        register unsigned modmask;
+        if (wrtvbn <= vioc->cache.hashval ||
+            wrtvbn + wrtblks > vioc->cache.hashval + VIOC_CHUNKSIZE + 1) {
+	     return SS$_BADPARAM;
+	}
+        modmask = 1 << (wrtvbn - vioc->cache.hashval - 1);
+        while (--wrtblks > 0) modmask |= modmask << 1;
+        if ((vioc->wrtmask | modmask) != vioc->wrtmask) return SS$_WRITLCK;
+        vioc->modmask |= modmask;
+        if (vioc->cache.refcount == 1) vioc->wrtmask = 0;
+        vioc->cache.objmanager = vioc_manager;
+    }
+    cache_untouch(&vioc->cache,reuse);
+    return SS$_NORMAL;
+}
+
+
+void *vioc_create(unsigned hashval,void *keyval,unsigned *retsts)
+{
+    register struct VIOC *vioc = (struct VIOC *) malloc(sizeof(struct VIOC));
+    if (vioc == NULL) {
+        *retsts = SS$_INSFMEM;
+    } else {
+        register int length;
+        register unsigned curvbn = hashval + 1;
+        register char *address;
+        register struct FCB *fcb = (struct FCB *) keyval;
+        vioc->cache.objmanager = NULL;
+        vioc->cache.objtype = 7;
+        vioc->fcb = fcb;
+        vioc->wrtmask = 0;
+        vioc->modmask = 0;
+        length = fcb->hiblock - curvbn + 1;
+        if (length > VIOC_CHUNKSIZE) length = VIOC_CHUNKSIZE;
+        address = (char *) vioc->data;
+        do {
+            if (fcb->highwater != 0 && curvbn >= fcb->highwater) {
+                memset(address,0,length * 512);
+                break;
+            } else {
+                register unsigned sts;
+                unsigned phyblk,phylen;
+                struct VCBDEV *vcbdev;
+                sts = getwindow(fcb,curvbn,&vcbdev,&phyblk,&phylen,NULL,NULL);
+                if (sts & 1) {
+                    if (phylen > length) phylen = length;
+                    if (fcb->highwater != 0 && curvbn + phylen > fcb->highwater) {
+                        phylen = fcb->highwater - curvbn;
+                    }
+                    sts = phyio_read(vcbdev->dev->handle,phyblk,phylen * 512,address);
+                }
+                if ((sts & 1) == 0) {
+                    free(vioc);
+                    *retsts = sts;
+                    return NULL;
+                }
+                length -= phylen;
+                curvbn += phylen;
+                address += phylen * 512;
+            }
+        } while (length > 0);
+        *retsts = SS$_NORMAL;
+    }
+    return vioc;
 }
 
 
 
-/* deaccessfile: finish accessing a file.... */
+/* accesschunk() return pointer to a 'chunk' of a file ... */
+
+unsigned accesschunk(struct FCB *fcb,unsigned vbn,struct VIOC **retvioc,
+                     char **retbuff,unsigned *retblocks,unsigned wrtblks)
+{
+    unsigned sts;
+    register int blocks;
+    register struct VIOC *vioc;
+#ifdef DEBUG
+    printf("Access chunk %8x %d (%x)\n",base,vbn,fcb->cache.hashval);
+#endif
+    if (vbn < 1 || vbn > fcb->hiblock) return SS$_ENDOFFILE;
+    blocks = (vbn - 1) / VIOC_CHUNKSIZE * VIOC_CHUNKSIZE;
+    if (wrtblks) {
+        if ((fcb->status & FCB_WRITE) == 0) return SS$_WRITLCK;
+        if (vbn + wrtblks > blocks + VIOC_CHUNKSIZE + 1) {
+	     return SS$_BADPARAM;
+        }
+    }
+    vioc = cache_find((void *) &fcb->vioc,blocks,fcb,&sts,NULL,vioc_create);
+    if (vioc == NULL) return sts;
+    /*
+        Return result to caller...
+    */
+    *retvioc = vioc;
+    blocks = vbn - blocks - 1;
+    *retbuff = vioc->data[blocks];
+    if (wrtblks || retblocks != NULL) {
+        register unsigned modmask = 1 << blocks;
+        blocks = VIOC_CHUNKSIZE - blocks;
+        if (vbn + blocks > fcb->hiblock) blocks = fcb->hiblock - vbn + 1;
+        if (wrtblks && blocks > wrtblks) blocks = wrtblks;
+        if (retblocks != NULL) *retblocks = blocks;
+        if (wrtblks && blocks) {
+            while (--blocks > 0) modmask |= modmask << 1;
+            vioc->wrtmask |= modmask;
+            vioc->cache.objmanager = vioc_manager;
+        }
+    }
+    return SS$_NORMAL;
+}
+
+
+unsigned deallocfile(struct FCB *fcb);
+
+/* deaccessfile() finish accessing a file.... */
 
 unsigned deaccessfile(struct FCB *fcb)
 {
 #ifdef DEBUG
-    printf("Deaccessing file (%x) reference %d\n",fcb->cache.keyval,fcb->cache.refcount);
+    printf("Deaccessing file (%x) reference %d\n",fcb->cache.hashval,fcb->cache.refcount);
 #endif
     if (fcb->cache.refcount == 1) {
         register unsigned refcount;
-        refcount = cacherefcount((struct CACHE *) fcb->wcb) +
-            cacherefcount((struct CACHE *) fcb->vioc);
+        refcount = cache_refcount((struct CACHE *) fcb->wcb) +
+            cache_refcount((struct CACHE *) fcb->vioc);
         if (refcount != 0) {
-            printf("File reference counts non-zero %d\n",refcount);
+            printf("File reference counts non-zero %d  (%d)\n",refcount,
+		fcb->cache.hashval);
 #ifdef DEBUG
             printf("File reference counts non-zero %d %d\n",
-                   cacherefcount((struct CACHE *) fcb->wcb),cacherefcount((struct CACHE *) fcb->vioc));
+                   cache_refcount((struct CACHE *) fcb->wcb),cache_refcount((struct CACHE *) fcb->vioc));
 #endif
             return SS$_BUGCHECK;
         }
-        if (fcb->cache.status & CACHE_WRITE) {
-            if (fcb->head->fh2$l_filechar & FH2$M_MARKDEL) {
+        if (fcb->status & FCB_WRITE) {
+            if (VMSLONG(fcb->head->fh2$l_filechar) & FH2$M_MARKDEL) {
                 return deallocfile(fcb);
             }
         }
     }
-    cacheuntouch(&fcb->cache,1,fcb->cache.status & CACHE_WRITE);
+    cache_untouch(&fcb->cache,1);
     return SS$_NORMAL;
 }
 
@@ -285,137 +574,105 @@ unsigned deaccessfile(struct FCB *fcb)
    cache routines get us!  But we when run out of excuses
    it is time to clean up the file header...  :-(   */
 
-struct CACHE *fcbmanager(struct CACHE *cacheobj)
+void *fcb_manager(struct CACHE *cacheobj,int flushonly)
 {
     register struct FCB *fcb = (struct FCB *) cacheobj;
-    if (fcb->cache.refcount == 0) {
-        if (fcb->vioc != NULL) {
-            if (fcb->vioc->cache.refcount == 0) {
-                cacheobj = &fcb->vioc->cache;
-            } else {
-                cacheobj = NULL;
-            }
-        } else {
-            if (fcb->wcb != NULL) {
-                if (fcb->wcb->cache.refcount == 0) {
-                    cacheobj = &fcb->wcb->cache;
-                } else {
-                    cacheobj = NULL;
-                }
-            } else {
-#ifdef DEBUG
-                printf("Cleaning up file (%x)\n",fcb->cache.keyval);
-#endif
-                if (fcb->headvioc != NULL) {
-#ifdef DEBUG
-                    printf("File header deaccess (%x) %x\n",fcb->cache.keyval,fcb->cache.status);
-#endif
-                    deaccesshead(fcb->headvioc,fcb->head,fcb->modmask);
-                    fcb->headvioc = NULL;
-                }
-            }
-        }
-    } else {
-        cacheobj = NULL;
+    if (fcb->vioc != NULL) return &fcb->vioc->cache;
+    if (fcb->wcb != NULL) return &fcb->wcb->cache;
+    if (fcb->cache.refcount != 0 || flushonly) return NULL;
+    if (fcb->headvioc != NULL) {
+        deaccesshead(fcb->headvioc,fcb->head,fcb->headvbn);
+        fcb->headvioc = NULL;
     }
     return cacheobj;
 }
 
+void *fcb_create(unsigned filenum,void *keyval,unsigned *retsts)
+{
+    register struct FCB *fcb = (struct FCB *) malloc(sizeof(struct FCB));
+    if (fcb == NULL) {
+        *retsts = SS$_INSFMEM;
+    } else {
+        fcb->cache.objmanager = fcb_manager;
+        fcb->cache.objtype = 2;
+        fcb->vcb = NULL;
+        fcb->headvioc = NULL;
+        fcb->head = NULL;
+        fcb->wcb = NULL;
+        fcb->vioc = NULL;
+        fcb->headvbn = 0;
+        fcb->hiblock = 100000;
+        fcb->highwater = 0;
+        fcb->status = 0;
+        fcb->rvn = 0;
+    }
+    return fcb;
+}
 
-/* accessfile: open up file for access... */
+
+/* accessfile() open up file for access... */
 
 unsigned accessfile(struct VCB * vcb,struct fiddef * fid,struct FCB **fcbadd,
                     unsigned wrtflg)
 {
+    unsigned sts;
     register struct FCB *fcb;
-    unsigned create = sizeof(struct FCB);
-    register unsigned fileno = (fid->fid$b_nmx << 16) + fid->fid$w_num;
+    register unsigned filenum = (fid->fid$b_nmx << 16) + fid->fid$w_num;
 #ifdef DEBUG
     printf("Accessing file (%d,%d,%d)\n",(fid->fid$b_nmx << 16) +
            fid->fid$w_num,fid->fid$w_seq,fid->fid$b_rvn);
 #endif
-    if (fileno < 1) return SS$_BADPARAM;
+    if (filenum < 1) return SS$_BADPARAM;
     if (wrtflg && ((vcb->status & VCB_WRITE) == 0)) return SS$_WRITLCK;
-    if (fid->fid$b_rvn > 1) fileno |= ((fid->fid$b_rvn - 1) << 24);
-    fcb = cachesearch((void *) &vcb->fcb,fileno,0,NULL,NULL,&create);
-    if (fcb == NULL) return SS$_INSFMEM;
+    if (fid->fid$b_rvn > 1) filenum |= fid->fid$b_rvn << 24;
+    fcb = cache_find((void *) &vcb->fcb,filenum,NULL,&sts,NULL,fcb_create);
+    if (fcb == NULL) return sts;
     /* If not found make one... */
-    if (create == 0) {
-        fcb->cache.status |= 0x100;     /* For debugging! */
+    *fcbadd = fcb;
+    if (fcb->vcb == NULL) {
         fcb->rvn = fid->fid$b_rvn;
         if (fcb->rvn == 0 && vcb->devices > 1) fcb->rvn = 1;
         fcb->vcb = vcb;
-        fcb->wcb = NULL;
-        fcb->headvioc = NULL;
-        fcb->vioc = NULL;
-        fcb->cache.objmanager = fcbmanager;
     }
     if (wrtflg) {
-        if (fcb->headvioc != NULL && (fcb->cache.status & CACHE_WRITE) == 0) {
+        if (fcb->headvioc != NULL && (fcb->status & FCB_WRITE) == 0) {
             deaccesshead(fcb->headvioc,NULL,0);
             fcb->headvioc = NULL;
         }
-        fcb->cache.status |= CACHE_WRITE;
+        fcb->status |= FCB_WRITE;
     }
     if (fcb->headvioc == NULL) {
         register unsigned sts;
-        if (vcb->idxboot != NULL) {
-            *fcbadd = fcb;
-            fcb->hiblock = 32767;       /* guess at indexf.sys file size */
-            fcb->highwater = 0;
-            fcb->head = vcb->idxboot;   /* Load bootup header */
-        }
-        sts = accesshead(vcb,fid,&fcb->headvioc,&fcb->head,&fcb->modmask,wrtflg);
+        sts = accesshead(vcb,fid,0,&fcb->headvioc,&fcb->head,&fcb->headvbn,wrtflg);
         if (sts & 1) {
-            fcb->hiblock = swapw(fcb->head->fh2$w_recattr.fat$l_hiblk);
+            fcb->hiblock = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_hiblk);
             if (fcb->head->fh2$b_idoffset > 39) {
-                fcb->highwater = fcb->head->fh2$l_highwater;
+                fcb->highwater = VMSLONG(fcb->head->fh2$l_highwater);
             } else {
                 fcb->highwater = 0;
             }
         } else {
+            printf("Accessfile status %d\n",sts);
             fcb->cache.objmanager = NULL;
-            cacheuntouch(&fcb->cache,0,0);
-            cachefree(&fcb->cache);
+            cache_untouch(&fcb->cache,0);
+            cache_delete(&fcb->cache);
             return sts;
         }
     }
-    *fcbadd = fcb;
     return SS$_NORMAL;
 }
 
 
-/* accesserase: delete a file... */
-
-unsigned accesserase(struct VCB * vcb,struct fiddef * fid)
-{
-    struct FCB *fcb;
-    register int sts;
-    sts = accessfile(vcb,fid,&fcb,1);
-    if (sts & 1) {
-        if (fcb->cache.refcount == 1) {
-            fcb->head->fh2$l_filechar |= FH2$M_MARKDEL;
-            sts = deaccessfile(fcb);
-        } else {
-            sts = deaccessfile(fcb);
-            sts = SS$_FILELOCKED;
-        }
-    }
-    return sts;
-}
 
 
-
-
-
-/* dismount: finish processing on a volume */
+/* dismount() finish processing on a volume */
 
 unsigned dismount(struct VCB * vcb)
 {
     register unsigned sts,device;
     struct VCBDEV *vcbdev;
     int expectfiles = vcb->devices;
-    int openfiles = cacherefcount(&vcb->fcb->cache);
+    int openfiles = cache_refcount(&vcb->fcb->cache);
     if (vcb->status & VCB_WRITE) expectfiles *= 2;
 #ifdef DEBUG
     printf("Dismounting disk %d\n",openfiles);
@@ -427,33 +684,37 @@ unsigned dismount(struct VCB * vcb)
         vcbdev = vcb->vcbdev;
         for (device = 0; device < vcb->devices; device++) {
             if (vcbdev->dev != NULL) {
-                if (vcb->status & VCB_WRITE) {
+                if (vcb->status & VCB_WRITE && vcbdev->mapfcb != NULL) {
                     sts = deaccessfile(vcbdev->mapfcb);
-                    vcbdev->idxfcb->headvioc->cache.status |= CACHE_MODIFIED;
-                    vcbdev->idxfcb->cache.status &= ~CACHE_WRITE;
-                    cacheflush();
+                    if (!(sts & 1)) break;
+                    vcbdev->idxfcb->status &= ~FCB_WRITE;
+                    vcbdev->mapfcb = NULL;
                 }
-                cachedeltree(&vcb->fcb->cache);
-                sts = deaccesshead(vcbdev->idxfcb->headvioc,NULL,0);
+                cache_remove(&vcb->fcb->cache);
+                sts = deaccesshead(vcbdev->idxfcb->headvioc,vcbdev->idxfcb->head,vcbdev->idxfcb->headvbn);
+                if (!(sts & 1)) break;
                 vcbdev->idxfcb->headvioc = NULL;
-                sts = cacheuntouch(&vcbdev->idxfcb->cache,0,0);
-                cachedeltree(&vcb->fcb->cache);
+                cache_untouch(&vcbdev->idxfcb->cache,0);
+                vcbdev->dev->vcb = NULL;
             }
             vcbdev++;
         }
-        while (vcb->dircache) cachedelete((struct CACHE *) vcb->dircache);
+        if (sts & 1) {
+            cache_remove(&vcb->fcb->cache);
+            while (vcb->dircache) cache_delete((struct CACHE *) vcb->dircache);
 #ifdef DEBUG
-        printf("Post close\n");
-        cachedump();
+            printf("Post close\n");
+            cachedump();
 #endif
-        free(vcb);
+            free(vcb);
+        }
     }
     return sts;
 }
 
+#define HOME_LIMIT 100
 
-
-/* mount: make disk volume available for processing... */
+/* mount() make disk volume available for processing... */
 
 unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],struct VCB **retvcb)
 {
@@ -472,391 +733,76 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],stru
         sts = SS$_NOSUCHVOL;
         vcbdev->dev = NULL;
         if (strlen(devnam[device])) {
+            int hba;
             sts = device_lookup(strlen(devnam[device]),devnam[device],1,&vcbdev->dev);
+            if (!(sts & 1)) break;
+            for (hba = 1; hba <= HOME_LIMIT; hba++) {
+                sts = phyio_read(vcbdev->dev->handle,hba,sizeof(struct HOME),(char *) &vcbdev->home);
+                if (!(sts & 1)) break;
+                if (hba == VMSLONG(vcbdev->home.hm2$l_homelbn) &&
+                    memcmp(vcbdev->home.hm2$t_format,"DECFILE11B  ",12) == 0) break;
+                sts = SS$_DATACHECK;
+            }
             if (sts & 1) {
-                int hba = 1;    /* Header block address... */
-                do {
-                    if ((sts = phyio_read(vcbdev->dev->handle,hba,sizeof(struct HOME),(char *) &vcbdev->home)) & 1) {
-                        if (memcmp(vcbdev->home.hm2$t_format,"DECFILE11B  ",12) != 0) sts = SS$_BADPARAM;
+                if (VMSWORD(vcbdev->home.hm2$w_checksum2) != checksum((unsigned short *) &vcbdev->home)) {
+                    sts = SS$_DATACHECK;
+                } else {
+                    if (VMSWORD(vcbdev->home.hm2$w_rvn) != device + 1)
+                        if (VMSWORD(vcbdev->home.hm2$w_rvn) > 1 || device != 0)
+                            sts = SS$_UNSUPVOLSET;
+                    if (vcbdev->dev->vcb != NULL) {
+                        sts = SS$_DEVMOUNT;
                     }
-                } while ((sts & 1) == 0 && (hba += 1) < 100);
-                if (sts & 1) {
-                    if (vcbdev->home.hm2$w_checksum2 != checksum((unsigned short *) &vcbdev->home)) {
-                        sts = SS$_DATACHECK;
-                    } else {
-                        struct HEAD idxboot;    /* Local for bootstrapping volume */
-                        struct fiddef idxfid = {1,1,0,0};
-                        idxfid.fid$b_rvn = device + 1;
-                        if ((sts = phyio_read(vcbdev->dev->handle,vcbdev->home.hm2$l_ibmaplbn +
-                                              vcbdev->home.hm2$w_ibmapsize,sizeof(struct HEAD),(char *) &idxboot)) & 1) {
-                            if (idxboot.fh2$w_fid.fid$w_num != idxfid.fid$w_num ||
-                                idxboot.fh2$w_fid.fid$b_nmx != idxfid.fid$b_nmx ||
-                                idxboot.fh2$w_fid.fid$w_seq != idxfid.fid$w_seq ||
-                                (idxboot.fh2$w_fid.fid$b_rvn != 0 &&
-                                 idxboot.fh2$w_fid.fid$b_rvn != idxfid.fid$b_rvn))
-                                sts = SS$_DATACHECK;
-                            if (idxboot.fh2$w_checksum != checksum((unsigned short *) &idxboot)) sts = SS$_DATACHECK;
-                        }
-                        vcbdev->idxfcb = NULL;
+                }
+            }
+            if (!(sts & 1)) break;
+        }
+        vcbdev++;
+    }
+    if (sts & 1) {
+        vcb->devices = devices;
+        vcbdev = vcb->vcbdev;
+        for (device = 0; device < devices; device++) {
+            vcbdev->idxfcb = NULL;
+            vcbdev->mapfcb = NULL;
+            vcbdev->clustersize = 0;
+            vcbdev->max_cluster = 0;
+            vcbdev->free_clusters = 0;
+            if (strlen(devnam[device])) {
+                struct fiddef idxfid = {1,1,0,0};
+                idxfid.fid$b_rvn = device + 1;
+                sts = accessfile(vcb,&idxfid,&vcbdev->idxfcb,flags & 1);
+                if (!(sts & 1)) {
+                    vcbdev->dev = NULL;
+                } else {
+                    vcbdev->dev->vcb = vcb;
+                    if (flags & 1) {
+                        struct fiddef mapfid = {2,2,0,0};
+                        mapfid.fid$b_rvn = device + 1;
+                        sts = accessfile(vcb,&mapfid,&vcbdev->mapfcb,1);
                         if (sts & 1) {
-                            vcb->devices = device + 1;
-                            vcb->idxboot = &idxboot;    /* For getwindow to find index file*/
-                            sts = accessfile(vcb,&idxfid,&vcbdev->idxfcb,flags & 1);
-                            vcbdev->mapfcb = NULL;
+                            struct VIOC *vioc;
+                            struct SCB *scb;
+                            sts = accesschunk(vcbdev->mapfcb,1,&vioc,(char **) &scb,NULL,0);
                             if (sts & 1) {
-                                vcbdev->dev->vcb = vcb;
-                                if (flags & 1) {
-                                    struct fiddef mapfid = {2,2,0,0};
-                                    mapfid.fid$b_rvn = device + 1;
-                                    sts = accessfile(vcb,&mapfid,&vcbdev->mapfcb,1);
+                                if (scb->scb$w_cluster == vcbdev->home.hm2$w_cluster) {
+                                    vcbdev->clustersize = vcbdev->home.hm2$w_cluster;
+                                    vcbdev->max_cluster = (scb->scb$l_volsize + scb->scb$w_cluster - 1) / scb->scb$w_cluster;
+                                    deaccesschunk(vioc,0,0,0);
+				    sts = update_freecount(vcbdev,&vcbdev->free_clusters);
+printf("Freespace is %d\n",vcbdev->free_clusters);
                                 }
                             }
                         }
                     }
                 }
             }
-            if ((sts & 1) == 0) vcbdev->dev = NULL;
+            vcbdev++;
         }
-        if (device == 0 && vcbdev->dev == NULL) {
-            free(vcb);
-            return sts;
-        }
-        vcbdev++;
+    } else {
+        free(vcb);
+        vcb = NULL;
     }
-    vcb->idxboot = NULL;
     if (retvcb != NULL) *retvcb = vcb;
     return sts;
-}
-
-
-/* wincmp: compare two windows routine - return -1 for less, 0 for match... */
-/*    as a by product keep highest previous entry so that if a new window
-      is required we don't have to go right back to the initial file header */
-
-int wincmp(unsigned keylen,void *key,void *node)
-{
-    register struct WCB *wcb = (struct WCB *) node;
-    if (keylen < wcb->loblk) {
-        return -1;
-    } else {
-        if (keylen <= wcb->hiblk) {
-            return 0;
-        } else {
-            register struct WCB **prev_wcb = (struct WCB **) key;
-            if (*prev_wcb == NULL) {
-                *prev_wcb = wcb;
-            } else {
-                if ((*prev_wcb)->hiblk < wcb->hiblk) *prev_wcb = wcb;
-            }
-            return 1;
-        }
-    }
-}
-
-
-/* getwindow: find a window to map VBN to LBN ... */
-
-unsigned getwindow(struct FCB * fcb,unsigned vbn,unsigned *phyrvn,unsigned *phyblk,unsigned *phylen)
-{
-    register struct WCB *wcb;
-    struct WCB *prev_wcb = NULL;
-    unsigned create = sizeof(struct WCB);
-#ifdef DEBUG
-    printf("Accessing window for vbn %d, file (%x)\n",vbn,fcb->cache.keyval);
-#endif
-    wcb = cachesearch((void *) &fcb->wcb,0,vbn,&prev_wcb,wincmp,&create);
-    if (wcb == NULL) return SS$_INSFMEM;
-    /* If not found make one... */
-    if (create == 0) {
-        register unsigned wd_base,wd_exts;
-        unsigned prev_hiblk,rvn;
-        struct VIOC *vioc;
-        struct HEAD *head;
-        wcb->cache.status |= 0x200;     /* For debugging! */
-        vioc = NULL;
-        wd_base = 1;
-        rvn = fcb->rvn;
-        head = fcb->head;
-        prev_hiblk = 0;
-        if (prev_wcb != NULL) {
-            register unsigned sts;
-            register struct fiddef *fid = &prev_wcb->hd_fid;
-            register struct fiddef *filefid = &fcb->head->fh2$w_fid;
-            if (fid->fid$w_num != filefid->fid$w_num ||
-                fid->fid$b_nmx != filefid->fid$b_nmx ||
-                ((fid->fid$b_rvn > 1 || fcb->rvn > 1) && fid->fid$b_rvn != fcb->rvn)) {
-                wd_base = prev_wcb->hd_base;
-                rvn = prev_wcb->hd_fid.fid$b_rvn;
-                sts = accesshead(fcb->vcb,fid,&vioc,&head,NULL,0);
-                if ((sts & 1) == 0) {
-                    cacheuntouch(&wcb->cache,0,0);
-                    cachefree(&wcb->cache);
-                    return sts;
-                }
-            }
-            prev_hiblk = prev_wcb->hiblk;
-        }
-        wcb->hd_base = wd_base;
-        wd_exts = 0;
-#ifdef DEBUG
-        printf("Making window %d %d\n",wd_base,prev_hiblk);
-#endif
-        do {
-            register unsigned short *mp = (unsigned short *) head + head->fh2$b_mpoffset;
-            register unsigned short *me = mp + head->fh2$b_map_inuse;
-            while (mp < me) {
-                register unsigned phylen,phyblk;
-                switch ((*mp) >> 14) {
-                    case 0:
-                        phylen = 0;
-                        mp++;
-                        break;
-                    case 1:
-                        phylen = ((*mp) & 0377) + 1;
-                        phyblk = (((*mp) & 037400) << 8) + mp[1];
-                        mp += 2;
-                        break;
-                    case 2:
-                        phylen = ((*mp) & 037777) + 1;
-                        phyblk = (mp[2] << 16) + mp[1];
-                        mp += 3;
-                        break;
-                    case 3:
-                        phylen = (((*mp) & 037777) << 16) + mp[1] + 1;
-                        phyblk = (mp[3] << 16) + mp[2];
-                        mp += 4;
-                }
-                if (phylen > 0 && wd_base > prev_hiblk) {
-                    register struct EXT *ext;
-                    if (wd_exts == 0) wcb->loblk = wd_base;
-                    ext = &wcb->ext[wd_exts++];
-                    ext->phylen = phylen;
-                    ext->phyblk = phyblk;
-                    wd_base += phylen;
-                    if (wd_exts >= EXTMAX) {
-                        if (wd_base > vbn) {
-                            break;
-                        } else {
-                            wd_exts = 0;
-                        }
-                    }
-                } else {
-                    wd_base += phylen;
-                }
-            }
-            if (wd_base > vbn) {
-                break;
-            } else {
-                register unsigned sts;
-                struct fiddef extfid;
-                memcpy(&extfid,&head->fh2$w_ext_fid,sizeof(struct fiddef));
-                if (extfid.fid$b_rvn != 0 && extfid.fid$b_rvn != rvn) {
-                    wd_exts = 0;/* Can't let window extend across devices */
-                    rvn = extfid.fid$b_rvn;
-                } else {
-                    extfid.fid$b_rvn = rvn;
-                }
-                if (vioc != NULL) deaccesshead(vioc,NULL,0);
-                sts = accesshead(fcb->vcb,&extfid,&vioc,&head,NULL,0);
-                if ((sts & 1) == 0) {
-                    cacheuntouch(&wcb->cache,0,0);
-                    cachefree(&wcb->cache);
-                    return sts;
-                }
-                wcb->hd_base = wd_base;
-            }
-        } while (wd_base <= vbn);
-        memcpy(&wcb->hd_fid,&head->fh2$w_fid,sizeof(struct fiddef));
-        wcb->hd_fid.fid$b_rvn = rvn;
-        wcb->hiblk = wd_base - 1;
-        wcb->extcount = wd_exts;
-        if (vioc != NULL) deaccesshead(vioc,NULL,0);
-    } {
-        register struct EXT *ext = wcb->ext;
-        register unsigned extcnt = wcb->extcount;
-        register unsigned togo = vbn - wcb->loblk;
-        while (togo >= ext->phylen) {
-            togo -= (ext++)->phylen;
-            if (extcnt-- < 1) return SS$_BUGCHECK;
-        }
-        *phyrvn = wcb->hd_fid.fid$b_rvn;
-        *phyblk = ext->phyblk + togo;
-        *phylen = ext->phylen - togo;
-#ifdef DEBUG
-        printf("Mapping vbn %d to %d (%d -> %d)[%d] file (%x)\n",
-               vbn,*phyblk,wcb->loblk,wcb->hiblk,wcb->hd_base,fcb->cache.keyval);
-#endif
-        cacheuntouch(&wcb->cache,1,0);
-    }
-    return SS$_NORMAL;
-}
-
-
-/* Object manager for VIOC objects:- if the object has been
-   modified then we need to flush it to disk before we let
-   the cache routines do anything to it...
-   This version rewrites the whole chunk - but we really should
-   just rewrite the blocks modified as indicated by modmask!  */
-
-struct CACHE *viocmanager(struct CACHE * cacheobj)
-{
-    register struct VIOC *vioc = (struct VIOC *) cacheobj;
-    if (vioc->cache.status & CACHE_MODIFIED) {
-        register int length = VIOC_CHUNKSIZE;
-        register struct FCB *fcb = vioc->fcb;
-        register unsigned base = vioc->cache.keyval;
-        register char *address = (char *) vioc->data;
-        printf("\nviocmanager writing vbn %d\n",base);
-        cachetouch(&fcb->cache);
-        do {
-            register unsigned sts;
-            unsigned rvn,mapblk,maplen;
-            register struct VCBDEV *vcbdev;
-            if (fcb->highwater > 0 && base >= fcb->highwater) break;
-            sts = getwindow(fcb,base,&rvn,&mapblk,&maplen);
-            if (sts & 1) {
-                if (maplen > (unsigned)length) maplen = length;
-                if (fcb->highwater > 0 && base + maplen > fcb->highwater) {
-                    maplen = fcb->head->fh2$l_highwater - base;
-                }
-                if (rvn > fcb->vcb->devices) {
-                    sts = SS$_NOSUCHFILE;
-                } else {
-                    if (rvn < 2) {
-                        vcbdev = fcb->vcb->vcbdev;
-                    } else {
-                        vcbdev = &fcb->vcb->vcbdev[rvn - 1];
-                    }
-                    if (vcbdev->dev == NULL) return NULL;
-                    sts = phyio_write(vcbdev->dev->handle,mapblk,maplen * 512,address);
-                }
-            }
-            if ((sts & 1) == 0) {
-                return NULL;
-            }
-            length -= maplen;
-            base += maplen;
-            address += maplen * 512;
-        } while (length > 0);
-        cacheuntouch(&fcb->cache,1,0);
-        cacheobj->status &= ~CACHE_MODIFIED;
-    }
-    return cacheobj;
-}
-
-
-/* deaccess a VIOC (chunk of a file) */
-
-unsigned deaccesschunk(struct VIOC *vioc,unsigned modmask,int reuse)
-{
-#ifdef DEBUG
-    printf("Deaccess chunk %8x\n",vioc->cache.keyval);
-#endif
-    if ((vioc->wrtmask | modmask) == vioc->wrtmask) {
-        vioc->modmask |= modmask;
-        if (vioc->cache.refcount == 1) vioc->wrtmask = 0;
-        return cacheuntouch(&vioc->cache,reuse,modmask);
-    } else {
-        return SS$_WRITLCK;
-    }
-}
-
-
-
-
-/* accesschunk: return pointer to a 'chunk' of a file ... */
-
-unsigned accesschunk(struct FCB *fcb,unsigned vbn,struct VIOC **retvioc,
-                     char **retbuff,unsigned *retblocks,unsigned wrtblks,
-                     unsigned *retmodmask)
-{
-    /*
-        First find cache entry...
-    */
-    register struct VIOC *vioc;
-    unsigned create = sizeof(struct VIOC);
-    register unsigned base = (vbn - 1) / VIOC_CHUNKSIZE * VIOC_CHUNKSIZE + 1;
-#ifdef DEBUG
-    printf("Access chunk %8x %d (%x)\n",base,vbn,fcb->cache.keyval);
-#endif
-    if (wrtblks && ((fcb->cache.status & CACHE_WRITE) == 0)) return SS$_WRITLCK;
-    if (vbn < 1 || vbn > fcb->hiblock) return SS$_ENDOFFILE;
-    vioc = cachesearch((void *) &fcb->vioc,base,0,NULL,NULL,&create);
-    if (vioc == NULL) return SS$_INSFMEM;
-    /*
-        If not found make one...
-    */
-    if (create == 0) {
-        register unsigned length;
-        register char *address;
-        register unsigned mapbase = base;
-        vioc->cache.status |= 0x400;    /* For debugging! */
-        vioc->fcb = fcb;
-        vioc->wrtmask = 0;
-        vioc->modmask = 0;
-        length = fcb->hiblock - mapbase + 1;
-        if (length > VIOC_CHUNKSIZE) length = VIOC_CHUNKSIZE;
-        address = (char *) vioc->data;
-        do {
-            if (fcb->highwater > 0 && mapbase >= fcb->highwater) {
-                memset(address,0,length * 512);
-                length = 0;
-            } else {
-                register unsigned sts;
-                unsigned rvn,mapblk,maplen;
-                register struct VCBDEV *vcbdev;
-                sts = getwindow(fcb,mapbase,&rvn,&mapblk,&maplen);
-                if (sts & 1) {
-                    if (maplen > length) maplen = length;
-                    if (fcb->highwater > 0 && mapbase + maplen > fcb->highwater) {
-                        maplen = fcb->head->fh2$l_highwater - mapbase;
-                    }
-                    if (rvn > fcb->vcb->devices) {
-                        sts = SS$_NOSUCHFILE;
-                    } else {
-                        if (rvn < 2) {
-                            vcbdev = fcb->vcb->vcbdev;
-                        } else {
-                            vcbdev = &fcb->vcb->vcbdev[rvn - 1];
-                        }
-                        if (vcbdev->dev == NULL) return SS$_NOSUCHFILE;
-                        sts = phyio_read(vcbdev->dev->handle,mapblk,maplen * 512,address);
-                    }
-                }
-                if ((sts & 1) == 0) {
-                    cacheuntouch(&vioc->cache,0,0);
-                    cachefree(&vioc->cache);
-                    return sts;
-                }
-                length -= maplen;
-                mapbase += maplen;
-                address += maplen * 512;
-            }
-        } while (length > 0);
-    }
-    if (wrtblks) {
-        vioc->cache.status |= CACHE_WRITE;
-        vioc->cache.objmanager = viocmanager;
-    }
-    /*
-        Return result to caller...
-    */
-    *retvioc = vioc;
-    *retbuff = vioc->data[vbn - base];
-    if (wrtblks || retblocks != NULL || retmodmask != NULL) {
-        register unsigned modmask = 0;
-        register unsigned blocks = base + VIOC_CHUNKSIZE - vbn;
-        if (blocks > fcb->hiblock - vbn) blocks = fcb->hiblock - vbn + 1;
-            if (wrtblks) if (blocks > wrtblks) blocks = wrtblks;
-        if (retblocks != NULL) *retblocks = blocks;
-        if (wrtblks) {
-            modmask = 1 << (vbn - base);
-            if (blocks > 1) {
-                while (--blocks > 0) modmask |= modmask << 1;
-            }
-            vioc->wrtmask |= modmask;
-        }
-        if (retmodmask != NULL) *retmodmask = modmask;
-    }
-    return SS$_NORMAL;
 }
