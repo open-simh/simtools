@@ -1,9 +1,10 @@
-#ifndef PHYIO_H
-#define PHYIO_H
+#ifndef DISKIO_H
+#define DISKIO_H
 
-    /* Phyio.h  v1.2-2   Definition of Physical I/O routines */
+/* diskio.h - ANSI C Disk I/O - for .ISO and simulator disks */
 
-/*
+/* Timothe Litt Feb 2016
+ *
         This is part of ODS2 written by Paul Nankervis,
         email address:  Paulnank@au1.ibm.com
 
@@ -33,20 +34,10 @@
 
 */
 
-#include <stdio.h>
+char *diskio_mapfile( const char *filename, int options );
 
-#define PHYIO_READONLY 1
+int diskio_unmapdrive( const char *drive );
 
-struct phyio_info {
-    unsigned status;
-    unsigned long long sectors;
-    unsigned sectorsize;
-};
-
-void phyio_show(void);
-unsigned phyio_init(int devlen,char *devnam,unsigned *handle,struct phyio_info *info);
-unsigned phyio_read(unsigned handle,unsigned block,unsigned length,char *buffer);
-unsigned phyio_write(unsigned handle,unsigned block,unsigned length,char *buffer);
-void phyio_help(FILE *fp );
+int diskio_showdrives( void );
 
 #endif

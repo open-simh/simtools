@@ -61,6 +61,15 @@ struct HANDLE {
     int hand_drive;
 } handle[HANDLE_MAX];
 
+void phyio_help(FILE *fp ) {
+    fprintf( fp, "Specify the device to be mounted as a drive letter\n" );
+    fprintf( fp, "E.g. mount D:\n" );
+    fprintf( fp, "The drive letter must be between A: and Z:\n" );
+    fprintf( fp, "The drive is accessed as a physical device\n" );
+    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+  return;
+}
+
 unsigned phyio_init(int devlen,char *devnam,unsigned *hand,struct phyio_info *info)
 {
     if (hand_count < HANDLE_MAX - 1) {

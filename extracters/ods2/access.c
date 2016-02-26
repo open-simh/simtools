@@ -24,7 +24,7 @@
 #include "ssdef.h"
 #include "access.h"
 #include "phyio.h"
-
+#include "compat.h"
 
 #define DEBUGx
 
@@ -158,6 +158,9 @@ int wcb_compare(unsigned hashval,void *keyval,void *thiswcb)
 {
     register struct WCBKEY *wcbkey = (struct WCBKEY *) keyval;
     register struct WCB *wcb = (struct WCB *) thiswcb;
+
+    UNUSED(hashval);
+
     if (wcbkey->vbn < wcb->loblk) {
         return -1;              /* Search key is less than this window maps... */
     } else {
@@ -215,6 +218,9 @@ struct HEAD *premap_indexf(struct FCB *fcb,unsigned *retsts)
 void *wcb_create(unsigned hashval,void *keyval,unsigned *retsts)
 {
     register struct WCB *wcb = (struct WCB *) malloc(sizeof(struct WCB));
+
+    UNUSED(hashval);
+
     if (wcb == NULL) {
         *retsts = SS$_INSFMEM;
     } else {
@@ -276,6 +282,10 @@ void *wcb_create(unsigned hashval,void *keyval,unsigned *retsts)
                         phylen = ((VMSWORD(*mp) & 037777) << 16) + VMSWORD(mp[1]) + 1;
                         phyblk = (VMSWORD(mp[3]) << 16) | VMSWORD(mp[2]);
                         mp += 4;
+                        break;
+                    default:
+                        printf( "Unknown type %x\n", (VMSWORD(*mp)>>14) );
+                        exit(1);
                 }
                 curvbn += phylen;
                 if (phylen != 0 && curvbn > wcb->loblk) {
@@ -368,16 +378,19 @@ unsigned getwindow(struct FCB * fcb,unsigned vbn,struct VCBDEV **devptr,
 void *vioc_manager(struct CACHE * cacheobj,int flushonly)
 {
     register struct VIOC *vioc = (struct VIOC *) cacheobj;
+
+    UNUSED(flushonly);
+
     if (vioc->modmask != 0) {
         register struct FCB *fcb = vioc->fcb;
-        register int length = VIOC_CHUNKSIZE;
+        register unsigned int length = VIOC_CHUNKSIZE;
         register unsigned curvbn = vioc->cache.hashval + 1;
         register char *address = (char *) vioc->data;
         register unsigned modmask = vioc->modmask;
         printf("\nvioc_manager writing vbn %d\n",curvbn);
         do {
             register unsigned sts;
-            int wrtlen = 0;
+            unsigned int wrtlen = 0;
             unsigned phyblk,phylen;
             struct VCBDEV *vcbdev;
             while (length > 0 && (1 & modmask) == 0) {
@@ -448,7 +461,7 @@ void *vioc_create(unsigned hashval,void *keyval,unsigned *retsts)
     if (vioc == NULL) {
         *retsts = SS$_INSFMEM;
     } else {
-        register int length;
+        register unsigned int length;
         register unsigned curvbn = hashval + 1;
         register char *address;
         register struct FCB *fcb = (struct FCB *) keyval;
@@ -499,7 +512,7 @@ unsigned accesschunk(struct FCB *fcb,unsigned vbn,struct VIOC **retvioc,
                      char **retbuff,unsigned *retblocks,unsigned wrtblks)
 {
     unsigned sts;
-    register int blocks;
+    register unsigned int blocks;
     register struct VIOC *vioc;
 #ifdef DEBUG
     printf("Access chunk %8x %d (%x)\n",base,vbn,fcb->cache.hashval);
@@ -590,6 +603,10 @@ void *fcb_manager(struct CACHE *cacheobj,int flushonly)
 void *fcb_create(unsigned filenum,void *keyval,unsigned *retsts)
 {
     register struct FCB *fcb = (struct FCB *) malloc(sizeof(struct FCB));
+
+    UNUSED(filenum);
+    UNUSED(keyval);
+
     if (fcb == NULL) {
         *retsts = SS$_INSFMEM;
     } else {
@@ -718,9 +735,12 @@ unsigned dismount(struct VCB * vcb)
 
 unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],struct VCB **retvcb)
 {
-    register unsigned device,sts;
+    register unsigned device,sts = 0;
     struct VCB *vcb;
     struct VCBDEV *vcbdev;
+
+    UNUSED(label);
+
     if (sizeof(struct HOME) != 512 || sizeof(struct HEAD) != 512) return SS$_NOTINSTALL;
     vcb = (struct VCB *) malloc(sizeof(struct VCB) + (devices - 1) * sizeof(struct VCBDEV));
     if (vcb == NULL) return SS$_INSFMEM;
@@ -733,7 +753,7 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],stru
         sts = SS$_NOSUCHVOL;
         vcbdev->dev = NULL;
         if (strlen(devnam[device])) {
-            int hba;
+            unsigned int hba;
             sts = device_lookup(strlen(devnam[device]),devnam[device],1,&vcbdev->dev);
             if (!(sts & 1)) break;
             for (hba = 1; hba <= HOME_LIMIT; hba++) {
@@ -789,8 +809,12 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],stru
                                     vcbdev->clustersize = vcbdev->home.hm2$w_cluster;
                                     vcbdev->max_cluster = (scb->scb$l_volsize + scb->scb$w_cluster - 1) / scb->scb$w_cluster;
                                     deaccesschunk(vioc,0,0,0);
-				    sts = update_freecount(vcbdev,&vcbdev->free_clusters);
-printf("Freespace is %d\n",vcbdev->free_clusters);
+                                    sts = update_freecount(vcbdev,&vcbdev->free_clusters);
+#ifdef DEBUG
+                                    printf( "%d of %d blocks are free on %12.12s\n",
+                                            vcbdev->free_clusters * vcbdev->clustersize, scb->scb$l_volsize,
+                                            vcbdev->home.hm2$t_volname );
+#endif
                                 }
                             }
                         }

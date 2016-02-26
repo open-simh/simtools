@@ -1,34 +1,19 @@
+# Makefile for Tru64 (DEC/OSF1)
+#
 
-CCFLAGS = "-g"
+CCFLAGS = -O4 -g
 
-all : ods2
+# DEFS = -DUSE_READLINE
+# LDFLAGS = -lreadline
 
-ods2 : ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
-	cc $(CCFLAGS) -o ods2 ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
+# Object file extension
+OBJ = .o
 
-vmstime.o : vmstime.c vmstime.h
-	cc -c $(CCFLAGS) $(DEFS) vmstime.c
+# Physical I/O module
+PHYSIO = phyunix
+PHYSIOH =
 
-cache.o : cache.c cache.h ssdef.h
-	cc -c $(CCFLAGS) $(DEFS) cache.c
+include makefile.generic
 
-phyunix.o : phyunix.c phyio.h ssdef.h
-	cc -c $(CCFLAGS) $(DEFS) phyunix.c
-
-device.o : device.c ssdef.h access.h phyio.h
-	cc -c $(CCFLAGS) $(DEFS) device.c
-
-access.o : access.c ssdef.h access.h phyio.h
-	cc -c $(CCFLAGS) $(DEFS) access.c
-
-update.o : update.c ssdef.h access.h
-	cc -c $(CCFLAGS) $(DEFS) update.c
-
-direct.o : direct.c direct.h access.h fibdef.h descrip.h ssdef.h
-	cc -c $(CCFLAGS) $(DEFS) direct.c
-
-rms.o : rms.c rms.h direct.h access.h fibdef.h descrip.h ssdef.h
-	cc -c $(CCFLAGS) $(DEFS) rms.c
-
-ods2.o : ods2.c ssdef.h descrip.h access.h rms.h
-	cc -c $(CCFLAGS) $(DEFS) ods2.c
+clean:
+	rm -f ods2 $(OBJS)

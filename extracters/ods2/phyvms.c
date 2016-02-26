@@ -60,6 +60,14 @@ void phyio_show(void)
            init_count,read_count,write_count);
 }
 
+void phyio_help(FILE *fp ) {
+    fprintf( fp, "Specify the device to be mounted as a VMS device or logical name\n" );
+    fprintf( fp, "E.g. mount DUB0:\n" );
+    fprintf( fp, "You will need the LOGIO privilege\n" );
+    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+    return;
+}
+
 
 unsigned phyio_init(int devlen,char *devnam,unsigned *handle,struct phyio_info *info)
 {

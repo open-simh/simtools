@@ -1,0 +1,95 @@
+# Generic makefile for ods2
+#
+# See makefile.<osname>, which normally includes it
+#
+# If your make doesn't support include, these can be
+# specified manually, for example:
+#   make CC=gcc "CCFLAGS=-O4 -f" OBJ=.o \
+#        PHYSIO=phyunix DEFS=-DUSE_READLINE LDFLAGS=-lreadline
+#
+# or just combine the files you need with an editor.
+#
+# ###
+
+# OS-Specific defines
+# These variables are available
+
+# Other defines = "-DDEBUG_BUILD" "-D_FILE_OFFSET_BITS=32"
+#DEFS =
+
+# Libraries, e.g. -lreadline
+#LDFLAGS =
+
+# Object file suffix
+#OBJ = .o
+
+# Physical IO module
+#PHYSIO = phyunix
+
+# Extra physical IO headers
+#PHYSIOH =
+
+# #####################################################
+
+all : ods2 ods2i
+
+OBJS = $(ODS2_OBJS) $(ODS2I_OBJS)
+
+COMMON_OBJS =  \
+access$(OBJ) \
+cache$(OBJ) \
+compat$(OBJ)\
+device$(OBJ) \
+direct$(OBJ) \
+rms$(OBJ) \
+sysmsg$(OBJ) \
+update$(OBJ) \
+vmstime$(OBJ)
+
+ODS2_OBJS = ods2$(OBJ) $(COMMON_OBJS) $(PHYSIO)$(OBJ)
+ODS2I_OBJS = ods2i$(OBJ) $(COMMON_OBJS) diskio$(OBJ)
+
+ods2 : $(ODS2_OBJS) $(LIBS)
+	$(CC) $(CCFLAGS) -o ods2 $(ODS2_OBJS) $(LDFLAGS)
+
+ods2i : $(ODS2I_OBJS)
+	$(CC) $(CCFLAGS) -o ods2i $(ODS2I_OBJS) $(LDFLAGS)
+
+access$(OBJ) : access.c ssdef.h access.h phyio.h compat.h
+	$(CC) -c $(CCFLAGS) $(DEFS) access.c
+
+cache$(OBJ) : cache.c cache.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) cache.c
+
+compat$(OBJ) : compat.c compat.h
+	$(CC) -c $(CCFLAGS) $(DEFS) compat.c
+
+device$(OBJ) : device.c ssdef.h access.h phyio.h
+	$(CC) -c $(CCFLAGS) $(DEFS) device.c
+
+direct$(OBJ) : direct.c direct.h access.h fibdef.h descrip.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) direct.c
+
+diskio$(OBJ) : diskio.c diskio.h compat.h phyio.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) diskio.c
+
+ods2$(OBJ) : ods2.c compat.h sysmsg.h phyio.h ssdef.h descrip.h access.h rms.h version.h
+	$(CC) -c $(CCFLAGS) $(VERSION) $(DEFS) ods2.c
+
+ods2i$(OBJ) : ods2.c compat.h diskio.h sysmsg.h phyio.h ssdef.h descrip.h access.h rms.h version.h
+	$(CC) -c $(CCFLAGS) $(DEFS) -DDISKIMAGE -o ods2i$(OBJ) ods2.c
+
+$(PHYSIO)$(OBJ) : $(PHYSIO).c phyio.h ssdef.h compat.h $(PHYSIOH)
+	$(CC) -c $(CCFLAGS) $(DEFS) $(PHYSIO).c
+
+rms$(OBJ) : rms.c rms.h compat.h direct.h access.h fibdef.h descrip.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) rms.c
+
+sysmsg$(OBJ) : sysmsg.c sysmsg.h rms.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) sysmsg.c
+
+update$(OBJ) : update.c ssdef.h access.h
+	$(CC) -c $(CCFLAGS) $(DEFS) update.c
+
+vmstime$(OBJ) : vmstime.c vmstime.h
+	$(CC) -c $(CCFLAGS) $(DEFS) vmstime.c

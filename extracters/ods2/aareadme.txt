@@ -46,6 +46,8 @@ How do I build it?
    compile using the gcc command:-
        gcc -fdollars-in-identifiers ods2.c,rms.c,direct.c,
                       access.c,device.c,cache.c,phyos2.c,vmstime.c
+  On unix, use "CCFLAGS=-DUSE_READLINE" "LDFLAGS=-lreadline" for
+  readline (command history and editing) support.
 
 What can it do?
    Basically ODS2 provides cut down DIRECTORY, COPY and
@@ -148,18 +150,27 @@ Can I see a command sample?
 
 What commands are supported?
   A summary is:-
-     mount       DRIVE:[,DRIVE:...]
+     mount       /write DRIVE:[,DRIVE:...]
      directory   [/file|/size|/date]   [FILE-SPEC]
-     copy        FILE-SPEC  OUTPUT-FILE
+     copy        VMSFILE-SPEC  HOST-OUTPUT-FILE
+     delete
+     difference  VMSNAME hostname (0-terminated string diff?!)
      dismount    DRIVE:
+     extend
+     import      hostname VMSNAME copy file to ODS-2
      search      FILE-SPEC  STRING
      set default DIR-SPEC
      show default
      show time
+     statistics
+     type        VMSNAME
      exit
           Note  - DRIVE: is normally the native system drive name,
                   for example D: might be a CD on a PC - xxx: might be
-                  /dev/xxx on a Unix system.
+                  /dev/xxx on a Unix system.  (Actually, on a unix
+                  system, '/' can't be parsed.  So specify the last
+                  component - the rest is hardcoded.  E.g. /dev/loop0
+                  is specified as /loop0.
                 - when a list of drives is specified on the mount command
                   they are assumed to contain a single valid volume set
                   (this is not validated!!)

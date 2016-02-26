@@ -30,6 +30,7 @@ typedef unsigned int vmsswap;
 typedef unsigned int vmslong;
 
 #define FH2$M_NOBACKUP   0x2
+#define FH2$M_CONTIGB    0x20
 #define FH2$M_CONTIG     0x80
 #define FH2$M_DIRECTORY  0x2000
 #define FH2$M_MARKDEL    0x8000
@@ -229,20 +230,21 @@ struct DIRCACHE {
 
 #define VCB_WRITE 1
 
+struct VCBDEV {
+    struct DEV *dev;            /* Pointer to device info */
+    struct FCB *idxfcb;         /* Index file control block */
+    struct FCB *mapfcb;         /* Bitmap file control block */
+    unsigned clustersize;       /* Cluster size of the device */
+    unsigned max_cluster;       /* Total clusters on the device */
+    unsigned free_clusters;     /* Free clusters on disk volume */
+    struct HOME home;           /* Volume home block */
+};
 struct VCB {
     unsigned status;            /* Volume status */
     unsigned devices;           /* Number of volumes in set */
     struct FCB *fcb;            /* File control block tree */
     struct DIRCACHE *dircache;  /* Directory cache tree */
-    struct VCBDEV {
-        struct DEV *dev;        /* Pointer to device info */
-        struct FCB *idxfcb;     /* Index file control block */
-        struct FCB *mapfcb;     /* Bitmap file control block */
-        unsigned clustersize;   /* Cluster size of the device */
-        unsigned max_cluster;   /* Total clusters on the device */
-	unsigned free_clusters;	/* Free clusters on disk volume */
-        struct HOME home;       /* Volume home block */
-    } vcbdev[1];                /* List of volumes devices */
+    struct VCBDEV vcbdev[1];    /* List of volumes devices */
 };                              /* Volume control block */
 
 
@@ -251,7 +253,7 @@ struct DEV {
     struct VCB *vcb;            /* Pointer to volume (if mounted) */
     unsigned handle;            /* Device physical I/O handle */
     unsigned status;            /* Device physical status */
-    unsigned sectors;           /* Device physical sectors */
+    unsigned long long sectors;           /* Device physical sectors */
     unsigned sectorsize;        /* Device physical sectorsize */
     char devnam[1];             /* Device name */
 };                              /* Device information */

@@ -1,36 +1,22 @@
+# Makefile for solaris OS
 
-CCFLAGS = "-g"
+# Use gcc
 
-DEFS = "-DVERSION=\"v1.3\""
+CC=gcc
 
-all : ods2
+CCFLAGS = -O4 -g
 
-ods2 : ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
-	gcc $(CCFLAGS) -oods2 ods2.o rms.o direct.o update.o access.o device.o phyunix.o cache.o vmstime.o
+DEFS = -DUSE_READLINE
+LDFLAGS = -lreadline
 
-vmstime.o : vmstime.c vmstime.h
-	gcc -c $(CCFLAGS) $(DEFS) vmstime.c
+# Object file extension
+OBJ = .o
 
-cache.o : cache.c cache.h ssdef.h
-	gcc -c $(CCFLAGS) $(DEFS) cache.c
+# Physical I/O module
+PHYSIO = phyunix
+PHYSIOH =
 
-phyunix.o : phyunix.c phyio.h ssdef.h
-	gcc -c $(CCFLAGS) $(DEFS) phyunix.c
+include makefile.generic
 
-device.o : device.c ssdef.h access.h phyio.h
-	gcc -c $(CCFLAGS) $(DEFS) device.c
-
-access.o : access.c ssdef.h access.h phyio.h
-	gcc -c $(CCFLAGS) $(DEFS) access.c
-
-update.o : update.c ssdef.h access.h
-	gcc -c $(CCFLAGS) $(DEFS) update.c
-
-direct.o : direct.c direct.h access.h fibdef.h descrip.h ssdef.h
-	gcc -c $(CCFLAGS) $(DEFS) direct.c
-
-rms.o : rms.c rms.h direct.h access.h fibdef.h descrip.h ssdef.h
-	gcc -c $(CCFLAGS) $(DEFS) rms.c
-
-ods2.o : ods2.c ssdef.h descrip.h access.h rms.h
-	gcc -c $(CCFLAGS) $(DEFS) ods2.c
+clean:
+	rm -f ods2 $(OBJS)

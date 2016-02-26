@@ -33,7 +33,7 @@ struct VCBDEV *rvn_to_dev(struct VCB *vcb,unsigned rvn);
 
 unsigned update_freecount(struct VCBDEV *vcbdev,unsigned *retcount)
 {
-    register unsigned sts;
+    register unsigned sts = 1;
     register unsigned free_clusters = 0;
     register unsigned map_block, map_end = (vcbdev->max_cluster + 4095) / 4096 + 2;
     for (map_block = 2; map_block < map_end; ) {
@@ -270,7 +270,7 @@ unsigned update_findhead(struct VCBDEV *vcbdev,unsigned *rethead_no,
                             *work_ptr |= 1 << bit_no;
                             modify_flag = 1;
                             if ((*headbuff)->fh2$w_checksum != 0 || (*headbuff)->fh2$w_fid.fid$w_num != 0 ||
-                                VMSLONG((*headbuff)->fh2$l_filechar) & FH2$M_MARKDEL == 0) {
+                                (VMSLONG((*headbuff)->fh2$l_filechar) & FH2$M_MARKDEL) == 0) {
                                 sts = deaccesschunk(*retvioc,0,0,0);
                             } else {
                                 *rethead_no = head_no + 1;
@@ -302,6 +302,9 @@ unsigned update_addhead(struct VCB *vcb,char *filename,struct fiddef *back,
     struct IDENT *id;
     struct HEAD *head;
     struct VCBDEV *vcbdev = NULL;
+
+    if( rethead != NULL ) *rethead = NULL;
+
     for (device = 0; device < vcb->devices; device++) {
         if (vcb->vcbdev[device].dev != NULL) {
             if (vcb->vcbdev[device].free_clusters > free_space) {
@@ -315,7 +318,7 @@ unsigned update_addhead(struct VCB *vcb,char *filename,struct fiddef *back,
 
     sts = update_findhead(vcbdev,&head_no,vioc,&head,idxblk);
     if (!(sts & 1)) return sts;
-    printf("Header %d index %d rvn %d\n",head_no,idxblk,rvn);
+    printf("Header %d index %u rvn %u\n",head_no,*idxblk,rvn);
     fid->fid$w_num = head_no;
     fid->fid$w_seq = ++head->fh2$w_fid.fid$w_seq;
     if (fid->fid$w_seq == 0) fid->fid$w_seq = 1;
@@ -354,6 +357,7 @@ unsigned update_addhead(struct VCB *vcb,char *filename,struct fiddef *back,
         unsigned short check = checksum((vmsword *) head);
         head->fh2$w_checksum = VMSWORD(check);
     }
+    if( rethead != NULL ) *rethead = head;
     return 1;
 }
 
@@ -424,7 +428,7 @@ unsigned update_extend(struct FCB *fcb,unsigned blocks,unsigned contig)
     sts = bitmap_search(vcbdev,&start_pos,&block_count);
     printf("Update_extend %d %d\n",start_pos,block_count);
     if (sts & 1) {
-        if (block_count < 1 || contig && block_count * vcbdev->clustersize < blocks) {
+      if (block_count < 1 || (contig && block_count * vcbdev->clustersize < blocks)) {
             sts = SS$_DEVICEFULL;
         } else {
             register unsigned short *mp;

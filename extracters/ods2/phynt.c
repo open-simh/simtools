@@ -25,7 +25,7 @@
 #include <memory.h>
 
 #include "ssdef.h"
-
+#include "compat.h"
 
 
 /*
@@ -42,6 +42,7 @@
         you find a better way please let me know... Paulnank@au1.ibm.com
 */
 
+#ifdef USE_WNASPI32
 #include "wnaspi32.h"
 #include "scsidefs.h"
 
@@ -239,8 +240,25 @@ unsigned aspi_initialize(short *dev_type,short *dev_bus,short *dev_id,unsigned *
     printf("Could not find suitable ASPI device\n");
     return 8;
 }
+#else
+unsigned aspi_read(short bus,short id,unsigned sector,unsigned sectorsize,char *buffer)
+{
+    fprintf( stderr, "wnaspi32 support not compiled in this version\n" );
+    exit(1);
+}
+unsigned aspi_write(short bus,short id,unsigned sector,unsigned sectorsize,char *buffer)
+{
+    fprintf( stderr, "wnaspi32 support not compiled in this version\n" );
+    exit(1);
+}
+unsigned aspi_initialize(short *dev_type,short *dev_bus,short *dev_id,unsigned *sectsize)
+{
+    fprintf( stderr, "wnaspi32 support not compiled in this version\n" );
+    exit(1);
+}
+unsigned int ASPI_status = 0,ASPI_HaStat = 0,ASPI_TargStat = 0;
 
-
+#endif
 
 
 /* Some NT definitions... */
@@ -412,7 +430,9 @@ unsigned phy_getsect(unsigned chan,unsigned sector)
                                           &reg,sizeof(reg),
                                           &cb,0);
                 if (!fResult || (reg.reg_Flags & 0x0001)) {
-                    printf("Sector %d read failed %d\n",sector,GetLastError());
+                    TCHAR *msg = w32_errstr(0);
+                    printf("Sector %d read failed %s\n",sector,msg);
+                    LocalFree(msg);
                     sts = SS$_PARITY;
                 }
             }
@@ -464,111 +484,147 @@ void phyio_show(void)
 
 /* Initialize device by opening it, locking it and getting it ready.. */
 
+void phyio_help(FILE *fp ) {
+    fprintf( fp, "Specify the device to be mounted as a drive letter.\n" );
+    fprintf( fp, "E.g. mount D:\n" );
+#ifdef USE_WNASPI32
+    fprintf( fp, "If the drive letter is C: or higher, commands are\n" );
+    fprintf( fp, "sent directly to the drive, bypassing system drivers.\n" );
+    fprintf( fp, "The drive must be a SCSI device\n" );
+#endif
+    fprintf( fp, "The drive letter must be between A: and Z:.\n" );
+    fprintf( fp, "The drive is accessed as a physical device, which may require privileges.\n" );
+    fprintf( fp, "Use show DEVICES for a list of available devices.\n" );
+    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+    return;
+}
+
 unsigned phyio_init(int devlen,char *devnam,unsigned *chanptr,struct phyio_info *info)
 {
     unsigned sts = 1;
     unsigned chan = chan_count;
-    if (chan < CHAN_MAX - 1 && devlen == 2 &&
-        toupper(*devnam) >= 'A' && *(devnam + 1) == ':') {
-        HANDLE hDrive;
-        chantab[chan].device_status = 0;
-        chantab[chan].device_name = toupper(*devnam);
-        chantab[chan].device_dtype = -1;
+    if (chan >= CHAN_MAX - 1)
+        return SS$_IVCHAN;
 
+    if( !(devlen == 2 &&
+          toupper(*devnam) >= 'A' && toupper(*devnam) <= 'Z' && *(devnam + 1) == ':') )
+          return SS$_NOSUCHDEV;
+
+    chantab[chan].device_status = 0;
+    chantab[chan].device_name = toupper(*devnam);
+    chantab[chan].device_dtype = -1;
+
+    do {
+        HANDLE hDrive;
+
+#ifdef USE_WNASPI32
         /* Use ASPI for devices past C... */
 
         if (toupper(*devnam) > 'C') {
             sts = aspi_initialize(&chantab[chan].device_dtype,
-                                  &chantab[chan].device_bus,&chantab[chan].device_id,
-                                  &chantab[chan].sectorsize);
+                                    &chantab[chan].device_bus,&chantab[chan].device_id,
+                                    &chantab[chan].sectorsize);
             if ((sts & 1) == 0) return sts;
-        } else {
+            break;
+        }
+#endif
+        if (is_NT > 1) getsysversion();
 
-            if (is_NT > 1) getsysversion();
+        /* NT stuff */
 
-            /* NT stuff */
-
-            if (is_NT) {
-                char ntname[20];
-                DISK_GEOMETRY Geometry;
-                sprintf(ntname,"\\\\.\\%s",devnam);
-                chantab[chan].handle = hDrive = CreateFile(ntname,
-                                                           GENERIC_READ,FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                                           NULL,OPEN_EXISTING,FILE_FLAG_NO_BUFFERING,NULL);
-                if (hDrive == INVALID_HANDLE_VALUE) {
-                    printf("Open %s failed %d\n",devnam,GetLastError());
-                    return SS$_NOSUCHDEV;
-                }
-                if (LockVolume(hDrive) == FALSE) {
-                    printf("LockVolume %s failed %d\n",devnam,GetLastError());
-                    return 72;
-                }
-                if (!GetDiskGeometry(hDrive,&Geometry)) {
-                    printf("GetDiskGeometry %s failed %d\n",devnam,GetLastError());
-                    return 80;
-                }
-                chantab[chan].sectorsize = Geometry.BytesPerSector;
-                info->sectors = Geometry.Cylinders.QuadPart * Geometry.TracksPerCylinder *
-                            Geometry.SectorsPerTrack;
-            } else {
-
-                /* W95 stuff */
-
-                DIOC_REGISTERS reg;
-                DEVICEPARAM deviceparam;
-                BOOL fResult;
-                DWORD cb;
-                chantab[chan].handle = hDrive = CreateFile("\\\\.\\vwin32",
-                                                           0,0,NULL,0,FILE_FLAG_DELETE_ON_CLOSE,NULL);
-                if (hDrive == INVALID_HANDLE_VALUE) {
-                    printf("Open %s failed %d\n",devnam,GetLastError());
-                    return SS$_NOSUCHDEV;
-                }
-                reg.reg_EAX = 0x440d;
-                reg.reg_EBX = chantab[chan].device_name - 'A' + 1;
-                reg.reg_ECX = 0x084a;   /* Lock volume */
-                reg.reg_EDX = 0;
-                reg.reg_Flags = 0x0000; /* Permission  */
-
-                fResult = DeviceIoControl(hDrive,VWIN32_DIOC_DOS_IOCTL,
-                                          &reg,sizeof(reg),&reg,sizeof(reg),&cb,0);
-
-                if (!fResult || (reg.reg_Flags & 0x0001)) {
-                    printf("Volume lock failed (%d)\n",GetLastError());
-                    return SS$_DEVNOTALLOC;
-                }
-                reg.reg_EAX = 0x440d;
-                reg.reg_EBX = chantab[chan].device_name - 'A' + 1;
-                reg.reg_ECX = 0x0860;   /* Get device parameters */
-                reg.reg_EDX = (DWORD) & deviceparam;
-                reg.reg_Flags = 0x0001; /* set carry flag  */
-
-                fResult = DeviceIoControl(hDrive,
-                                          VWIN32_DIOC_DOS_IOCTL,
-                                          &reg,sizeof(reg),
-                                          &reg,sizeof(reg),
-                                          &cb,0);
-
-                if (!fResult || (reg.reg_Flags & 0x0001)) {
-                    printf("Volume get parameters failed (%d)\n",GetLastError());
-                    return 8;
-                }
-                chantab[chan].sectorsize = deviceparam.sec_size;
+        if (is_NT) {
+            char ntname[20];
+            DISK_GEOMETRY Geometry;
+            snprintf(ntname,sizeof(ntname),"\\\\.\\%s",devnam);
+            chantab[chan].handle = hDrive = CreateFile(ntname,
+                                                        GENERIC_READ,FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                                        NULL,OPEN_EXISTING,FILE_FLAG_NO_BUFFERING,NULL);
+            if (hDrive == INVALID_HANDLE_VALUE) {
+                TCHAR *msg = w32_errstr(0);
+                printf("Open %s failed %s\n",devnam,msg);
+                LocalFree(msg);
+                return SS$_NOSUCHDEV;
             }
-            info->sectors = 0;
+            if (LockVolume(hDrive) == FALSE) {
+                TCHAR *msg = w32_errstr(0);
+                printf("LockVolume %s failed %s\n",devnam,msg);
+                LocalFree(msg);
+                return 72;
+            }
+            if (!GetDiskGeometry(hDrive,&Geometry)) {
+                TCHAR *msg = w32_errstr(0);
+                printf("GetDiskGeometry %s failed %s\n",devnam,msg);
+                LocalFree(msg);
+                return 80;
+            }
+            chantab[chan].sectorsize = Geometry.BytesPerSector;
+            info->sectors = Geometry.Cylinders.QuadPart * Geometry.TracksPerCylinder *
+                        Geometry.SectorsPerTrack;
+            break;
         }
 
-        chantab[chan].IoBuffer = VirtualAlloc(NULL,chantab[chan].sectorsize,
-                                              MEM_COMMIT,PAGE_READWRITE);
-        chantab[chan].last_sector = 99999;
-        *chanptr = chan_count++;
-        info->status = 0;
-        info->sectorsize = chantab[chan].sectorsize;
-        init_count++;
-        return 1;
-    } else {
-        return SS$_IVCHAN;
-    }
+        /* W95 stuff */
+
+        {
+            DIOC_REGISTERS reg;
+            DEVICEPARAM deviceparam;
+            BOOL fResult;
+            DWORD cb;
+            chantab[chan].handle = hDrive = CreateFile("\\\\.\\vwin32",
+                                                        0,0,NULL,0,FILE_FLAG_DELETE_ON_CLOSE,NULL);
+            if (hDrive == INVALID_HANDLE_VALUE) {
+                TCHAR *msg = w32_errstr(0);
+                printf("Open %s failed %s\n",devnam,msg);
+                LocalFree(msg);
+                return SS$_NOSUCHDEV;
+            }
+            reg.reg_EAX = 0x440d;
+            reg.reg_EBX = chantab[chan].device_name - 'A' + 1;
+            reg.reg_ECX = 0x084a;   /* Lock volume */
+            reg.reg_EDX = 0;
+            reg.reg_Flags = 0x0000; /* Permission  */
+
+            fResult = DeviceIoControl(hDrive,VWIN32_DIOC_DOS_IOCTL,
+                                        &reg,sizeof(reg),&reg,sizeof(reg),&cb,0);
+
+            if (!fResult || (reg.reg_Flags & 0x0001)) {
+                TCHAR *msg = w32_errstr(0);
+                printf("Volume lock failed (%s)\n",msg);
+                LocalFree(msg);
+                return SS$_DEVNOTALLOC;
+            }
+            reg.reg_EAX = 0x440d;
+            reg.reg_EBX = chantab[chan].device_name - 'A' + 1;
+            reg.reg_ECX = 0x0860;   /* Get device parameters */
+            reg.reg_EDX = (DWORD) & deviceparam;
+            reg.reg_Flags = 0x0001; /* set carry flag  */
+
+            fResult = DeviceIoControl(hDrive,
+                                        VWIN32_DIOC_DOS_IOCTL,
+                                        &reg,sizeof(reg),
+                                        &reg,sizeof(reg),
+                                        &cb,0);
+
+            if (!fResult || (reg.reg_Flags & 0x0001)) {
+                TCHAR *msg = w32_errstr(0);
+                printf("Volume get parameters failed (%s)\n",msg);
+                LocalFree(msg);
+                return 8;
+            }
+            chantab[chan].sectorsize = deviceparam.sec_size;
+            info->sectors = 0;
+            break;
+        }
+    } while(0);
+
+    chantab[chan].IoBuffer = VirtualAlloc(NULL,chantab[chan].sectorsize,
+                                            MEM_COMMIT,PAGE_READWRITE);
+    chantab[chan].last_sector = ~0U;
+    *chanptr = chan_count++;
+    info->status = 0;
+    info->sectorsize = chantab[chan].sectorsize;
+    init_count++;
+    return 1;
 }
 
 

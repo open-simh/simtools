@@ -14,13 +14,16 @@ $ default=f$parse(f$environment("PROCEDURE"),,,"DEVICE","SYNTAX_ONLY")+  -
 $ set def 'default'
 $
 $ call cc ods2    'p1'
+$ call cc ods2    'p1'+"/object=ods2i.obj/define=DISKIMAGE"
 $ call cc rms     'p1'
 $ call cc direct  'p1'
+$ call cc diskio  'p1'
 $ call cc access  'p1'
 $ call cc device  'p1'
 $ call cc cache   'p1'
 $ call cc phyvms  'p1'
 $ call cc update  'p1'
+$ call cc sysmsg  'p1'
 $ call cc vmstime 'p1'
 $
 $ write sys$error "''f$time()' Linking..."
@@ -29,12 +32,13 @@ $    then library = ",vaxcrtl.tmp/option"
 $         create vaxcrtl.tmp
 sys$share:vaxcrtl/share
 $ endif
-$ link 'p2' ods2,rms,direct,access,device,cache,phyvms,vmstime,update 'library'
+$ link 'p2' /exe=ods2i.exe ods2i,rms,direct,access,device,cache,diskio,sysmsg,vmstime,update 'library'
+$ link 'p2'                ods2,rms,direct,access,device,cache,phyvms,sysmsg,vmstime,update 'library'
 $ write sys$error "''f$time()' Done"
 $ exit
 $
 $cc: subroutine
-$ if f$search(p1+".obj;").nes."" then if f$cvtime(f$file(p1+".obj;","CDT")).ges.f$cvtime(f$file(p1+".c;","CDT")) then exit
+$!$ if f$search(p1+".obj;").nes."" then if f$cvtime(f$file(p1+".obj;","CDT")).ges.f$cvtime(f$file(p1+".c;","CDT")) then exit
 $ write sys$error "''f$time()' Compiling ''p1'..."
 $ cc 'p2'  'p1'
 $ exit

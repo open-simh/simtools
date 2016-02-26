@@ -1,4 +1,4 @@
-/* PHYVMS.c v1.3    Physical I/O module for Unix */
+/* PHYUNIX.c v1.3    Physical I/O module for Unix */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -14,13 +14,21 @@
 	If the user mounts  cd0   we open up /dev/cd0 for access.
 */
 
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/types.h>
 
 #include "phyio.h"
 #include "ssdef.h"
+#include "compat.h"
 
 #if defined(__digital__) && defined(__unix__)
 #define DEV_PREFIX "/devices/rdisk/%s"
@@ -42,16 +50,30 @@ void phyio_show(void)
            init_count,read_count,write_count);
 }
 
+void phyio_help(FILE *fp ) {
+    fprintf( fp, "Specify the device to be mounted as using the format:\n" );
+    fprintf( fp, " mount %s%s\n\n", DEV_PREFIX, "device" );
+
+    fprintf( fp, "For example, if you are using " DEV_PREFIX "\n", "cdrom0" );
+    fprintf( fp, "  ODS2$> mount cdrom0\n\n" );
+
+    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+    fprintf( fp, "Alternatively, you can mount the image on a loop device.\n" );
+    return;
+}
 
 unsigned phyio_init(int devlen,char *devnam,unsigned *handle,struct phyio_info *info)
 {
     int vmsfd;
     char *cp,devbuf[200];
+
+    UNUSED(devlen);
+
     init_count++;
     info->status = 0;           /* We don't know anything about this device! */
     info->sectors = 0;
     info->sectorsize = 0;
-    sprintf(devbuf,DEV_PREFIX,devnam);
+    snprintf(devbuf,sizeof(devbuf),DEV_PREFIX,devnam);
     cp = strchr(devbuf,':');
     if (cp != NULL) *cp = '\0';
     vmsfd = open(devbuf,O_RDWR);
@@ -71,19 +93,19 @@ unsigned phyio_close(unsigned handle)
 
 unsigned phyio_read(unsigned handle,unsigned block,unsigned length,char *buffer)
 {
-    int res;
+    off_t res;
 #ifdef DEBUG
     printf("Phyio read block: %d into %x (%d bytes)\n",block,buffer,length);
 #endif
     read_count++;
     if ((res = lseek(handle,block*512,0)) < 0) {
         perror("lseek ");
-	printf("lseek failed %d\n",res);
+        printf("lseek failed %" PRIuMAX "u\n",(uintmax_t)res);
         return SS$_PARITY;
     }
-    if ((res = read(handle,buffer,length)) != length) {
+    if ((res = read(handle,buffer,length)) != (ssize_t)length) {
         perror("read ");
-	printf("read failed %d\n",res);
+        printf("read failed %" PRIuMAX "u\n",(uintmax_t)res);
         return SS$_PARITY;
     }
     return SS$_NORMAL;

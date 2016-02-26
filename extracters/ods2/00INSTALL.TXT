@@ -1,0 +1,43 @@
+ODS-2 builds on most platforms using the make utility.
+
+Most of the make logic is in makefile.generic, which is
+included by a platform-specific makefile.
+
+The platform-specific files are:
+  makefile.unix      -- Most Unix/Linux platforms
+  makefile.solaris   -- Solaris
+  makefile.tru64     -- Tru64/DEC OSF/1
+  makefile.nt        -- Windows NT
+
+Select the appropriate platform file & review the definitions.
+
+The easiest way to build ODS-2 is to softlink Makefile to
+the platform file.  For example:
+    ln -s makefile.unix Makefile
+    make clean && make
+
+Alternatively, the following equivalent command can be used:
+    make -f makefile.unix clean && make -f makefile.unix
+
+If your make doesn't support the "include" directive, you
+can run makefile.generic manually.  Instructions are in that file.
+
+Copy the resulting object file to a convenient location on your path,
+e.g. /usr/local/bin on unix, or add the build directory to the PATH
+environment variable on windows.
+
+If you need different definitions for another platform, please
+add a new platform-specific file rather than changing makefile.generic.
+
+On VMS, you can use the DCL command procedure build.com to build
+with DECC or GCC, with
+   $ @build
+
+build.com will automatically select decc,vaxc or gcc.
+
+If you have MMS/mmk, use descrip.mms, with
+  $ mmk
+To build with VAXC
+  $ mmk/macro=vaxc=1
+
+

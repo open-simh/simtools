@@ -1,5 +1,5 @@
 /* check for cr - return terminator - update file length */
-/* RMS.c v1.3  RMS components */
+/* RMS.c v1.4  RMS components */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -34,7 +34,7 @@
 #include "rms.h"
 #include "access.h"
 #include "direct.h"
-
+#include "compat.h"
 
 /* Table of file name component delimeters... */
 
@@ -49,7 +49,7 @@ char char_delim[] = {
 
 unsigned name_delim(char *str,int len,int size[5])
 {
-    register unsigned ch;
+    register unsigned ch = 0;
     register char *curptr = str;
     register char *endptr = curptr + len;
     register char *begptr = curptr;
@@ -190,9 +190,13 @@ unsigned dircache(struct VCB *vcb,char *dirnam,int dirlen,struct fiddef *dirid)
 #define STATUS_TMPDIR  2
 #define STATUS_WILDCARD 4
 
+#define WCDALLOC_SIZE(size) (sizeof(struct WCCDIR)+(size))
 struct WCCDIR {
     struct WCCDIR *wcd_next;
     struct WCCDIR *wcd_prev;
+#ifdef DEBUG
+    size_t size;
+#endif
     int wcd_status;
     int wcd_wcc;
     int wcd_prelen;
@@ -207,6 +211,12 @@ struct WCCDIR {
 #define STATUS_TMPWCC  16
 #define MAX_FILELEN 1024
 
+/* Allocation sise for WCCFILE = block + max len wcd_sernam.
+ *  WCCDIRs are allocated smaller on the chain..
+ * Why 256?  The byte lengths?
+ */
+#define WCFALLOC_SIZE (sizeof(struct WCCFILE)+256)
+
 struct WCCFILE {
     struct FAB *wcf_fab;
     struct VCB *wcf_vcb;
@@ -220,21 +230,31 @@ struct WCCFILE {
 
 /* Function to remove WCCFILE and WCCDIR structures when not required */
 
-void cleanup_wcf(struct WCCFILE *wccfile)
+void cleanup_wcf(struct WCCFILE **wccfilep)
 {
+    struct WCCFILE *wccfile;
+
+    wccfile = *wccfilep;
+    *wccfilep = NULL;
     if (wccfile != NULL) {
         struct WCCDIR *wcc = wccfile->wcf_wcd.wcd_next;
         wccfile->wcf_wcd.wcd_next = NULL;
         wccfile->wcf_wcd.wcd_prev = NULL;
         /* should deaccess volume */
-        free(wccfile);
         while (wcc != NULL) {
             struct WCCDIR *next = wcc->wcd_next;
             wcc->wcd_next = NULL;
             wcc->wcd_prev = NULL;
+#ifdef DEBUG
+            memset(wcc,0,wcc->size);
+#endif
             free(wcc);
             wcc = next;
         }
+#ifdef DEBUG
+        memset(wccfile,0,WCFALLOC_SIZE);
+#endif
+        free(wccfile);
     }
 }
 
@@ -249,7 +269,10 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
     struct dsc_descriptor fibdsc,resdsc;
     struct NAM *nam = fab->fab$l_nam;
     wcc = &wccfile->wcf_wcd;
-    if (fab->fab$w_ifi != 0) return RMS$_IFI;
+    if (fab->fab$w_ifi != 0) {
+        sts = RMS$_IFI;
+        goto cleanup;
+    }
 
     /* if first time through position at top directory... WCCDIR */
 
@@ -322,7 +345,8 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                     if (nam->nam$b_rsl <= nam->nam$b_rss) {
                         memcpy(nam->nam$l_rsa,wccfile->wcf_result,nam->nam$b_rsl);
                     } else {
-                        return RMS$_RSS;
+                        sts = RMS$_RSS;
+                        goto cleanup;
                     }
                 }
                 memcpy(&wccfile->wcf_fid,&fibblk.fib$w_fid_num,sizeof(struct fiddef));
@@ -348,11 +372,17 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                     if (wcc->wcd_prev != NULL) wcc->wcd_prev->wcd_next = wcc->wcd_next;
                     wcc = wcc->wcd_next;
                     memcpy(wccfile->wcf_result + wcc->wcd_prelen + wcc->wcd_reslen - 6,".DIR;1",6);
+#ifdef DEBUG
+                    memset(savwcc, 0, savwcc->size);
+#endif
                     free(savwcc);
                 } else {
                     if ((wccfile->wcf_status & STATUS_RECURSE) && wcc->wcd_prev == NULL) {
                         struct WCCDIR *newwcc;
-                        newwcc = (struct WCCDIR *) malloc(sizeof(struct WCCDIR) + 8);
+                        newwcc = (struct WCCDIR *) calloc(1,WCDALLOC_SIZE(8));
+#ifdef DEBUG
+                        newwcc->size = WCDALLOC_SIZE(8);
+#endif
                         newwcc->wcd_next = wcc->wcd_next;
                         newwcc->wcd_prev = wcc;
                         newwcc->wcd_wcc = 0;
@@ -368,7 +398,6 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                         memcpy(newwcc->wcd_sernam,"*.DIR;1",7);
                         newwcc->wcd_prelen = wcc->wcd_prelen;
                         wcc = newwcc;
-
                     } else {
                         if (wcc->wcd_next != NULL) {
 #ifdef DEBUG
@@ -394,9 +423,10 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
             }
         }
     }
-    cleanup_wcf(wccfile);
-    if (nam != NULL) nam->nam$l_wcc = 0;
     fab->fab$w_ifi = 0;         /* must dealloc memory blocks! */
+ cleanup:
+    cleanup_wcf(&wccfile);
+    if (nam != NULL) nam->nam$l_wcc = 0;
     return sts;
 }
 
@@ -407,7 +437,8 @@ unsigned sys_search(struct FAB *fab)
 {
     struct NAM *nam = fab->fab$l_nam;
     struct WCCFILE *wccfile;
-    if (nam == NULL) return RMS$_NAM;
+    if (nam == NULL)
+        return RMS$_NAM;
     wccfile = (struct WCCFILE *) nam->nam$l_wcc;
     if (wccfile == NULL) return RMS$_WCC;
     return do_search(fab,wccfile);
@@ -430,12 +461,15 @@ unsigned do_parse(struct FAB *fab,struct WCCFILE **wccret)
     char *dna = fab->fab$l_dna;
     struct NAM *nam = fab->fab$l_nam;
     int sts;
-    int fna_size[5] = {0, 0, 0, 0, 0},dna_size[5] = {0, 0, 0, 0, 0};
-    if (fab->fab$w_ifi != 0) return RMS$_IFI;
-        if (nam != NULL) if (nam->nam$l_wcc == 0) {
-            cleanup_wcf((struct WCCFILE *) nam->nam$l_wcc);
-            nam->nam$l_wcc = 0;
-        }
+    int fna_size[5] = {0, 0, 0, 0, 0},
+        dna_size[5] = {0, 0, 0, 0, 0};
+    if (fab->fab$w_ifi != 0)
+        return RMS$_IFI;
+    if (nam != NULL && nam->nam$l_wcc == 0) {
+        struct WCCFILE *wcc = (struct WCCFILE *)nam->nam$l_wcc;
+        cleanup_wcf(&wcc);
+        nam->nam$l_wcc = 0;
+    }
     /* Break up file specifications... */
 
     sts = name_delim(fna,fab->fab$b_fns,fna_size);
@@ -447,9 +481,9 @@ unsigned do_parse(struct FAB *fab,struct WCCFILE **wccret)
     /* Make WCCFILE entry for rest of processing */
 
     {
-        wccfile = (struct WCCFILE *) malloc(sizeof(struct WCCFILE) + 256);
-        if (wccfile == NULL) return SS$_INSFMEM;
-memset(wccfile,0,sizeof(struct WCCFILE)+256);
+        wccfile = (struct WCCFILE *) calloc(1,WCFALLOC_SIZE);
+        if (wccfile == NULL)
+            return SS$_INSFMEM;
         wccfile->wcf_fab = fab;
         wccfile->wcf_vcb = NULL;
         wccfile->wcf_fcb = NULL;
@@ -496,7 +530,10 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
                             len--;
                             src++;
                             if (count < 2 || (count == 7 &&
-                                              memcmp(dir,"[000000",7) == 0)) return RMS$_DIR;
+                                              memcmp(dir,"[000000",7) == 0)) {
+                                cleanup_wcf(&wccfile);
+                                return RMS$_DIR;
+                            }
                             while (count > 1) {
                                 if (dir[--count] == '.') break;
                             }
@@ -505,13 +542,19 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
                             src = "[000000]";
                             dirlen = len = 8;
                         } else {
-                            if (*src != '.' && *src != ']') return RMS$_DIR;
+                            if (*src != '.' && *src != ']') {
+                                cleanup_wcf(&wccfile);
+                                return RMS$_DIR;
+                            }
                             if (*src == '.' && count < 2) {
                                 src++;
                                 len--;
                             }
                             dirlen = len + count;
-                            if ((ess -= count) < 0) return RMS$_ESS;
+                            if ((ess -= count) < 0) {
+                                cleanup_wcf(&wccfile);
+                                return RMS$_ESS;
+                            }
                             memcpy(esa,dir,count);
                             esa += count;
                         }
@@ -523,7 +566,10 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
             }
             dna += dna_size[field];
             def += default_size[field];
-            if ((ess -= len) < 0) return RMS$_ESS;
+            if ((ess -= len) < 0) {
+                cleanup_wcf(&wccfile);
+                return RMS$_ESS;
+            }
             while (len-- > 0) {
                 register char ch;
                 *esa++ = ch = *src++;
@@ -549,12 +595,14 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
             if (nam->nam$b_esl <= nam->nam$b_ess) {
                 memcpy(nam->nam$l_esa,wccfile->wcf_result,nam->nam$b_esl);
             } else {
+                cleanup_wcf(&wccfile);
                 return RMS$_ESS;
             }
         }
     }
     sts = 1;
-        if (nam != NULL) if (nam->nam$b_nop & NAM$M_SYNCHK) sts = 0;
+    if (nam != NULL && (nam->nam$b_nop & NAM$M_SYNCHK))
+        sts = 0;
 
     /* Now build up WCC structures as required */
 
@@ -564,8 +612,14 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
         struct WCCDIR *wcc;
         struct DEV *dev;
         sts = device_lookup(fna_size[0],wccfile->wcf_result,0,&dev);
-        if ((sts & 1) == 0) return sts;
-        if ((wccfile->wcf_vcb = dev->vcb) == NULL) return SS$_DEVNOTMOUNT;
+        if ((sts & 1) == 0) {
+            cleanup_wcf(&wccfile);
+            return sts;
+        }
+        if ((wccfile->wcf_vcb = dev->vcb) == NULL) {
+            cleanup_wcf(&wccfile);
+            return SS$_DEVNOTMOUNT;
+        }
         wcc = &wccfile->wcf_wcd;
         wcc->wcd_prev = NULL;
         wcc->wcd_next = NULL;
@@ -606,11 +660,16 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
                 if (char_delim[*dirptr++ & 127]) break;
                 seglen++;
             } while (dirsiz + seglen < dirlen);
-            wcd = (struct WCCDIR *) malloc(sizeof(struct WCCDIR) + seglen + 8);
+            wcd = (struct WCCDIR *) calloc(1,WCDALLOC_SIZE(seglen + 8));
+#ifdef DEBUG
+            wcd->size = WCDALLOC_SIZE(seglen + 8);
+#endif
+/* calloc()
             wcd->wcd_wcc = 0;
             wcd->wcd_status = 0;
             wcd->wcd_prelen = 0;
             wcd->wcd_reslen = 0;
+*/
             memcpy(wcd->wcd_sernam,dirnam + dirsiz,seglen);
             memcpy(wcd->wcd_sernam + seglen,".DIR;1",7);
             wcd->wcd_serdsc.dsc_w_length = seglen + 6;
@@ -628,6 +687,10 @@ memset(wccfile,0,sizeof(struct WCCFILE)+256);
         wcc->wcd_reslen = 0;
         wcc->wcd_serdsc.dsc_w_length = fna_size[2] + fna_size[3] + fna_size[4];
         wcc->wcd_serdsc.dsc_a_pointer = wcc->wcd_sernam;
+        if (wcc->wcd_serdsc.dsc_w_length >= 256) {
+            printf( "serdsc length too long %u\n",  wcc->wcd_serdsc.dsc_w_length );
+            abort();
+        }
         memcpy(wcc->wcd_sernam,wccfile->wcf_result + fna_size[0] + fna_size[1],
                wcc->wcd_serdsc.dsc_w_length);
 #ifdef DEBUG
@@ -708,6 +771,8 @@ unsigned sys_connect(struct RAB *rab)
 
 unsigned sys_disconnect(struct RAB *rab)
 {
+    UNUSED(rab);
+
     return 1;
 }
 
@@ -739,30 +804,32 @@ unsigned sys_get(struct RAB *rab)
     switch (rfm = rab->rab$l_fab->fab$b_rfm) {
         case FAB$C_STMLF:
             delim = 1;
-	    break;
+            break;
         case FAB$C_STMCR:
             delim = 2;
-	    break;
+            break;
         case FAB$C_STM:
             delim = 3;
-	    break;
+            break;
         case FAB$C_VFC:
             reclen += rab->rab$l_fab->fab$b_fsz;
             break;
         case FAB$C_FIX:
-            if (reclen < rab->rab$l_fab->fab$w_mrs) return RMS$_RTB;
+            if (reclen < rab->rab$l_fab->fab$w_mrs)
+                return RMS$_RTB;
             reclen = rab->rab$l_fab->fab$w_mrs;
             break;
     }
 
     offset = rab->rab$w_rfa[2] % 512;
     block = (rab->rab$w_rfa[1] << 16) + rab->rab$w_rfa[0];
-    if (block == 0) block = 1;
-
+    if (block == 0)
+        block = 1;
     {
         unsigned eofblk = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
         if (block > eofblk || (block == eofblk &&
-            offset >= VMSWORD(fcb->head->fh2$w_recattr.fat$w_ffbyte))) return RMS$_EOF;
+            offset >= VMSWORD(fcb->head->fh2$w_recattr.fat$w_ffbyte)))
+            return RMS$_EOF;
     }
 
     sts = accesschunk(fcb,block,&vioc,&buffer,&blocks,0);
@@ -784,9 +851,9 @@ unsigned sys_get(struct RAB *rab)
     cpylen = 0;
     while (1) {
         int dellen = 0;
-        int seglen = blocks * 512 - offset;
-	if (delim) {
-	    if (delim >= 3) {
+        unsigned int seglen = blocks * 512 - offset;
+        if (delim) {
+            if (delim >= 3) {
                 char *ptr = buffer + offset;
                 if (dellen == 1 && *ptr != '\n') {
                     if (cpylen >= reclen) {
@@ -812,10 +879,11 @@ unsigned sys_get(struct RAB *rab)
                     if (ch == '\r') dellen = 1;
                 }
                 seglen = ptr - (buffer + offset) - dellen;;
-	    } else {
+            } else {
                 char *ptr = buffer + offset;
                 char term = '\r';
-                if (delim == 1) term = '\n';
+                if (delim == 1)
+                    term = '\n';
                 while (seglen-- > 0) {
                     if (*ptr++ == term) {
                         dellen = 1;
@@ -826,11 +894,14 @@ unsigned sys_get(struct RAB *rab)
                 seglen = ptr - (buffer + offset) - dellen;;
             }
         } else {
-            if (seglen > reclen - cpylen) seglen = reclen - cpylen;
+            if (seglen > reclen - cpylen)
+                seglen = reclen - cpylen;
             if (rfm == FAB$C_VFC && cpylen < rab->rab$l_fab->fab$b_fsz) {
                 unsigned fsz = rab->rab$l_fab->fab$b_fsz - cpylen;
-                if (fsz > seglen) fsz = seglen;
-                if (rab->rab$l_rhb) memcpy(rab->rab$l_rhb + cpylen,buffer + offset,fsz);
+                if (fsz > seglen)
+                    fsz = seglen;
+                if (rab->rab$l_rhb)
+                    memcpy(rab->rab$l_rhb + cpylen,buffer + offset,fsz);
                 cpylen += fsz;
                 offset += fsz;
                 seglen -= fsz;
@@ -841,7 +912,7 @@ unsigned sys_get(struct RAB *rab)
                 seglen = reclen - cpylen;
                 sts = RMS$_RTB;
             }
-	    memcpy(recbuff,buffer + offset,seglen);
+            memcpy(recbuff,buffer + offset,seglen);
             recbuff += seglen;
             cpylen += seglen;
         }
@@ -852,8 +923,8 @@ unsigned sys_get(struct RAB *rab)
         block += offset / 512;
         offset %= 512;
         if ((delim == 0 && cpylen >= reclen) || delim == 99) {
-	    break;
-	} else {
+            break;
+        } else {
             sts = accesschunk(fcb,block,&vioc,&buffer,&blocks,0);
             if ((sts & 1) == 0) {
                 if (sts == SS$_ENDOFFILE) sts = RMS$_EOF;
@@ -862,7 +933,8 @@ unsigned sys_get(struct RAB *rab)
             offset = 0;
         }
     }
-    if (rfm == FAB$C_VFC) cpylen -= rab->rab$l_fab->fab$b_fsz;
+    if (rfm == FAB$C_VFC)
+        cpylen -= rab->rab$l_fab->fab$b_fsz;
     rab->rab$w_rsz = cpylen;
 
     rab->rab$w_rfa[0] = block & 0xffff;
@@ -887,33 +959,33 @@ unsigned sys_put(struct RAB *rab)
     recbuff = rab->rab$l_rbf;
     delim = 0;
     switch (rfm = rab->rab$l_fab->fab$b_rfm) {
-        case FAB$C_STMLF:
-            if (reclen < 1) {
-                delim = 1;
-	    } else {
-	        if (recbuff[reclen] != '\n') delim = 1;
-            }
-	    break;
-        case FAB$C_STMCR:
-            if (reclen < 1) {
-                delim = 2;
-	    } else {
-	        if (recbuff[reclen] != '\r') delim = 2;
-            }
-	    break;
-        case FAB$C_STM:
-            if (reclen < 2) {
-                delim = 3;
-	    } else {
-	        if (recbuff[reclen-1] != '\r' || recbuff[reclen] != '\n') delim = 3;
-            }
-	    break;
-        case FAB$C_VFC:
-            reclen += rab->rab$l_fab->fab$b_fsz;
-            break;
-        case FAB$C_FIX:
-            if (reclen != rab->rab$l_fab->fab$w_mrs) return RMS$_RSZ;
-            break;
+    case FAB$C_STMLF:
+        if (reclen < 1) {
+            delim = 1;
+        } else {
+            if (recbuff[reclen] != '\n') delim = 1;
+        }
+        break;
+    case FAB$C_STMCR:
+        if (reclen < 1) {
+            delim = 2;
+        } else {
+            if (recbuff[reclen] != '\r') delim = 2;
+        }
+        break;
+    case FAB$C_STM:
+        if (reclen < 2) {
+            delim = 3;
+        } else {
+            if (recbuff[reclen-1] != '\r' || recbuff[reclen] != '\n') delim = 3;
+        }
+        break;
+    case FAB$C_VFC:
+        reclen += rab->rab$l_fab->fab$b_fsz;
+        break;
+    case FAB$C_FIX:
+        if (reclen != rab->rab$l_fab->fab$w_mrs) return RMS$_RSZ;
+        break;
     }
 
     block = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
@@ -930,55 +1002,58 @@ unsigned sys_put(struct RAB *rab)
 
     cpylen = 0;
     while (1) {
-        int seglen = blocks * 512 - offset;
+        unsigned int seglen = blocks * 512 - offset;
         if (seglen > reclen - cpylen) seglen = reclen - cpylen;
         if (rfm == FAB$C_VFC && cpylen < rab->rab$l_fab->fab$b_fsz) {
             unsigned fsz = rab->rab$l_fab->fab$b_fsz - cpylen;
-            if (fsz > seglen) fsz = seglen;
+
+            if (fsz > seglen)
+                fsz = seglen;
             if (rab->rab$l_rhb) {
                 memcpy(buffer + offset,rab->rab$l_rhb + cpylen,fsz);
             } else {
                 memset(buffer + offset,0,fsz);
-	    }
+            }
             cpylen += fsz;
             offset += fsz;
             seglen -= fsz;
         }
         if (seglen) {
-	    memcpy(buffer + offset,recbuff,seglen);
+            memcpy(buffer + offset,recbuff,seglen);
             recbuff += seglen;
             cpylen += seglen;
             offset += seglen;
         }
-	if (delim && offset < blocks * 512) {
+        if (delim && offset < blocks * 512) {
             offset++;
             switch (delim) {
-                case 1:
- 		    *buffer = '\n';
-		    delim = 0;
-		    break;	
-                case 2:
-		    *buffer = '\r';
-		    delim = 0;
-		    break;	
-                case 3:
-		    *buffer = '\r';
-		    if (offset < blocks * 512) {
-                        offset++;
-		        *buffer = '\n';
-   		        delim = 0;
-	            } else {
-		        delim = 2;
-		    }
-		    break;	
+            case 1:
+                *buffer = '\n';
+                delim = 0;
+                break;	
+            case 2:
+                *buffer = '\r';
+                delim = 0;
+                break;	
+            case 3:
+                *buffer = '\r';
+                if (offset < blocks * 512) {
+                    offset++;
+                    *buffer = '\n';
+                    delim = 0;
+                } else {
+                    delim = 2;
+                }
+                break;
             }
         }
         sts = deaccesschunk(vioc,block,blocks,1);
-        if ((sts & 1) == 0) return sts;
+        if ((sts & 1) == 0)
+            return sts;
         block += blocks;
         if (cpylen >= reclen && delim == 0) {
-	    break;
-	} else {
+            break;
+        } else {
             sts = accesschunk(fcb,block,&vioc,&buffer,&blocks,1);
             if ((sts & 1) == 0) return sts;
             offset = 0;
@@ -1004,8 +1079,10 @@ unsigned sys_display(struct FAB *fab)
     struct HEAD *head = ifi_table[fab->fab$w_ifi]->wcf_fcb->head;
     unsigned short *pp = (unsigned short *) head;
     struct IDENT *id = (struct IDENT *) (pp + head->fh2$b_idoffset);
+
     int ifi_no = fab->fab$w_ifi;
-    if (ifi_no == 0 || ifi_no >= IFI_MAX) return RMS$_IFI;
+    if (ifi_no == 0 || ifi_no >= IFI_MAX)
+        return RMS$_IFI;
     fab->fab$l_alq = VMSSWAP(head->fh2$w_recattr.fat$l_hiblk);
     fab->fab$b_bks = head->fh2$w_recattr.fat$b_bktsize;
     fab->fab$w_deq = VMSWORD(head->fh2$w_recattr.fat$w_defext);
@@ -1017,36 +1094,67 @@ unsigned sys_display(struct FAB *fab)
     fab->fab$b_rat = head->fh2$w_recattr.fat$b_rattrib;
     while (xab != NULL) {
         switch (xab->xab$b_cod) {
-            case XAB$C_DAT:
-                memcpy(&xab->xab$q_bdt,id->fi2$q_bakdate,sizeof(id->fi2$q_bakdate));
-                memcpy(&xab->xab$q_cdt,id->fi2$q_credate,sizeof(id->fi2$q_credate));
-                memcpy(&xab->xab$q_edt,id->fi2$q_expdate,sizeof(id->fi2$q_expdate));
-                memcpy(&xab->xab$q_rdt,id->fi2$q_revdate,sizeof(id->fi2$q_revdate));
-                xab->xab$w_rvn = id->fi2$w_revision;
+        case XAB$C_DAT:{
+            memcpy(&xab->xab$q_bdt,id->fi2$q_bakdate,sizeof(id->fi2$q_bakdate));
+            memcpy(&xab->xab$q_cdt,id->fi2$q_credate,sizeof(id->fi2$q_credate));
+            memcpy(&xab->xab$q_edt,id->fi2$q_expdate,sizeof(id->fi2$q_expdate));
+            memcpy(&xab->xab$q_rdt,id->fi2$q_revdate,sizeof(id->fi2$q_revdate));
+            xab->xab$w_rvn = id->fi2$w_revision;
+                       }
+                       break;
+        case XAB$C_FHC:{
+            struct XABFHC *fhc = (struct XABFHC *) xab;
+            fhc->xab$b_atr = head->fh2$w_recattr.fat$b_rattrib;
+            fhc->xab$b_bkz = head->fh2$w_recattr.fat$b_bktsize;
+            fhc->xab$w_dxq = VMSWORD(head->fh2$w_recattr.fat$w_defext);
+            fhc->xab$l_ebk = VMSSWAP(head->fh2$w_recattr.fat$l_efblk);
+            fhc->xab$w_ffb = VMSWORD(head->fh2$w_recattr.fat$w_ffbyte);
+            if (fhc->xab$l_ebk == 0) {
+                fhc->xab$l_ebk = fab->fab$l_alq;
+                if (fhc->xab$w_ffb == 0) fhc->xab$l_ebk++;
+            }
+            fhc->xab$w_gbc = VMSWORD(head->fh2$w_recattr.fat$w_gbc);
+            fhc->xab$l_hbk = VMSSWAP(head->fh2$w_recattr.fat$l_hiblk);
+            fhc->xab$b_hsz = head->fh2$w_recattr.fat$b_vfcsize;
+            fhc->xab$w_lrl = VMSWORD(head->fh2$w_recattr.fat$w_maxrec);
+            fhc->xab$w_verlimit = VMSWORD(head->fh2$w_recattr.fat$w_versions);
+                       }
+                       break;
+        case XAB$C_PRO:{
+            struct XABPRO *pro = (struct XABPRO *) xab;
+            pro->xab$w_pro = VMSWORD(head->fh2$w_fileprot);
+            memcpy(&pro->xab$l_uic,&head->fh2$l_fileowner,4);
+                       }
+                       break;
+        case XAB$C_ITM:{
+            struct XABITM *itm = (struct XABITM *) xab;
+            struct item_list *list;
+            vmslong fch = VMSLONG( head->fh2$l_filechar );
+
+            if( itm->xab$b_mode != XAB$K_SENSEMODE )
                 break;
-            case XAB$C_FHC:{
-                    struct XABFHC *fhc = (struct XABFHC *) xab;
-                    fhc->xab$b_atr = head->fh2$w_recattr.fat$b_rattrib;
-                    fhc->xab$b_bkz = head->fh2$w_recattr.fat$b_bktsize;
-                    fhc->xab$w_dxq = VMSWORD(head->fh2$w_recattr.fat$w_defext);
-                    fhc->xab$l_ebk = VMSSWAP(head->fh2$w_recattr.fat$l_efblk);
-                    fhc->xab$w_ffb = VMSWORD(head->fh2$w_recattr.fat$w_ffbyte);
-                    if (fhc->xab$l_ebk == 0) {
-                        fhc->xab$l_ebk = fab->fab$l_alq;
-                        if (fhc->xab$w_ffb == 0) fhc->xab$l_ebk++;
-                    }
-                    fhc->xab$w_gbc = VMSWORD(head->fh2$w_recattr.fat$w_gbc);
-                    fhc->xab$l_hbk = VMSSWAP(head->fh2$w_recattr.fat$l_hiblk);
-                    fhc->xab$b_hsz = head->fh2$w_recattr.fat$b_vfcsize;
-                    fhc->xab$w_lrl = VMSWORD(head->fh2$w_recattr.fat$w_maxrec);
-                    fhc->xab$w_verlimit = VMSWORD(head->fh2$w_recattr.fat$w_versions);
+            for( list = itm->xab$l_itemlist; list->code != 0 || list->length != 0; list++ ) {
+                list->retlen = sizeof(int);
+                switch( list->code ) {
+                case XAB$_UCHAR_NOBACKUP:
+                    *((int *)list->buffer) = (fch & FH2$M_NOBACKUP) != 0; break;
+                case XAB$_UCHAR_CONTIGB:
+                    *((int *)list->buffer) = (fch & FH2$M_CONTIGB) != 0;   break;
+                case XAB$_UCHAR_CONTIG:
+                    *((int *)list->buffer) = (fch & FH2$M_CONTIG) != 0;    break;
+                case XAB$_UCHAR_DIRECTORY:
+                    *((int *)list->buffer) = (fch & FH2$M_DIRECTORY) != 0; break;
+                case XAB$_UCHAR_MARKDEL:
+                    *((int *)list->buffer) = (fch & FH2$M_MARKDEL) != 0;   break;
+                default:
+                    list->retlen = 0;
+                    break;
                 }
-                break;
-            case XAB$C_PRO:{
-                    struct XABPRO *pro = (struct XABPRO *) xab;
-                    pro->xab$w_pro = VMSWORD(head->fh2$w_fileprot);
-                    memcpy(&pro->xab$l_uic,&head->fh2$l_fileowner,4);
-                }
+            }
+                       }
+                       break;
+        default:
+            break;
         }
         xab = xab->xab$l_nxt;
     }
@@ -1061,13 +1169,15 @@ unsigned sys_close(struct FAB *fab)
 {
     int sts;
     int ifi_no = fab->fab$w_ifi;
-    if (ifi_no < 1 || ifi_no >= IFI_MAX) return RMS$_IFI;
+    if (ifi_no < 1 || ifi_no >= IFI_MAX)
+        return RMS$_IFI;
     sts = deaccessfile(ifi_table[ifi_no]->wcf_fcb);
     if (sts & 1) {
         ifi_table[ifi_no]->wcf_fcb = NULL;
         if (ifi_table[ifi_no]->wcf_status & STATUS_TMPWCC) {
-            cleanup_wcf(ifi_table[ifi_no]);
-            if (fab->fab$l_nam != NULL) fab->fab$l_nam->nam$l_wcc = 0;
+            cleanup_wcf(&ifi_table[ifi_no]);
+            if (fab->fab$l_nam != NULL)
+                fab->fab$l_nam->nam$l_wcc = 0;
         }
         fab->fab$w_ifi = 0;
         ifi_table[ifi_no] = NULL;
@@ -1085,9 +1195,15 @@ unsigned sys_open(struct FAB *fab)
     int wcc_flag = 0;
     struct WCCFILE *wccfile = NULL;
     struct NAM *nam = fab->fab$l_nam;
+
     if (fab->fab$w_ifi != 0) return RMS$_IFI;
-    while (ifi_table[ifi_no] != NULL && ifi_no < IFI_MAX) ifi_no++;
-    if (ifi_no >= IFI_MAX) return RMS$_IFI;
+
+    while (ifi_table[ifi_no] != NULL && ifi_no < IFI_MAX)
+        ifi_no++;
+
+    if (ifi_no >= IFI_MAX)
+        return RMS$_IFI;
+
     if (nam != NULL) {
         wccfile = (struct WCCFILE *) nam->nam$l_wcc;
     }
@@ -1099,6 +1215,8 @@ unsigned sys_open(struct FAB *fab)
                 sts = RMS$_WLD;
             } else {
                 sts = do_search(fab,wccfile);
+                if ((sts & 1) == 0)
+                    wcc_flag = 0;
             }
             wccfile->wcf_status |= STATUS_TMPWCC;
         }
@@ -1115,7 +1233,7 @@ unsigned sys_open(struct FAB *fab)
         sys_display(fab);
     }
     if (wcc_flag && ((sts & 1) == 0)) {
-        cleanup_wcf(wccfile);
+        cleanup_wcf(&wccfile);
         if (nam != NULL) nam->nam$l_wcc = 0;
     }
     return sts;
@@ -1145,6 +1263,8 @@ unsigned sys_erase(struct FAB *fab)
                 sts = RMS$_WLD;
             } else {
                 sts = do_search(fab,wccfile);
+                if ((sts & 1) == 0)
+                    wcc_flag = 0;
             }
         }
     } else {
@@ -1173,7 +1293,7 @@ unsigned sys_erase(struct FAB *fab)
 	}
     }
     if (wcc_flag) {
-        cleanup_wcf(wccfile);
+        cleanup_wcf(&wccfile);
         if (nam != NULL) nam->nam$l_wcc = 0;
     }
     return sts;
@@ -1185,6 +1305,7 @@ unsigned sys_create(struct FAB *fab)
     unsigned sts;
     int ifi_no = 1;
     int wcc_flag = 0;
+
     struct WCCFILE *wccfile = NULL;
     struct NAM *nam = fab->fab$l_nam;
     if (fab->fab$w_ifi != 0) return RMS$_IFI;
@@ -1201,6 +1322,8 @@ unsigned sys_create(struct FAB *fab)
                 sts = RMS$_WLD;
             } else {
                 sts = do_search(fab,wccfile);
+                if ((sts & 1) == 0)
+                    wcc_flag = 0;
                 if (sts == RMS$_FNF) sts = 1;
             }
         }
@@ -1209,11 +1332,13 @@ unsigned sys_create(struct FAB *fab)
     }
     if (sts & 1) {
         struct fibdef fibblk;
-        struct dsc_descriptor fibdsc,serdsc;
+        struct dsc_descriptor fibdsc; /* ,serdsc; */
         fibdsc.dsc_w_length = sizeof(struct fibdef);
         fibdsc.dsc_a_pointer = (char *) &fibblk;
+        /* Unused
         serdsc.dsc_w_length = wccfile->wcf_wcd.wcd_reslen;
         serdsc.dsc_a_pointer = wccfile->wcf_result + wccfile->wcf_wcd.wcd_prelen;
+        */
         memcpy(&fibblk.fib$w_did_num,&wccfile->wcf_wcd.wcd_dirid,sizeof(struct fiddef));
         fibblk.fib$w_nmctl = 0;
         fibblk.fib$l_acctl = 0;
@@ -1233,8 +1358,10 @@ unsigned sys_create(struct FAB *fab)
                 fab->fab$w_ifi = ifi_no;
 	    }
     }
-    cleanup_wcf(wccfile);
-    if (nam != NULL) nam->nam$l_wcc = 0;
+    if( wcc_flag ) {
+      cleanup_wcf(&wccfile);
+      if (nam != NULL) nam->nam$l_wcc = 0;
+    }
     return sts;
 }
 
