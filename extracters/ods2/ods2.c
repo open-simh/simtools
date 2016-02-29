@@ -160,10 +160,14 @@ int keycomp(const char *param, const char *keywrd)
  * helpstr: if null, switch not listed in help.  If starts with -,
  *          listed as negatable in help
  */
+#define NV NOVAL, NULL
+#define KV(list) KEYVAL, list
 struct qual {
     const char *name;
     int set;
     int clear;
+    enum qualtype { NOVAL, KEYVAL } qtype;
+    void *arg;
     const char *helpstr;
 };
 
@@ -210,12 +214,19 @@ int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
 {
     int i;
     const char *type;
+
     type = (qualc < 0)? "parameter": "qualifier";
     qualc = abs( qualc );
 
     for( i = 0; i < qualc; i++ ) {
+        char *qv;
         struct qual *qs, *qp = NULL;
 
+        qv = strchr( qualv[i], '=' );
+        if( qv == NULL )
+            qv = strchr( qualv[i], ':' );
+        if( qv != NULL )
+            *qv++ = '\0';
         for( qs = qualset; qs->name != NULL; qs++) {
             if (keycomp(qualv[i],qs->name)) {
                 if( qp != NULL ) {
@@ -231,6 +242,41 @@ int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
             return -1;
         }
         result = (result & ~qp->clear) | qp->set;
+        if( qv != NULL ) {
+            char *nvp;
+
+            if( qp->qtype == NOVAL ) {
+                printf( "%%ODS2-W-NOQVAL, %c%s '%s' does not accept a value\n",
+                        toupper( *type ), type+1, qualv[i] );
+                return -1;
+            }
+            if( *qv == '(' ) {
+                qv++;
+                nvp = strchr( qv, ')' );
+                if( nvp == NULL ) {
+                    printf( "%%ODS2-W-NQP, %c%s is missing ')'\n",
+                            toupper( *type ), type+1, qualv[i] );
+                    return -1;
+                }
+                *nvp = '\0';
+            }
+            do {
+                while( *qv == ' ' ) qv++;
+                nvp = strchr( qv, ',' );
+                if( nvp != NULL )
+                    *nvp++ = '\0';
+                switch( qp->qtype ) {
+                case KEYVAL:
+                    result = checkquals( result, (struct qual *)qp->arg, -1, &qv );
+                    if( result == -1 )
+                        return result;
+                    break;
+                default:
+                    abort();
+                }
+                qv = nvp;
+            } while( qv != NULL );
+        }
     }
     return result;
 }
@@ -294,49 +340,68 @@ void pwrap( int *pos, const char *fmt, ... ) {
 
 /* dir: a directory routine */
 
-#define dir_extra (dir_date|dir_fileid|dir_owner|dir_prot|dir_size|dir_allocated)
-#define  dir_date       1
-#define  dir_fileid     2
-#define  dir_owner      4
-#define  dir_prot       8
-#define  dir_size      16
-#define  dir_allocated 32
+#define dir_extra (dir_date|dir_fileid|dir_owner|dir_prot|dir_size)
+#define  dir_date        (1 <<  0)
+#define  dir_fileid      (1 <<  1)
+#define  dir_owner       (1 <<  2)
+#define  dir_prot        (1 <<  3)
+#define  dir_size        (1 <<  4)
 
-#define dir_grand      64
-#define dir_heading   128
-#define dir_names     256
-#define dir_trailing  512
-#define dir_full     1024
-#define dir_total    2048
+#define dir_grand        (1 <<  5)
+#define dir_heading      (1 <<  6)
+#define dir_names        (1 <<  7)
+#define dir_trailing     (1 <<  8)
+#define dir_full         (1 <<  9)
+#define dir_total        (1 << 10)
 
+#define dir_backup       (1 << 11)
+#define dir_created      (1 << 12)
+#define dir_expired      (1 << 13)
+#define dir_modified     (1 << 14)
+
+#define  dir_allocated   (1 << 15)
+#define  dir_used        (1 << 16)
+#define dir_sizes        (dir_allocated | dir_used)
+
+#define dir_dates (dir_backup|dir_created|dir_expired|dir_modified)
 #define dir_default (dir_heading|dir_names|dir_trailing)
 
-struct qual dirquals[] = { {"allocated",     dir_allocated,  0,              "-Include allocated file size (blocks)" },
-                           {"noallocated",   0,              dir_allocated,  NULL },
-                           {"brief",         dir_default,   ~dir_default,    "Brief display - names with header/trailer (default)"},
-                           {"date",          dir_date,       0,              "-Include file creation date", },
-                           {"nodate",        0,              dir_date,       NULL, },
-                           {"file_id",       dir_fileid,     0,              "-Include file ID", },
-                           {"nofile_id",     0,              dir_fileid,     NULL },
+struct qual datekwds[] = { {"created",  dir_created,  0, NV, "Date file created (default)"},
+                           {"modified", dir_modified, 0, NV, "Date file modified"},
+                           {"expired",  dir_expired,  0, NV, "Date file expired"},
+                           {"backup",   dir_backup,   0, NV, "Date of last backup"},
+                           {NULL,       0,            0, NV, NULL}
+};
+struct qual sizekwds[] = { {"both",       dir_used|dir_allocated, 0, NV, "Both used and allocated" },
+                           {"allocation", dir_allocated,          0, NV, "Blocks allocated to file" },
+                           {"used",       dir_used,               0, NV, "Blocks used in file" },
+                           {NULL,         0,                      0, NV, NULL}
+};
+struct qual dirquals[] = { {"brief",         dir_default,   ~dir_default,    NV, "Brief display - names with header/trailer (default)"},
+                           {"date",          dir_date,       dir_dates,      KV(datekwds), "-Include file date(s)", },
+                           {"nodate",        0,              dir_date,       NV, NULL, },
+                           {"file_id",       dir_fileid,     0,              NV, "-Include file ID", },
+                           {"nofile_id",     0,              dir_fileid,     NV, NULL },
                            {"full",          dir_full|dir_heading|dir_trailing,
-                                                            ~dir_full,       "Include full details", },
-                           {"grand_total",   dir_grand,     ~dir_grand & ~(dir_size|dir_allocated),
-                                                                             "-Include only grand total",},
-                           {"nogrand_total", 0,              dir_grand,      NULL},
-                           {"heading",       dir_heading,    0,              "-Include heading", },
-                           {"noheading",     0,              dir_heading,    NULL},
-                           {"owner",         dir_owner,      0,              "-Include file owner", },
-                           {"noowner",       0,              dir_owner,      NULL, },
-                           {"protection",    dir_prot,       0,              "-Include file protection", },
-                           {"noprotection",  0,              dir_prot,       NULL, },
-                           {"size",          dir_size,       0,              "-Include file size (blocks)", },
-                           {"nosize",        0, dir_size,    NULL, },
+                                                            ~dir_full,       NV, "Include full details", },
+                           {"grand_total",   dir_grand,     ~dir_grand & ~(dir_size|dir_sizes),
+                                                                             NV, "-Include only grand total",},
+                           {"nogrand_total", 0,              dir_grand,      NV, NULL},
+                           {"heading",       dir_heading,    0,              NV, "-Include heading", },
+                           {"noheading",     0,              dir_heading,    NV, NULL},
+                           {"owner",         dir_owner,      0,              NV, "-Include file owner", },
+                           {"noowner",       0,              dir_owner,      NV, NULL, },
+                           {"protection",    dir_prot,       0,              NV, "-Include file protection", },
+                           {"noprotection",  0,              dir_prot,       NV, NULL, },
+                           {"size",          dir_size,       dir_sizes,      KV(sizekwds), "-Include file size (blocks)", },
+                           {"nosize",        0,              dir_size|dir_sizes,
+                                                                             NV, NULL, },
                            {"total",         dir_total|dir_heading,
-                                                            ~dir_total & ~(dir_size|dir_allocated),
-                                                                              "Include only directory name and summary",},
-                           {"trailing",      dir_trailing,   0,              "-Include trailing summary line",},
-                           {"notrailing",    0,              dir_trailing,    NULL},
-                           {NULL, 0, 0,  NULL} };
+                                                            ~dir_total & ~(dir_size|dir_sizes),
+                                                                             NV, "Include only directory name and summary",},
+                           {"trailing",      dir_trailing,   0,              NV, "-Include trailing summary line",},
+                           {"notrailing",    0,              dir_trailing,   NV, NULL},
+                           {NULL,            0,              0,              NV, NULL} };
 int dir_defopt = dir_default;
 
 struct param dirpars[] = { {"filespec", OPT, VMSFS, NOPA, "for files to select. Wildcards are allowed."},
@@ -344,20 +409,20 @@ struct param dirpars[] = { {"filespec", OPT, VMSFS, NOPA, "for files to select. 
 };
 
 void dirtotal( int options, int size, int alloc ) {
-    if ( !(options & (dir_size | dir_allocated)) )
+    if ( !(options & dir_size) )
         return;
     fputs( ", ", stdout );
 
-    if ( options & dir_size )
+    if ( options & dir_used )
         printf( "%d", size );
     if ( options & dir_allocated ) {
-        if (options & dir_size) printf( "/" );
+        if (options & dir_used) printf( "/" );
         printf( "%d", alloc );
     }
-    if ((options & (dir_size|dir_allocated)) == (dir_size|dir_allocated))
+    if ((options & dir_dates) == dir_dates)
         printf( " block%s",(size ==1 &&  alloc == 1 ? "" : "s"));
     else
-        printf( " block%s",(((options & dir_size) && size == 1) ||
+        printf( " block%s",(((options & dir_used) && size == 1) ||
                             ((options & dir_allocated) && alloc == 1))? "" : "s");
     return;
 }
@@ -415,12 +480,16 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
         options |= dir_extra;
     if (options & (dir_total | dir_grand)) {
         options |= dir_trailing;
-        if (options & (dir_extra & ~(dir_size|dir_allocated)))
+        if (options & (dir_extra & ~dir_size))
             options |= dir_names;
     } else {
         if (options & dir_extra)
             options |= dir_names;
     }
+    if( (options & dir_size) && !(options & dir_sizes) )
+        options |= dir_used;
+    if( (options & dir_date) && !(options & dir_dates) )
+        options |= dir_created;
 
     sts = sys_parse(&fab);
     if (sts & 1) {
@@ -502,7 +571,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
                         printf("  %-22s",fileid);
                     }
                     diralloc += fab.fab$l_alq;
-                    if (options & dir_size) {
+                    if (options & dir_used) {
                         unsigned filesize = fhc.xab$l_ebk;
                         if (fhc.xab$w_ffb == 0) filesize--;
                         dirblocks += filesize;
@@ -572,7 +641,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
                             pwrap(  &pos, "Undefined" ); break;
                         case FAB$C_FIX:
                             pwrap(  &pos, "Fixed length %u byte records", fab.fab$w_mrs ); break;
-                        case FAB$C_VAR: 
+                        case FAB$C_VAR:
                             pwrap(  &pos, "Variable length, maximum %u bytes", fab.fab$w_mrs ); break;
                         case FAB$C_VFC :
                             pwrap(  &pos, "Variable length, fixed carriage control %u, maximum %u bytes", fab.fab$w_mrs ); break;
@@ -618,7 +687,14 @@ Journaling enabled: None
                         pprot(pro.xab$w_pro,xab$v_world,"\n");
                     } else { /* !full */
                         if (options & dir_date) {
-                            sts = prvmstime( dat.xab$q_cdt, NULL );
+                            if( options & dir_created )
+                                sts = prvmstime( dat.xab$q_cdt, NULL );
+                            if( options & dir_modified )
+                                sts = prvmstime( dat.xab$q_rdt, NULL );
+                            if( options & dir_expired )
+                                sts = prvmstime( dat.xab$q_edt, NULL );
+                            if( options & dir_backup )
+                                sts = prvmstime( dat.xab$q_bdt, NULL );
                         }
                         if (options & dir_owner) {
                             printf("  [%o,%o]", ((pro.xab$l_uic>>16)&0xFFFF), pro.xab$l_uic&0xFFFF);
@@ -668,9 +744,9 @@ Journaling enabled: None
 /* copy: a file copy routine */
 
 #define MAXREC 32767
-struct qual copyquals[] = { {"ascii", 0, 1, "Copy file in ascii mode (default)"},
-                            {"binary", 1, 0, "Copy file in binary mode", },
-                            {NULL, 0, 0, NULL}
+struct qual copyquals[] = { {"ascii",  0, 1, NV, "Copy file in ascii mode (default)"},
+                            {"binary", 1, 0, NV, "Copy file in binary mode", },
+                            {NULL,     0, 0, NV, NULL}
                            };
 
 struct param copypars[] = { {"from_filespec", REQ, VMSFS, NOPA, "for source file. Wildcards are allowed."},
@@ -1060,12 +1136,12 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
 
 /* del: you don't want to know! */
 
-struct qual delquals[] = { {"log",   1, 0, "-List name of each file deleted. (Default)"},
-                           {"nolog", 0, 1, NULL },
-                           { NULL,   0, 0, NULL }
+struct qual delquals[] = { {"log",   1, 0, NV, "-List name of each file deleted. (Default)"},
+                           {"nolog", 0, 1, NV, NULL },
+                           { NULL,   0, 0, NV, NULL }
 };
 struct param delpars[] = { {"filespec", REQ, VMSFS, NOPA, "for files to be deleted from ODS-2 volume.  Wildcards are permitted.."},
-                           { NULL, 0, 0, NOPA, NULL }
+                           { NULL,      0,   0,     NOPA, NULL }
 };
 
 unsigned del(int argc,char *argv[],int qualc,char *qualv[])
@@ -1213,6 +1289,7 @@ void show_version( void ) {
 #ifdef DISKIMAGE
     printf( " for image files" );
 #endif
+    printf( " built %s %s", __DATE__, __TIME__ );
 #ifdef USE_READLINE
     printf(" with readline version %s", rl_library_version );
 #endif
@@ -1230,15 +1307,15 @@ void show_version( void ) {
 
 /* show: the show command */
 
-struct qual showkwds[] = { {"default",         0, 0, "Default directory"},
+struct qual showkwds[] = { {"default",         0, 0, NV, "Default directory"},
 #if defined(DISKIMAGE) || defined(_WIN32)
-                           {"devices",         1, 0, "Devices"},
+                           {"devices",         1, 0, NV, "Devices"},
 #endif
-                           {"qualifier_style", 2, 0, "Qualifier style (Unix, VMS)" },
-                           {"time",            3, 0, "Time"},
-                           {"verify",          4, 0, "Command file echo" },
-                           {"version",         5, 0, "Version"},
-                           {NULL,              0, 0, NULL }
+                           {"qualifier_style", 2, 0, NV, "Qualifier style (Unix, VMS)" },
+                           {"time",            3, 0, NV, "Time"},
+                           {"verify",          4, 0, NV, "Command file echo" },
+                           {"version",         5, 0, NV, "Version"},
+                           {NULL,              0, 0, NV, NULL }
 };
 struct param showpars[] = { {"item_name", REQ, KEYWD, PA(showkwds), NULL },
                             {NULL,        0,   0,     NOPA,         NULL }
@@ -1365,16 +1442,16 @@ void setdef(char *newdef)
 
 hlpfunc_t sethelp;
 
-struct qual setkwds[] = { {"default",              0, 0, "Default directory"},
-                          {"directory_qualifiers", 1, 0, "Default qualifiers for DIRECTORY command" },
-                          {"qualifier_style",      2, 0, "Qualifier style (Unix, VMS)" },
-                          {"verify",               3, 0, "-Display commands in indirect files" },
-                          {"noverify",             4, 0, NULL },
-                          {NULL,              0, 0, NULL }
+struct qual setkwds[] = { {"default",              0, 0, NV, "Default directory"},
+                          {"directory_qualifiers", 1, 0, NV, "Default qualifiers for DIRECTORY command" },
+                          {"qualifier_style",      2, 0, NV, "Qualifier style (Unix, VMS)" },
+                          {"verify",               3, 0, NV, "-Display commands in indirect files" },
+                          {"noverify",             4, 0, NV, NULL },
+                          {NULL,                   0, 0, NV, NULL }
 };
-struct qual setqskwds[] = {{"unix", 1, 0, "Unix style options, '-option'"},
-                           {"vms",  2, 0, "VMS style qualifiers, '/qualifier'"},
-                           {NULL,   0, 0, NULL }
+struct qual setqskwds[] = {{"unix", 1, 0, NV, "Unix style options, '-option'"},
+                           {"vms",  2, 0, NV, "VMS style qualifiers, '/qualifier'"},
+                           {NULL,   0, 0, NV, NULL }
 };
 struct param setpars[] = { {"item_name", REQ, KEYWD, PA(setkwds),         NULL },
                            {"value"    , CND, KEYWD, sethelp, setqskwds,  NULL },
@@ -1503,9 +1580,9 @@ unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[])
 
 #define mnt_write 1
 
-struct qual mouquals[] = { {"readonly", 0,         mnt_write,"Only allow reading from volume"},
-                           {"write",    mnt_write, 0,        "Allow writing to volume", },
-                           {NULL, 0, 0, NULL } };
+struct qual mouquals[] = { {"readonly", 0,         mnt_write, NV, "Only allow reading from volume"},
+                           {"write",    mnt_write, 0,         NV, "Allow writing to volume", },
+                           {NULL,       0,         0,         NV, NULL } };
 struct param moupars[] = { {"volumes", REQ, LIST, NOPA,
 #ifdef DISKIMAGE
 "disk images in volume set separated by comma"
@@ -1524,7 +1601,7 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
     int sts = 1,devices = 0;
     char *devs[100],*labs[100];
     int options;
-    
+
     options = checkquals(0,mouquals,qualc,qualv);
     if( options == -1 )
         return SS$_BADPARAM;
@@ -1634,6 +1711,10 @@ void qualhelp( int par, struct qual *qtable ) {
     struct qual *q;
     int n = 0;
     size_t max = 0;
+
+    if( par < 0 )
+        max = -par;
+
 #define NOSTR "[no]"
 #define NOSTR_LEN (sizeof(NOSTR)-1)
     for( q = qtable; q->name; q++ ) {
@@ -1641,6 +1722,8 @@ void qualhelp( int par, struct qual *qtable ) {
             size_t len = strlen(q->name);
             if( *q->helpstr == '-' )
                 len += NOSTR_LEN;
+            if( q->qtype != NOVAL )
+                len++;
             if( len > max )
                 max = len;
         }
@@ -1648,18 +1731,40 @@ void qualhelp( int par, struct qual *qtable ) {
     for( q = qtable; q->name; q++ ) {
         if( q->helpstr ) {
             if( !n++ && !par )
-                printf( "  %s:\n", par? "Parameters": "Qualifiers"  );
-            printf("    %s", par? "": vms_qual? "/" : "-" );
+                printf( "  %s:\n", "Qualifiers"  );
+            printf("    %s", par? par<0? "   ": "": vms_qual? "/" : "-" );
             if( *q->helpstr == '-' )
-                printf( NOSTR "%-*s - %s\n",
-                        (int) (max-NOSTR_LEN), q->name,
-                        q->helpstr+1 );
+                switch( q->qtype ) {
+                case NOVAL:
+                    printf( NOSTR "%-*s - %s\n",
+                            (int) (max-NOSTR_LEN), q->name, q->helpstr+1 );
+                    break;
+                case KEYVAL:
+                    printf( NOSTR "%s=%-*s - %s\n",
+                            q->name, (int) (max-(NOSTR_LEN+strlen(q->name)+1)), "",
+                            q->helpstr+1 );
+                    qualhelp( -(int)max, (struct qual *)q->arg );
+                    break;
+                default:
+                    abort();
+                }
             else
-                printf("%-*s - %s\n", (int) max, q->name,
-                       q->helpstr );
+                switch( q->qtype ) {
+                case NOVAL:
+                    printf("%-*s - %s\n", (int) max, q->name, q->helpstr );
+                    break;
+                case KEYVAL:
+                    printf( "%s=%-*s - %s\n", q->name, (int)(max-strlen(q->name)+1), "",
+                            q->helpstr );
+                    qualhelp( -(int)max, (struct qual *)q->arg );
+                    break;
+                default:
+                    abort();
+                }
         }
     }
-    printf( "\n" );
+    if( par >= 0 )
+        printf( "\n" );
 }
 #undef NOSTR
 #undef NOSTR_LEN
@@ -1899,7 +2004,7 @@ int cmdexecute(int argc,char *argv[],int qualc,char *qualv[])
     }
 
     if (argc < minpars|| argc > maxpars) {
-        printf("%%ODS2-E-PARAMS, Incorrect number of command parameters\n");
+        printf( "%%ODS2-E-PARAMS, Too %s parameters specified\n", (argc < minpars? "few": "many") );
         return 0;
     }
     sts = (*cmd->proc) (argc,argv,qualc,qualv);
@@ -1997,24 +2102,22 @@ char *getcmd(char *inp, char *prompt)
     static unsigned long key_table_id = 0;
     static unsigned long keyboard_id = 0;
 
-    if (key_table_id == 0)
-	{
+    if (key_table_id == 0) {
 	status = smg$create_key_table (&key_table_id);
 	if (status & 1)
 	    status = smg$create_virtual_keyboard (&keyboard_id);
 	if (!(status & 1)) return (NULL);
-	}
+    }
 
     status = smg$read_composed_line (&keyboard_id, &key_table_id,
 		&input_d, &prompt_d, &input_d, 0,0,0,0,0,0,0);
 
     if (status == SMG$_EOF)
 	retstat = NULL;
-    else
-	{
+    else {
 	inp[input_d.dsc_w_length] = '\0';
 	retstat = inp;
-	}
+    }
 
     return(retstat);
 }
@@ -2111,32 +2214,32 @@ int main(int argc,char *argv[])
               }
               ptr = str;
        } else {
-        if (atfile != NULL) {
-            if (fgets(str,sizeof(str),atfile) == NULL) {
-                fclose(atfile);
-                atfile = NULL;
-                *str = '\0';
-            } else {
+           if (atfile != NULL) {
+               if (fgets(str,sizeof(str),atfile) == NULL) {
+                   fclose(atfile);
+                   atfile = NULL;
+                   *str = '\0';
+               } else {
 #ifndef _WIN32
-                ptr = strchr(str, '\r' );
-                if( ptr == NULL ) /* Do not separate from the next line */
+                   ptr = strchr(str, '\r' );
+                   if( ptr == NULL ) /* Do not separate from the next line */
 #endif
-                ptr = strchr(str,'\n');
-                if (ptr != NULL) *ptr = '\0';
-                if( verify_cmd )
-                    printf("$> %s\n",str);
-            }
-            ptr = str;
+                       ptr = strchr(str,'\n');
+                   if (ptr != NULL) *ptr = '\0';
+                   if( verify_cmd )
+                       printf("$> %s\n",str);
+               }
+               ptr = str;
         } else {
 #ifdef VMS
-	    if (getcmd (str, "$> ") == NULL) break;
+            if (getcmd (str, "$> ") == NULL) break;
             ptr = str;
 #elif( defined USE_READLINE )
             if (rl != NULL) {
                 free( rl );
             }
             rl =
-              ptr = readline( MNAME(MODULE_NAME) "$> " );
+                ptr = readline( MNAME(MODULE_NAME) "$> " );
             if (rl == NULL) {
                 break;
             } else {
