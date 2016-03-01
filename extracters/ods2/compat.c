@@ -7,12 +7,20 @@
  * replacement until very recent IDEs.
  * Microsoft doesn't like fopen.
  * One needs to use a M$ call to translate system errors.
+ *
+ * Finding out about drive letter assignments is unique to windows.
  */
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
-
+#include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include "compat.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#if defined(_MSC_VER) && _MSC_VER < 1900
 
 int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
 {
@@ -37,10 +45,9 @@ int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
 
     return count;
 }
+#endif
 
-#ifdef _WIN32
-#include <errno.h>
-#include <windows.h>
+#ifdef _MSC_VER
 
 FILE *openf( const char *filename, const char *mode ) {
   errno_t err;
@@ -52,7 +59,9 @@ FILE *openf( const char *filename, const char *mode ) {
   }
   return NULL;
 }
+#endif
 
+#ifdef _WIN32
 
 TCHAR *w32_errstr( DWORD eno, ... ) {
     va_list ap;
@@ -71,7 +80,32 @@ TCHAR *w32_errstr( DWORD eno, ... ) {
     va_end(ap);
     return msg;
 }
-#endif
+
+char *driveFromLetter( const char *letter ) {
+    DWORD rv = ERROR_INSUFFICIENT_BUFFER;
+    size_t cs = 16;
+    TCHAR *bufp = NULL;
+
+    do {
+        if( rv == ERROR_INSUFFICIENT_BUFFER ) {
+            TCHAR *newp;
+            cs *= 2;
+            newp = (TCHAR *) realloc( bufp, cs );
+            if( newp == NULL )
+                break;
+            bufp = newp;
+        }
+        rv = QueryDosDevice( letter, bufp, cs );
+        if( rv == 0 ) {
+            rv = GetLastError();
+            continue;
+        }
+        return bufp;
+    } while( rv == ERROR_INSUFFICIENT_BUFFER );
+
+    free( bufp );
+    return NULL;
+}
 #endif
 
 /* For ISO C compliance, ensure that there's something in this module */

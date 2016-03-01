@@ -63,20 +63,57 @@ static char drives[26][4];
  * the physical device.  To keep it happy, map the next free drive letter to this
  * filename, and use it to identify the device.  phyio_init will check the mapping table
  * to get the actual filename to open.
+ *
+ * To minimize confusion, under Windows, try to pick a pseudo-drive letter that
+ * isn't in use by windows.  Avoid A & B unless all >= C are in use.  If we can't
+ * find a non-conflicting letter, use the first letter not in use.  Under any other
+ * OS, just use the first free letter.
  */
 
 char *diskio_mapfile( const char *filename, int options ) {
     int l, L = -1;
+#ifdef _WIN32
+    int ff = -1, ffa = -1;
+#endif
+
     for( l = 0; l < 26; l++ ) {
-        if( diskfiles[l] == NULL && L < 0 ) L = l;
+        if( diskfiles[l] == NULL && L < 0) {
+#ifdef _WIN32
+            char dl[3] = { 'A', ':', '\0' };
+            dl[0] += l;
+            if( ff < 0 )
+                ff = l;
+            if( driveFromLetter( dl ) == NULL) {
+                if( dl[0] >= 'C' ) {
+                    if( L < 0 )
+                        L = l;
+                } else {
+                    if( ffa < 0 )
+                        ffa = l;
+                }
+            }
+#else
+            L = l;
+#endif
+        }
         if( diskfiles[l] && strcmp( diskfiles[l], filename ) == 0 ) {
             printf( "%s is already mounted as drive %s\n", filename, drives[l] );
             return NULL;
         }
     }
+#ifdef _WIN32
+    if( L < 0 ) {
+        if( ffa >= 0 )
+            L = ffa;
+        else {
+            if( ff >= 0 )
+                L = ff;
+        }
+    }
+#endif
     if( L < 0 ) {
         printf( "No free drive letters for %s\n", filename );
-        return 0;
+        return NULL;
     }
     snprintf(drives[L], 3, "%c:", L + 'A');
     drives[L][3] = options;

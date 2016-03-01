@@ -1,6 +1,8 @@
 #define MODULE_NAME	ODS2
 
-/*     Feb-2016, v1.4 add readline support, dir/full etc */
+/*     Feb-2016, v1.4 add readline support, dir/full etc
+ *     See git commit messages for details.
+ */
 
 /*     Jul-2003, v1.3hb, some extensions by Hartmut Becker */
 
@@ -51,7 +53,8 @@
  *   Feb 2016 Timothe Litt <litt at acm _ddot_ org>
  *      Bug fixes, readline support, build on NT without wnaspi32,
  *      Decode error messages, patch from vms2linux.de. VS project files.
- *      Rework command parsing and help.  Bugs, bugs & bugs.
+ *      Rework command parsing and help.  Bugs, bugs & bugs.  See git
+ *      commit history for details.
  *
  *   31-AUG-2001 01:04	Hunter Goatley <goathunter@goatley.com>
  *
@@ -174,7 +177,7 @@ struct qual {
 struct param;
 struct CMDSET;
 
-typedef const char * (hlpfunc_t)(struct CMDSET *cmd, struct param *p, int argc, char **argv);
+typedef const char *(hlpfunc_t)( struct CMDSET *cmd, struct param *p, int argc, char **argv );
 
 struct param {
     const char *name;
@@ -207,7 +210,8 @@ static int vms_qual = 1;
 static int verify_cmd = 1;
 
 /* checkquals: Given valid qualifier definitions, process qualifer
- * list from a command left to right
+ * list from a command left to right.  Also handles parameters and
+ * qualifier values (/Qual=value).
  */
 
 int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
@@ -254,7 +258,7 @@ int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
                 qv++;
                 nvp = strchr( qv, ')' );
                 if( nvp == NULL ) {
-                    printf( "%%ODS2-W-NQP, %c%s is missing ')'\n",
+                    printf( "%%ODS2-W-NQP, %c%s %s is missing ')'\n",
                             toupper( *type ), type+1, qualv[i] );
                     return -1;
                 }
@@ -340,7 +344,7 @@ void pwrap( int *pos, const char *fmt, ... ) {
 
 /* dir: a directory routine */
 
-#define dir_extra (dir_date|dir_fileid|dir_owner|dir_prot|dir_size)
+#define dir_extra (dir_date | dir_fileid | dir_owner | dir_prot | dir_size)
 #define  dir_date        (1 <<  0)
 #define  dir_fileid      (1 <<  1)
 #define  dir_owner       (1 <<  2)
@@ -358,12 +362,12 @@ void pwrap( int *pos, const char *fmt, ... ) {
 #define dir_created      (1 << 12)
 #define dir_expired      (1 << 13)
 #define dir_modified     (1 << 14)
+#define dir_dates        (dir_backup | dir_created | dir_expired | dir_modified)
 
 #define  dir_allocated   (1 << 15)
 #define  dir_used        (1 << 16)
 #define dir_sizes        (dir_allocated | dir_used)
 
-#define dir_dates (dir_backup|dir_created|dir_expired|dir_modified)
 #define dir_default (dir_heading|dir_names|dir_trailing)
 
 struct qual datekwds[] = { {"created",  dir_created,  0, NV, "Date file created (default)"},
@@ -405,7 +409,7 @@ struct qual dirquals[] = { {"brief",         dir_default,   ~dir_default,    NV,
 int dir_defopt = dir_default;
 
 struct param dirpars[] = { {"filespec", OPT, VMSFS, NOPA, "for files to select. Wildcards are allowed."},
-                           { NULL, 0, 0, NOPA, NULL }
+                           { NULL,      0,   0,     NOPA, NULL }
 };
 
 void dirtotal( int options, int size, int alloc ) {
@@ -496,7 +500,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
         char dir[NAM$C_MAXRSS + 1];
         int namelen;
         int dirlen = 0;
-        int dirfiles = 0,dircount = 0;
+        int dirfiles = 0, dircount = 0;
         int dirblocks = 0, diralloc = 0, totblocks = 0, totalloc = 0;
         int printcol = 0;
 #ifdef DEBUG
@@ -509,7 +513,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
         while ((sts = sys_search(&fab)) & 1) {
 
             if (dirlen != nam.nam$b_dev + nam.nam$b_dir ||
-                memcmp(rsa,dir,nam.nam$b_dev + nam.nam$b_dir) != 0) {
+                memcmp(rsa, dir, nam.nam$b_dev + nam.nam$b_dir) != 0) {
                 if (dirfiles > 0 && (options & dir_trailing)) {
                     if (printcol > 0) printf("\n");
                     printf("\nTotal of %d file%s",dirfiles,(dirfiles == 1 ? "" : "s"));
@@ -643,8 +647,8 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
                             pwrap(  &pos, "Fixed length %u byte records", fab.fab$w_mrs ); break;
                         case FAB$C_VAR:
                             pwrap(  &pos, "Variable length, maximum %u bytes", fab.fab$w_mrs ); break;
-                        case FAB$C_VFC :
-                            pwrap(  &pos, "Variable length, fixed carriage control %u, maximum %u bytes", fab.fab$w_mrs ); break;
+                        case FAB$C_VFC:
+                            pwrap(  &pos, "Variable length, fixed carriage control %u, maximum %u bytes", (fab.fab$b_fsz? fab.fab$b_fsz: 2), fab.fab$w_mrs ); break;
                         case FAB$C_STM:
                             pwrap(  &pos, "Stream" ); break;
                         case FAB$C_STMLF:
@@ -1251,34 +1255,6 @@ unsigned extend(int argc,char *argv[],int qualc,char *qualv[])
 }
 
 
-#if defined( _WIN32 ) && !defined( DISKIMAGE )
-char *driveFromLetter( const char *letter ) {
-    DWORD rv = ERROR_INSUFFICIENT_BUFFER;
-    size_t cs = 16;
-    TCHAR *bufp = NULL;
-
-    do {
-        if( rv == ERROR_INSUFFICIENT_BUFFER ) {
-            TCHAR *newp;
-            cs *= 2;
-            newp = (TCHAR *) realloc( bufp, cs );
-            if( newp == NULL )
-                break;
-            bufp = newp;
-        }
-        rv = QueryDosDevice( letter, bufp, cs );
-        if( rv == 0 ) {
-            rv = GetLastError();
-            continue;
-        }
-        return bufp;
-    } while( rv == ERROR_INSUFFICIENT_BUFFER );
-
-    free( bufp );
-    return NULL;
-}
-#endif
-
 /* show: version */
 
 #define MNAMEX(n) #n
@@ -1497,7 +1473,7 @@ const char * sethelp( struct CMDSET *cmd, struct param *p, int argc, char **argv
     default:
         abort();
     }
-    return NULL;    
+    return NULL;
 }
 
 unsigned set(int argc,char *argv[],int qualc,char *qualv[])
@@ -1555,15 +1531,20 @@ unsigned set(int argc,char *argv[],int qualc,char *qualv[])
 
 /* The bits we need when we don't have real VMS routines underneath... */
 
+struct param dmopars[] = { {"drive_letter", REQ, STRING, NOPA, "Drive containing volume to dismount", },
+                           {NULL,           0,   0,      NOPA, NULL }
+};
+
 unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[])
 {
     struct DEV *dev;
-    int sts = device_lookup(strlen(argv[1]),argv[1],0,&dev);
+    int sts;
 
     UNUSED(argc);
     UNUSED(qualc);
     UNUSED(qualv);
 
+    sts = device_lookup(strlen(argv[1]),argv[1],0,&dev);
     if (sts & 1) {
         if (dev->vcb != NULL) {
             sts = dismount(dev->vcb);
@@ -1893,7 +1874,7 @@ struct CMDSET cmdset[] = {
     { "search",    search,    0,NULL,     searchpars, "Search VMS file for a string", },
     { "set",       set,       0,NULL,    setpars,     "Set PARAMETER - set HELP for list", },
 #ifndef VMSIO
-    { "dismount",  dodismount,0,NULL,     NULL,       "Dismount a VMS volume", },
+    { "dismount",  dodismount,0,NULL,     dmopars,    "Dismount a VMS volume", },
     { "mount",     domount,   0,mouquals, moupars,    "Mount a VMS volume", },
     { "statistics",statis,    0,NULL,     NULL,       "Display debugging statistics", },
 #endif

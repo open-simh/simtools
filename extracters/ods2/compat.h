@@ -13,16 +13,18 @@ int c99_snprintf(char *outBuf, size_t size, const char *format, ...);
 
 #endif
 
-#ifdef _WIN32
-#include <stdio.h>
-#include <windows.h>
-
+#ifdef _MSC_VER
 FILE *openf( const char *filename, const char *mode );
-
-TCHAR *w32_errstr( DWORD eno, ... );
-
 #else
 #define openf fopen
+#endif
+
+#ifdef _WIN32
+#include <stdarg.h>
+#include <windows.h>
+
+TCHAR *w32_errstr( DWORD eno, ... );
+char *driveFromLetter( const char *letter );
 #endif
 
 #define UNUSED(x) (void)(x)
