@@ -17,6 +17,7 @@
         'RMS' routines.
 */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,7 @@
 #include "access.h"
 #include "phyio.h"
 #include "compat.h"
+#include "sysmsg.h"
 
 #define DEBUGx
 
@@ -78,8 +80,8 @@ void fid_copy(struct fiddef *dst,struct fiddef *src,unsigned rvn)
 unsigned deaccesshead(struct VIOC *vioc,struct HEAD *head,unsigned idxblk)
 {
     if (head && idxblk) {
-	unsigned short check = checksum((vmsword *) head);
-	head->fh2$w_checksum = VMSWORD(check);
+        unsigned short check = checksum((vmsword *) head);
+        head->fh2$w_checksum = VMSWORD(check);
     }
     return deaccesschunk(vioc,idxblk,1,1);
 }
@@ -564,7 +566,7 @@ unsigned deaccessfile(struct FCB *fcb)
             cache_refcount((struct CACHE *) fcb->vioc);
         if (refcount != 0) {
             printf("File reference counts non-zero %d  (%d)\n",refcount,
-		fcb->cache.hashval);
+            fcb->cache.hashval);
 #ifdef DEBUG
             printf("File reference counts non-zero %d %d\n",
                    cache_refcount((struct CACHE *) fcb->wcb),cache_refcount((struct CACHE *) fcb->vioc));
@@ -738,24 +740,35 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],stru
     register unsigned device,sts = 0;
     struct VCB *vcb;
     struct VCBDEV *vcbdev;
+    struct VOLSETREC *volsetSYS = NULL;
 
     UNUSED(label);
 
+#ifdef DEBUG
     if (sizeof(struct HOME) != 512 || sizeof(struct HEAD) != 512) return SS$_NOTINSTALL;
-    vcb = (struct VCB *) malloc(sizeof(struct VCB) + (devices - 1) * sizeof(struct VCBDEV));
+#endif
+    vcb = (struct VCB *) calloc(1, sizeof(struct VCB) + (devices - 1) * sizeof(struct VCBDEV));
     if (vcb == NULL) return SS$_INSFMEM;
     vcb->status = 0;
     if (flags & 1) vcb->status |= VCB_WRITE;
     vcb->fcb = NULL;
     vcb->dircache = NULL;
     vcbdev = vcb->vcbdev;
-    for (device = 0; device < devices; device++) {
+    for( device = 0; device < devices; device++, vcbdev++ ) {
         sts = SS$_NOSUCHVOL;
         vcbdev->dev = NULL;
-        if (strlen(devnam[device])) {
+        if (strlen(devnam[device])) { /* Really want to allow skipping volumes? */
             unsigned int hba;
+            if( label[device] != NULL && strlen(label[device]) > sizeof( volsetSYS[0].vsr$t_label ) ) {
+                sts = SS$_BADPARAM;
+                break;
+            }
             sts = device_lookup(strlen(devnam[device]),devnam[device],1,&vcbdev->dev);
-            if (!(sts & 1)) break;
+            if( !(sts & 1) ) break;
+            if (vcbdev->dev->vcb != NULL) {
+                sts = SS$_DEVMOUNT;
+                break;
+            }
             for (hba = 1; hba <= HOME_LIMIT; hba++) {
                 sts = phyio_read(vcbdev->dev->handle,hba,sizeof(struct HOME),(char *) &vcbdev->home);
                 if (!(sts & 1)) break;
@@ -763,26 +776,38 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],stru
                     memcmp(vcbdev->home.hm2$t_format,"DECFILE11B  ",12) == 0) break;
                 sts = SS$_DATACHECK;
             }
-            if (sts & 1) {
-                if (VMSWORD(vcbdev->home.hm2$w_checksum2) != checksum((unsigned short *) &vcbdev->home)) {
-                    sts = SS$_DATACHECK;
-                } else {
-                    if (VMSWORD(vcbdev->home.hm2$w_rvn) != device + 1)
-                        if (VMSWORD(vcbdev->home.hm2$w_rvn) > 1 || device != 0)
-                            sts = SS$_UNSUPVOLSET;
-                    if (vcbdev->dev->vcb != NULL) {
-                        sts = SS$_DEVMOUNT;
+            if( !(sts & 1) ) break;
+            if (VMSWORD(vcbdev->home.hm2$w_checksum2) != checksum((unsigned short *) &vcbdev->home)) {
+                sts = SS$_DATACHECK;
+                break;
+            }
+            if( label[device] != NULL ) {
+                int i;
+                char lbl[12+1]; /* Pad CLI-supplied label to match ODS */
+                snprintf( lbl, sizeof(lbl), "%-12s", label[device] );
+                for( i = 0; i < 12; i++ ) {
+                    if( toupper(lbl[i]) != vcbdev->home.hm2$t_volname[i] ) {
+                        printf( "%%ODS2-W-WRONGVOL, Device %s contains volume '%12.12s', '%s' expected\n",
+                                devnam[device], vcbdev->home.hm2$t_volname, lbl );
+                        sts = SS$_ITEMNOTFOUND;
+                        break;
                     }
                 }
+                if( (sts & 1) == 0 ) break;
+            }
+            if( (VMSWORD(vcbdev->home.hm2$w_rvn) != device + 1) &&
+                !(VMSWORD(vcbdev->home.hm2$w_rvn) == 0 && device == 0) ) {
+                    printf( "%%ODS2-E-WRONGVOL, Device %s contains RVN %u, RVN %u expected\n",
+                             devnam[device], VMSWORD(vcbdev->home.hm2$w_rvn), device+1 );
+                    sts = SS$_UNSUPVOLSET;
             }
             if (!(sts & 1)) break;
-        }
-        vcbdev++;
+        } /* for(each device) */
     }
     if (sts & 1) {
         vcb->devices = devices;
         vcbdev = vcb->vcbdev;
-        for (device = 0; device < devices; device++) {
+        for( device = 0; device < devices; device++, vcbdev++ ) {
             vcbdev->idxfcb = NULL;
             vcbdev->mapfcb = NULL;
             vcbdev->clustersize = 0;
@@ -791,42 +816,150 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],stru
             if (strlen(devnam[device])) {
                 struct fiddef idxfid = {1,1,0,0};
                 idxfid.fid$b_rvn = device + 1;
-                sts = accessfile(vcb,&idxfid,&vcbdev->idxfcb,flags & 1);
+                sts = accessfile( vcb, &idxfid, &vcbdev->idxfcb, (vcb->status & VCB_WRITE) != 0 );
                 if (!(sts & 1)) {
-                    vcbdev->dev = NULL;
-                } else {
-                    vcbdev->dev->vcb = vcb;
-                    if (flags & 1) {
-                        struct fiddef mapfid = {2,2,0,0};
-                        mapfid.fid$b_rvn = device + 1;
-                        sts = accessfile(vcb,&mapfid,&vcbdev->mapfcb,1);
-                        if (sts & 1) {
-                            struct VIOC *vioc;
-                            struct SCB *scb;
-                            sts = accesschunk(vcbdev->mapfcb,1,&vioc,(char **) &scb,NULL,0);
-                            if (sts & 1) {
-                                if (scb->scb$w_cluster == vcbdev->home.hm2$w_cluster) {
-                                    vcbdev->clustersize = vcbdev->home.hm2$w_cluster;
-                                    vcbdev->max_cluster = (scb->scb$l_volsize + scb->scb$w_cluster - 1) / scb->scb$w_cluster;
-                                    deaccesschunk(vioc,0,0,0);
-                                    sts = update_freecount(vcbdev,&vcbdev->free_clusters);
-#ifdef DEBUG
-                                    printf( "%d of %d blocks are free on %12.12s\n",
-                                            vcbdev->free_clusters * vcbdev->clustersize, scb->scb$l_volsize,
-                                            vcbdev->home.hm2$t_volname );
-#endif
-                                }
+                    vcbdev->dev = NULL; /*** DECREF ***/
+                    continue;
+                }
+                vcbdev->dev->vcb = vcb;
+                if( VMSWORD(vcbdev->home.hm2$w_rvn) != 0 ) {
+                    if( device == 0 ) {
+                        struct fiddef vsfid = {6,6,1,0};
+                        struct FCB *vsfcb = NULL;
+                        struct VIOC *vioc = NULL;
+                        unsigned recs = 0;
+                        int rec;
+                        unsigned int vbn = 1;
+                        struct VOLSETREC *bufp;
+                        int setcount = VMSWORD(vcbdev->home.hm2$w_setcount);
+
+                        if( setcount != (int)devices ) {
+                            printf( "%%ODS2-E-VOLCOUNT, Volume set %12.12s has %u members, but %u specified\n",
+                                    vcbdev->home.hm2$t_strucname, setcount, devices );
+                            sts = SS$_DEVNOTMOUNT;
+                            break;
+                        }
+                        /* Read VOLSET.SYS */
+                        volsetSYS = (struct VOLSETREC *)malloc( (1+setcount) * sizeof( struct VOLSETREC ) );
+                        sts = accessfile( vcb, &vsfid, &vsfcb, 0 );
+                        if( (sts & 1) == 0 ) {
+                            printf( "%%ODS2-E-NOVOLSET, Unable to access VOLSET.SYS: %s\n", getmsg(sts, MSG_TEXT) );
+                            break;
+                        }
+                        for( rec = 0; rec <= setcount; rec++ ) {
+                            if( recs == 0 ) {
+                                if( vbn != 1 ) deaccesschunk(vioc,0,0,0);
+                                sts = accesschunk(vsfcb,vbn, &vioc,(char **)&bufp, &recs, 0);
+                                if( (sts & 1) == 0 ) break;
+                                vbn += recs;
+                                recs *= 512 / sizeof( struct VOLSETREC );
                             }
+                            memcpy(volsetSYS+rec, bufp++, sizeof( struct VOLSETREC ));
+                        }
+                        deaccesschunk(vioc,0,0,0);
+                        { int st2;
+                            st2 = deaccessfile(vsfcb);
+                            if( sts & 1 ) sts = st2;
+                        }
+                        if( (sts & 1) == 0 )  {
+                            printf( "%%ODS2-E-VOLIOERR, Error reading VOLSET.SYS: %s\n", getmsg(sts, MSG_TEXT) );
+                            break;
+                        }
+                        if( memcmp(vcbdev->home.hm2$t_strucname, volsetSYS[0].vsr$t_label, 12 ) != 0 ) {
+                            printf( "%%ODS2-E-INCONVOL, Volume set name is '%12.12s', but VOLSET.SYS is for '%12.12s'\n",
+                                    vcbdev->home.hm2$t_strucname, volsetSYS[0].vsr$t_label );
+                            sts = SS$_NOSUCHVOL;
+                            break;
+                        }
+                    } else { /* device != 0 */
+                        if( vcb->vcbdev[0].dev == NULL ) {
+                            printf( "%%ODS2-F-NORVN1, RVN 1 must be mounted\n" );
+                            sts = SS$_NOSUCHVOL;
+                            break;
+                        }
+                        if( memcmp(vcbdev->home.hm2$t_strucname, vcb->vcbdev[0].home.hm2$t_strucname, 12) != 0 ) {
+                            printf( "%%ODS2-E-INCONVOL, Volume '%12.12s' on %s is a member of '%12.12s', not a member of '%12.12s'\n",
+                                    vcbdev->home.hm2$t_volname, devnam[device], vcbdev->home.hm2$t_strucname,
+                                    vcb->vcbdev[0].home.hm2$t_strucname );
+                            sts = SS$_NOSUCHVOL;
+                            break;
                         }
                     }
+
+                    if( memcmp(vcbdev->home.hm2$t_volname, volsetSYS[device+1].vsr$t_label, 12 ) != 0 ) {
+                        printf( "%%ODS2-E-WRONGVOL, RVN %u of '%12.12s' is '%12.12s'.  %s contains '%12.12s'\n",
+                                device+1, vcb->vcbdev[0].home.hm2$t_strucname, 
+                                volsetSYS[device+1].vsr$t_label, devnam[device], vcbdev->home.hm2$t_volname );
+                        sts = SS$_NOSUCHVOL;
+                        break;
+                    }
+                } /* rvn != 0 */
+
+                if( vcb->status & VCB_WRITE ) {
+                    struct fiddef mapfid = {2,2,0,0};
+                    mapfid.fid$b_rvn = device + 1;
+                    sts = accessfile( vcb, &mapfid, &vcbdev->mapfcb, 1);
+                    if (sts & 1) {
+                        struct VIOC *vioc;
+                        struct SCB *scb;
+                        sts = accesschunk(vcbdev->mapfcb,1,&vioc,(char **) &scb,NULL,0);
+                        if (sts & 1) {
+                            if (scb->scb$w_cluster == vcbdev->home.hm2$w_cluster) {
+                                vcbdev->clustersize = vcbdev->home.hm2$w_cluster;
+                                vcbdev->max_cluster = (scb->scb$l_volsize + scb->scb$w_cluster - 1) / scb->scb$w_cluster;
+                                deaccesschunk(vioc,0,0,0);
+                                sts = update_freecount(vcbdev,&vcbdev->free_clusters);
+#ifdef DEBUG
+                                printf( "%d of %d blocks are free on %12.12s\n",
+                                        vcbdev->free_clusters * vcbdev->clustersize, scb->scb$l_volsize,
+                                        vcbdev->home.hm2$t_volname );
+#endif
+                            }
+                        }
+                    } else {
+                        printf( "%%ODS2-E-NOBITMAP, Unable to access BITMAP.SYS: %s\n", getmsg(sts, MSG_TEXT) );
+                        vcbdev->mapfcb = NULL;
+                        break;
+                    }
                 }
+                if( (sts & 1) && (flags & 2) ) {
+                    printf("%%MOUNT-I-MOUNTED, Volume %12.12s mounted on %s\n",
+                           vcbdev->home.hm2$t_volname, vcbdev->dev->devnam);
+                }
+            } /* device len */
+        } /* for( each device ) */
+        if( !(sts & 1) ) {
+            vcbdev = vcb->vcbdev;
+            for( device = 0; device < devices; device++, vcbdev++ ) {
+                if (vcbdev->dev == NULL) continue;
+
+                if( vcb->status & VCB_WRITE && vcbdev->mapfcb != NULL ) {
+                    /* sts = */
+                    deaccessfile(vcbdev->mapfcb);
+                    /* if( !(sts & 1) ) ??; */
+                    vcbdev->idxfcb->status &= ~FCB_WRITE;
+                    vcbdev->mapfcb = NULL;
+                }
+                cache_remove( &vcb->fcb->cache );
+                /* sts = */
+                deaccesshead(vcbdev->idxfcb->headvioc,vcbdev->idxfcb->head,vcbdev->idxfcb->headvbn);
+                /* if (!(sts & 1)) ??; */
+                vcbdev->idxfcb->headvioc = NULL;
+                cache_untouch(&vcbdev->idxfcb->cache,0);
+                vcbdev->dev->vcb = NULL; 
+                /* ?? vcbdev->dev = NULL *//* **DECREF **/
             }
-            vcbdev++;
+            cache_remove( &vcb->fcb->cache );
+            while( vcb->dircache ) cache_delete( (struct CACHE *) vcb->dircache );
         }
-    } else {
+    } else { /* *** DECREF *** */
         free(vcb);
         vcb = NULL;
     }
+    if( (sts & 1) && (flags & 2) && VMSWORD(vcb->vcbdev[0].home.hm2$w_rvn) != 0 ) {
+        printf ( "%%MOUNT-I-MOUNTEDVS, Volume set %12.12s mounted\n", vcb->vcbdev[0].home.hm2$t_strucname );
+    }
+    if( volsetSYS != NULL ) free( volsetSYS );
     if (retvcb != NULL) *retvcb = vcb;
     return sts;
 }

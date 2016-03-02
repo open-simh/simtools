@@ -55,7 +55,7 @@ cache$(OBJ) : cache.c cache.h ssdef.h
 
 phyvms$(OBJ) : phyvms.c phyio.h ssdef.h
 
-device$(OBJ) : device.c ssdef.h access.h phyio.h
+device$(OBJ) : device.c ssdef.h access.h phyio.h sysmsg.h
 
 access$(OBJ) : access.c ssdef.h access.h phyio.h
 

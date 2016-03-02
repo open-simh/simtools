@@ -173,6 +173,11 @@ struct SCB {
     vmsword scb$w_checksum;
 };
 
+struct VOLSETREC {
+    char vsr$t_label[12];
+    char vsr$b_reserved[52];
+};
+
 #ifdef __ALPHA
 #pragma member_alignment restore
 #endif

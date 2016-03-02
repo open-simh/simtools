@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Should replace with lib$sys_getmsg under VMS
 
@@ -13,6 +14,7 @@
 #include "ssdef.h"
 #include "rms.h"
 #include "compat.h"
+#include "sysmsg.h"
 
 static
 const struct VMSMSG {
@@ -70,17 +72,26 @@ const struct VMSMSG {
 {0, NULL},
   };
 
-const char *getmsg( unsigned int vmscode ) {
-  char fmt[] = "%SYSTEM-E-NOSUCHMSG, Unknown message code %08X";
-  static char buf[sizeof(fmt)+8+1];
+const char *getmsg( unsigned int vmscode, unsigned int flags ) {
+    const char fmt[] = "%%SYSTEM-E-NOSUCHMSG, Unknown message code %08X";
+    static char buf[sizeof(fmt)+8+1];
+    const char *txtp = NULL;
 
-  for( mp =  vms2text; mp->text; mp++ ) {
-    if( vmscode == mp-> code ) {
-      return mp->text;
+    for( mp =  vms2text; mp->text; mp++ ) {
+        if( vmscode == mp-> code ) {
+          txtp = mp->text;
+          break;
+        }
     }
-  }
-  snprintf( buf, sizeof(buf), fmt, vmscode );
-  return buf;
+    if( txtp == NULL ) {
+        txtp = buf;
+    }
+    if( flags == MSG_TEXT ) {
+        txtp = strchr( txtp, ',' );
+        if( txtp == NULL ) abort();
+        return txtp+2;
+    }
+    return txtp;
 }
 
 /*

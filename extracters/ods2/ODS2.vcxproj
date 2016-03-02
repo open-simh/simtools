@@ -119,7 +119,6 @@
     <ClInclude Include="descrip.h" />
     <ClInclude Include="direct.h" />
     <ClInclude Include="fibdef.h" />
-    <ClInclude Include="header.h" />
     <ClInclude Include="memory.h" />
     <ClInclude Include="phyio.h" />
     <ClInclude Include="resource.h" />

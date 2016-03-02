@@ -40,7 +40,10 @@ unsigned read_count = 0;
 unsigned write_count = 0;
 
 #define MAX_DEVS 64
-FILE *handles[1+MAX_DEVS];
+struct handle {
+    FILE *fh;
+    int drive;
+} handles[1+MAX_DEVS];
 
 void phyio_show(void)
 {
@@ -152,7 +155,6 @@ int diskio_showdrives( void ) {
     }
     if( n == 0 ) {
         printf( "No drives assigned\n" );
-        sts = 0;
     }
     return sts;
 }
@@ -177,7 +179,7 @@ unsigned phyio_init( int devlen,char *devnam,unsigned *handle,struct phyio_info 
     info->sectorsize = 0;
     *handle = ~0;
 
-    for( hi = 1; hi < MAX_DEVS && handles[hi] != NULL; hi++ )
+    for( hi = 1; hi < MAX_DEVS && handles[hi].fh != NULL; hi++ )
         ;
 
     if( hi >= MAX_DEVS ) {
@@ -195,11 +197,12 @@ unsigned phyio_init( int devlen,char *devnam,unsigned *handle,struct phyio_info 
         return SS$_NOSUCHFILE;
     }
 
-    handles[hi] = openf ( diskfiles[i], (drives[i][3] & 1)? "rb+": "rb" );
-    if( handles[hi] == NULL ) {
+    handles[hi].fh = openf ( diskfiles[i], (drives[i][3] & 1)? "rb+": "rb" );
+    if( handles[hi].fh == NULL ) {
         perror( diskfiles[i] );
         return SS$_NOSUCHFILE;
     }
+    handles[hi].drive = i;
 
     ++init_count;
 
@@ -208,25 +211,27 @@ unsigned phyio_init( int devlen,char *devnam,unsigned *handle,struct phyio_info 
 }
 
 unsigned phyio_close(unsigned handle) {
-    if( handle == 0 || handle > MAX_DEVS || handles[handle] == NULL ) {
+    if( handle == 0 || handle > MAX_DEVS || handles[handle].fh == NULL ) {
         return SS$_NOIOCHAN;
     }
-    fclose ( handles[handle] );
-    handles[handle] = NULL;
+    fclose ( handles[handle].fh );
+    handles[handle].fh = NULL;
+    if( diskio_unmapdrive(drives[handles[handle].drive] ) == 0 )
+        abort();
 
     return SS$_NORMAL;
 }
 
 unsigned phyio_read( unsigned handle,unsigned block,unsigned length,char *buffer ) {
-    if( handle == 0 || handle > MAX_DEVS || handles[handle] == NULL ) {
+    if( handle == 0 || handle > MAX_DEVS || handles[handle].fh == NULL ) {
         return SS$_IVCHAN;
     }
 
-    if( fseek( handles[handle], block * 512, SEEK_SET ) == -1 ) {
+    if( fseek( handles[handle].fh, block * 512, SEEK_SET ) == -1 ) {
         perror( "seek" );
         return SS$_DATACHECK;
     }
-    if( fread( buffer, 1, length,  handles[handle] ) != length ) {
+    if( fread( buffer, 1, length,  handles[handle].fh ) != length ) {
         perror( "read" );
         return SS$_DATACHECK;
     }
@@ -236,16 +241,16 @@ unsigned phyio_read( unsigned handle,unsigned block,unsigned length,char *buffer
 }
 
 unsigned phyio_write( unsigned handle,unsigned block,unsigned length,char *buffer ) {
-    if( handle == 0 || handle > MAX_DEVS || handles[handle] == NULL ) {
+    if( handle == 0 || handle > MAX_DEVS || handles[handle].fh == NULL ) {
         return SS$_IVCHAN;
     }
 
-    if( fseek( handles[handle], block * 512, SEEK_SET ) == -1 ) {
+    if( fseek( handles[handle].fh, block * 512, SEEK_SET ) == -1 ) {
         perror( "seek" );
         return SS$_DATACHECK;
     }
     abort();
-    if( fwrite( buffer, 1, length,  handles[handle] ) != length ) {
+    if( fwrite( buffer, 1, length,  handles[handle].fh ) != length ) {
         perror( "write" );
         return SS$_DATACHECK;
     }

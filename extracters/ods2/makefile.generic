@@ -55,7 +55,7 @@ ods2 : $(ODS2_OBJS) $(LIBS)
 ods2i : $(ODS2I_OBJS)
 	$(CC) $(CCFLAGS) -o ods2i $(ODS2I_OBJS) $(LDFLAGS)
 
-access$(OBJ) : access.c ssdef.h access.h phyio.h compat.h
+access$(OBJ) : access.c ssdef.h access.h phyio.h compat.h sysmsg.h
 	$(CC) -c $(CCFLAGS) $(DEFS) access.c
 
 cache$(OBJ) : cache.c cache.h ssdef.h

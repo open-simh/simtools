@@ -296,7 +296,7 @@ int prvmstime(VMSTIME vtime, const char *sfx) {
         timdsc.dsc_w_length = 23;
         timdsc.dsc_a_pointer = tim;
         sts = sys_asctim(0,&timdsc,vtime,0);
-        if ((sts & 1) == 0) printf("Asctim error: %s\n",getmsg(sts));
+        if ((sts & 1) == 0) printf("%%ODS2-W-TIMERR, SYS$ASCTIM error: %s\n",getmsg(sts, MSG_TEXT));
         tim[23] = '\0';
         printf("  %s",tim);
     } else {
@@ -563,7 +563,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
                 }
                 sts = sys_open(&fab);
                 if ((sts & 1) == 0) {
-                    printf("Open error: %s\n", getmsg(sts));
+                    printf("%%ODS2-E-OPENERR, Open error: %s\n", getmsg(sts, MSG_TEXT));
                 } else {
                     sts = sys_close(&fab);
                     if (options & dir_fileid) {
@@ -739,7 +739,7 @@ Journaling enabled: None
     if (sts & 1) {
         if (filecount < 1) printf("%%DIRECT-W-NOFILES, no files found\n");
     } else {
-        printf("%%DIR-E-ERROR Status: %s\n",getmsg(sts));
+        printf("%%DIR-E-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
@@ -784,7 +784,7 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
         while ((sts = sys_search(&fab)) & 1) {
             sts = sys_open(&fab);
             if ((sts & 1) == 0) {
-                printf("%%COPY-F-OPENFAIL, Open error: %s\n",getmsg(sts));
+                printf("%%COPY-F-OPENFAIL, Open error: %s\n",getmsg(sts, MSG_TEXT));
                 perror("-COPY-F-ERR ");
             } else {
                 struct RAB rab = cc$rms_rab;
@@ -859,7 +859,7 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
                         printf("%%COPY-S-COPIED, %s copied to %s (%d record%s)\n",
                                rsa,name,records,(records == 1 ? "" : "s"));
                     } else {
-                        printf("%%COPY-F-ERROR Status: %s for %s\n",getmsg(sts),rsa);
+                        printf("%%COPY-F-ERROR Status: %s for %s\n",getmsg(sts, MSG_TEXT),rsa);
                         sts = 1;
                     }
                 }
@@ -872,7 +872,7 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
         if (filecount > 0) printf("%%COPY-S-NEWFILES, %d file%s created\n",
                                   filecount,(filecount == 1 ? "" : "s"));
     } else {
-        printf("%%COPY-F-ERROR Status: %s\n",getmsg(sts));
+        printf("%%COPY-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
@@ -916,10 +916,10 @@ unsigned import(int argc,char *argv[],int qualc,char *qualv[])
         }
         fclose(fromf);
         if (!(sts & 1)) {
-            printf("%%IMPORT-F-ERROR Status: %s\n",getmsg(sts));
+            printf("%%IMPORT-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
         }
     } else {
-        printf("Can't open %s\n",argv[1]);
+        printf("%%ODS2-E-OPENERR, Can't open %s\n",argv[1]);
     }
     return sts;
 }
@@ -946,7 +946,7 @@ unsigned diff(int argc,char *argv[],int qualc,char *qualv[])
     fab.fab$b_fns = strlen(fab.fab$l_fna);
     tof = openf(argv[2],"r");
     if (tof == NULL) {
-        printf("Could not open file %s\n",argv[1]);
+        printf("%%ODS2-E-OPENERR, Could not open file %s\n",argv[1]);
         sts = 0;
     } else {
         if ((sts = sys_open(&fab)) & 1) {
@@ -978,7 +978,7 @@ unsigned diff(int argc,char *argv[],int qualc,char *qualv[])
     if (sts & 1) {
         printf("%%DIFF-I-Compared %d records\n",records);
     } else {
-        printf("%%DIFF-F-Error %s in difference\n",getmsg(sts));
+        printf("%%DIFF-F-Error %s in difference\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
@@ -1021,7 +1021,7 @@ unsigned typ(int argc,char *argv[],int qualc,char *qualv[])
         if (sts == RMS$_EOF) sts = 1;
     }
     if ((sts & 1) == 0) {
-        printf("%%TYPE-F-ERROR Status: %s\n",getmsg(sts));
+        printf("%%TYPE-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
@@ -1075,7 +1075,7 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
         while ((sts = sys_search(&fab)) & 1) {
             sts = sys_open(&fab);
             if ((sts & 1) == 0) {
-                printf("%%SEARCH-F-OPENFAIL, Open error: %s\n",getmsg(sts));
+                printf("%%SEARCH-F-OPENFAIL, Open error: %s\n",getmsg(sts, MSG_TEXT));
             } else {
                 struct RAB rab = cc$rms_rab;
                 rab.rab$l_fab = &fab;
@@ -1132,7 +1132,7 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
             if (findcount < 1) printf("%%SEARCH-I-NOMATCHES, no strings matched\n");
         }
     } else {
-        printf("%%SEARCH-F-ERROR Status: %s\n",getmsg(sts));
+        printf("%%SEARCH-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
@@ -1181,7 +1181,7 @@ unsigned del(int argc,char *argv[],int qualc,char *qualv[])
         while ((sts = sys_search(&fab)) & 1) {
             sts = sys_erase(&fab);
             if ((sts & 1) == 0) {
-                printf("%%DELETE-F-DELERR, Delete error: %s\n",getmsg(sts));
+                printf("%%DELETE-F-DELERR, Delete error: %s\n",getmsg(sts, MSG_TEXT));
                 break;
             } else {
                 filecount++;
@@ -1198,7 +1198,7 @@ unsigned del(int argc,char *argv[],int qualc,char *qualv[])
             printf("%%DELETE-W-NOFILES, no files deleted\n");
         }
     } else {
-        printf("%%DELETE-F-ERROR Status: %s\n",getmsg(sts));
+        printf("%%DELETE-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
 
     return sts;
@@ -1249,7 +1249,7 @@ unsigned extend(int argc,char *argv[],int qualc,char *qualv[])
         sys_close(&fab);
     }
     if ((sts & 1) == 0) {
-        printf("%%EXTEND-F-ERROR Status: %s\n",getmsg(sts));
+        printf("%%EXTEND-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
@@ -1318,7 +1318,7 @@ unsigned show(int argc,char *argv[],int qualc,char *qualv[]) {
             curdir[curlen] = '\0';
             printf(" %s\n",curdir);
         } else {
-            printf("Error %s getting default\n",getmsg(sts));
+            printf("%%ODS2-E-GETDEF, Error %s getting default\n",getmsg(sts, MSG_TEXT));
         }
         return sts;
     }
@@ -1338,7 +1338,7 @@ unsigned show(int argc,char *argv[],int qualc,char *qualv[]) {
             timstr[timlen] = '\0';
             printf("  %s\n",timstr);
         } else {
-            printf("%%SHOW-W-TIMERR error %s\n",getmsg(sts));
+            printf("%%SHOW-W-TIMERR error %s\n",getmsg(sts, MSG_TEXT));
         }
     }
         return SS$_NORMAL;
@@ -1410,7 +1410,7 @@ void setdef(char *newdef)
     if ((sts = sys_setddir(&defdsc,NULL,NULL)) & 1) {
         setdef_count++;
     } else {
-        printf("Error %s setting default to %s\n",getmsg(sts),newdef);
+        printf("%%ODS2-E-SETDEF, Error %s setting default to %s\n",getmsg(sts, MSG_TEXT),newdef);
     }
 }
 
@@ -1490,7 +1490,7 @@ unsigned set(int argc,char *argv[],int qualc,char *qualv[])
         return SS$_BADPARAM;
     case 0: /* default */
         if( qualc ) {
-            printf( "No qualifiers are permitted\n" );
+            printf( "%%ODS2-E-NOQUAL, No qualifiers are permitted\n" );
             return 0;
         }
         setdef(argv[2]);
@@ -1548,14 +1548,11 @@ unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[])
     if (sts & 1) {
         if (dev->vcb != NULL) {
             sts = dismount(dev->vcb);
-#ifdef DISKIMAGE
-            sts = diskio_unmapdrive( dev->devnam );
-#endif
         } else {
             sts = SS$_DEVNOTMOUNT;
         }
     }
-    if ((sts & 1) == 0) printf("%%DISMOUNT-E-STATUS Error: %s\n",getmsg(sts));
+    if ((sts & 1) == 0) printf("%%DISMOUNT-E-STATUS Error: %s\n",getmsg(sts, MSG_TEXT));
     return sts;
 }
 
@@ -1589,6 +1586,9 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
 
     UNUSED(argc);
 
+    memset( labs, 0, sizeof(labs) );
+    memset( devs, 0, sizeof(devs) );
+
     while (*lab != '\0') {
         labs[devices++] = lab;
         while (*lab != ',' && *lab != '\0') lab++;
@@ -1609,9 +1609,10 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
         }
     }
     if (devices > 0) {
-        unsigned i;
         struct VCB *vcb;
 #ifdef DISKIMAGE
+        unsigned i;
+
         for( i = 0; i < (unsigned)devices; i++ ) {
             char *drive;
             drive = diskio_mapfile( devs[i], (options & mnt_write) != 0 );
@@ -1620,14 +1621,11 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
             devs[i] = drive;
         }
 #endif
-        sts = mount(options&mnt_write,devices,devs,labs,&vcb);
+        sts = mount( ((options & mnt_write) != 0) | 2, devices, devs, labs, &vcb );
         if (sts & 1) {
-            for (i = 0; i < vcb->devices; i++)
-                if (vcb->vcbdev[i].dev != NULL)
-                    printf("%%MOUNT-I-MOUNTED, Volume %12.12s mounted on %s\n",
-                           vcb->vcbdev[i].home.hm2$t_volname,vcb->vcbdev[i].dev->devnam);
             if (setdef_count == 0) {
-              char *colon,tmp[256],defdir[256];
+                char *colon,tmp[256],defdir[256];
+
                 snprintf( tmp, sizeof(tmp), "%s", vcb->vcbdev[0].dev->devnam);
                 colon = strchr(tmp,':');
                 if (colon != NULL) *colon = '\0';
@@ -1636,10 +1634,10 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
                 test_vcb = vcb;
             }
         } else {
-            printf("Mount failed with %s\n",getmsg(sts));
+            printf("%%ODS2-E-MOUNTERR, Mount failed with %s\n", getmsg(sts, MSG_TEXT));
 #ifdef DISKIMAGE
             for( i = 0; i < (unsigned)devices; i++ ) {
-                sts = diskio_unmapdrive( devs[i] );
+                (void) diskio_unmapdrive( devs[i] );
             }
 #endif
         }
@@ -2026,13 +2024,13 @@ int cmdsplit(char *str)
                       continue;
               }
                 if( qualc >= MAXITEMS ) {
-                    printf( "Too many qualifiers specified\n" );
+                    printf( "%%ODS2-E-CMDERR, Too many qualifiers specified\n" );
                     return 0;
                 }
                 qualv[qualc++] = sp;
             } else {
                 if( argc >= MAXITEMS ) {
-                    printf( "Too many arguments specified\n" );
+                    printf( "%%ODS2-E-CMDERR, Too many arguments specified\n" );
                     return 0;
                 }
                 argv[argc++] = sp;
@@ -2045,11 +2043,11 @@ int cmdsplit(char *str)
                     if( *sp == '"' ) {
                         *sp++ = '\0';
                         if( *sp && *sp != ' ' ) {
-                            printf( "Unterminated string\n" );
+                            printf( "%%ODS2-E-CMDERR, Unterminated string\n" );
                             return 0;
                         }
                     } else {
-                        printf( "Unterminated string\n" );
+                        printf( "%%ODS2-E-CMDERR, Unterminated string\n" );
                         return 0;
                     }
                     continue;
@@ -2072,38 +2070,75 @@ int cmdsplit(char *str)
 #include <smgdef.h>
 #include <smg$routines.h>
 
-char *getcmd(char *inp, char *prompt)
-{
-    struct dsc_descriptor prompt_d = {strlen(prompt),DSC$K_DTYPE_T,
-					DSC$K_CLASS_S, prompt};
-    struct dsc_descriptor input_d = {1024,DSC$K_DTYPE_T,
-					DSC$K_CLASS_S, inp};
+char *getcmd( char *inp, size_t max, char *prompt ) {
+    struct dsc_descriptor prompt_d = { strlen(prompt),DSC$K_DTYPE_T,
+                                       DSC$K_CLASS_S, prompt };
+    struct dsc_descriptor input_d = { max -1,DSC$K_DTYPE_T,
+                                      DSC$K_CLASS_S, inp };
     int status;
     char *retstat;
     static unsigned long key_table_id = 0;
     static unsigned long keyboard_id = 0;
 
     if (key_table_id == 0) {
-	status = smg$create_key_table (&key_table_id);
-	if (status & 1)
-	    status = smg$create_virtual_keyboard (&keyboard_id);
-	if (!(status & 1)) return (NULL);
+        status = smg$create_key_table( &key_table_id );
+        if (status & 1)
+            status = smg$create_virtual_keyboard( &keyboard_id );
+        if (!(status & 1)) return (NULL);
     }
 
     status = smg$read_composed_line (&keyboard_id, &key_table_id,
-		&input_d, &prompt_d, &input_d, 0,0,0,0,0,0,0);
+                    &input_d, &prompt_d, &input_d, 0,0,0,0,0,0,0);
 
     if (status == SMG$_EOF)
-	retstat = NULL;
+        retstat = NULL;
     else {
-	inp[input_d.dsc_w_length] = '\0';
-	retstat = inp;
+        inp[input_d.dsc_w_length] = '\0';
+        retstat = inp;
     }
 
     return(retstat);
 }
 #endif /* VMS */
 
+/* Read a line of input - unlimited length
+ * Removes \n, returns NULL at EOF
+ * Caller responsible for free()
+ */
+char *fgetline( FILE *stream ) {
+    size_t bufsize = 0,
+           xpnsize = 80,
+           idx = 0;
+    char *buf = NULL;
+    int c;
+
+    while( (c = fgetc(stream)) != EOF && c != '\n' ) {
+        if( idx + 2 > bufsize ) {
+            char *nbuf;
+            bufsize += xpnsize;
+            nbuf = (char *) realloc( buf, bufsize );
+            if( nbuf == NULL ) {
+                perror( "realloc" );
+                abort();
+            }
+            buf = nbuf;
+        }
+        buf[idx++] = c;
+    }
+    if( c == EOF && idx == 0 ) {
+        free( buf );
+        return NULL;
+    }
+    if( bufsize == 0 ) {
+        buf = (char *) malloc( 1 );
+        if( buf == NULL ) {
+            perror( "malloc" );
+            abort();
+        }
+    }
+    buf[idx] = '\0';
+    return buf;
+}
 
 /* main: the simple mainline of this puppy... */
 
@@ -2120,20 +2155,20 @@ char *getcmd(char *inp, char *prompt)
  *     ./ods2 -c 'mount scd1 $ set def [hartmut] $ copy *.com $ exit'
  *
  * The same command concatenation can be implemented for the prompted input.
- * As for indirect command files (@), it isn't checked if one of the chained
- * commands fails. The user has to be careful, all the subsequent commands
- * are executed!
  */
 
 int main(int argc,char *argv[])
 {
-    char str[2048];
+    int sts;
     char *command_line = NULL;
     FILE *atfile = NULL;
+    char *rl = NULL;
+#ifdef VMS
+    char str[2048];
+#endif
 #ifdef USE_READLINE
     char *p;
     wordexp_t wex;
-    char *rl = NULL;
     char *hfname = NULL;
     char mname[3+sizeof( MNAME(MODULE_NAME) )];
 
@@ -2154,127 +2189,128 @@ int main(int argc,char *argv[])
     }
 #endif
 
-    if (argc>1) {
-           int i, l = 0;
-           for (i=1; i<argc; i++) {
-               int al;
-               char *newp;
+    if( argc > 1 ) {
+        int i, l = 0;
+        for( i = 1; i < argc; i++ ) {
+            int al;
+            char *newp;
 
-               if (command_line == NULL) {
-                 command_line = (char *)malloc(1);
-                 *command_line = '\0';
-                 l = 0;
-               }
-               al = strlen(argv[i]);
-               newp = (char *)realloc(command_line,l+1+al+1);
-               if( newp == NULL ) {
-                   perror( "realloc" );
-                   exit (1);
-               }
-               command_line = newp;
-               snprintf(command_line+l,1+al+1," %s",argv[i]);
-               l += 1+al;
-           }
-    } else command_line = NULL;
-    while (1) {
-        char *ptr;
-       if (command_line) {
-              static int i=0;
-              unsigned j=0;
-              for (; j < sizeof str && command_line[i]; i++)
-                  if (command_line[i] == '$') {
-                      ++i;
-                      break;
-                  } else str[j++] = command_line[i];
-              if (j<sizeof str)
-                  str[j]= '\0';
-              else str[j-1]= '\0';
-              if (command_line[i] =='\0') {
-                  free(command_line);
-                  command_line = NULL;
-              }
-              ptr = str;
-       } else {
-           if (atfile != NULL) {
-               if (fgets(str,sizeof(str),atfile) == NULL) {
-                   fclose(atfile);
-                   atfile = NULL;
-                   *str = '\0';
-               } else {
-#ifndef _WIN32
-                   ptr = strchr(str, '\r' );
-                   if( ptr == NULL ) /* Do not separate from the next line */
-#endif
-                       ptr = strchr(str,'\n');
-                   if (ptr != NULL) *ptr = '\0';
-                   if( verify_cmd )
-                       printf("$> %s\n",str);
-               }
-               ptr = str;
-        } else {
-#ifdef VMS
-            if (getcmd (str, "$> ") == NULL) break;
-            ptr = str;
-#elif( defined USE_READLINE )
-            if (rl != NULL) {
-                free( rl );
+            if (command_line == NULL) {
+                command_line = (char *)malloc(1);
+                *command_line = '\0';
+                l = 0;
             }
-            rl =
-                ptr = readline( MNAME(MODULE_NAME) "$> " );
-            if (rl == NULL) {
-                break;
-            } else {
-                if (*rl != '\0') {
-                    add_history( rl );
-                }
+            al = strlen(argv[i]);
+            newp = (char *)realloc(command_line,l+1+al+1);
+            if( newp == NULL ) {
+                perror( "realloc" );
+                exit (1);
             }
-#else
-            printf("$> ");
-            if (fgets(str, sizeof(str), stdin) == NULL) break;
-            ptr = strchr(str, '\n');
-            if(ptr != NULL) *ptr = '\0';
-            ptr = str;
-#endif
+            command_line = newp;
+            snprintf(command_line+l,1+al+1," %s",argv[i]);
+            l += 1+al;
         }
-       }
+    }
+    while( 1 ) {
+        char *ptr = NULL;
+        if( command_line ) {
+            static int i = 0;
+            char *p;
 
-        while (*ptr == ' ' || *ptr == '\t') ptr++;
-        if (strlen(ptr) && *ptr != '!') {
-            if (*ptr == '@') {
-                if (atfile != NULL) {
-                    printf("%%ODS2-W-INDIRECT, indirect indirection not permitted\n");
+            ptr = command_line + i;
+            if( (p = strchr( ptr, '$' )) == NULL ) {
+                if( *ptr == '\0' ) {
+                    free( command_line );
+                    command_line = NULL;
+                    ptr = NULL;
                 } else {
-                    if ((atfile = openf(ptr + 1,"r")) == NULL) {
-                        perror("%%Indirection failed");
-                        printf("\n");
-                        free(command_line);
-                        command_line = NULL;
-                        *str = '\0';
-                    }
+                    i += strlen( ptr );
                 }
             } else {
-                int sts;
-
-                sts = cmdsplit(ptr);
-                if( sts == -1 )
+                *p = '\0';
+                i += strlen( ptr ) +1;
+            }
+        }
+        if( ptr == NULL ) {
+            if (atfile != NULL) {
+                if( rl != NULL ) free( rl );
+                if( (rl = fgetline(atfile)) == NULL) {
+                    fclose(atfile);
+                    atfile = NULL;
+                } else {
+#ifndef _WIN32
+                    ptr = strchr( rl, '\r' );
+                    if( ptr != NULL )
+                        *ptr = '\0';
+#endif
+                    if( verify_cmd )
+                        printf("$> %s\n", rl);
+                }
+                ptr = rl;
+            } else {
+#ifdef VMS
+                if( getcmd( str, sizeof(str), "$> " ) == NULL ) break;
+                ptr = str;
+#else
+                if( rl != NULL ) {
+                    free( rl );
+                }
+#ifdef USE_READLINE
+                rl =
+                    ptr = readline( MNAME(MODULE_NAME) "$> " );
+                if (rl == NULL) {
                     break;
-                if ((sts & 1) == 0) {
-                    if( atfile != NULL ) {
-                        fclose(atfile);
-                        atfile = NULL;
+                } else {
+                    if( *rl != '\0' ) {
+                        add_history( rl );
                     }
+                }
+#else
+                printf("$> ");
+                if( (rl = fgetline(stdin)) == NULL) break;
+                ptr = rl;
+#endif
+#endif
+            }
+        }
+
+        while( *ptr == ' ' || *ptr == '\t' )
+            ptr++;
+        if( !strlen(ptr) || *ptr == '!' || *ptr == ';' )
+            continue;
+
+        if (*ptr == '@') {
+            if (atfile != NULL) {
+                printf("%%ODS2-W-INDIRECT, nested indirect command files not supported\n");
+            } else {
+                if ((atfile = openf(ptr + 1,"r")) == NULL) {
+                    perror("%%ODS2-E-INDERR, Failed to open indirect command file");
+                    printf("\n");
                     free(command_line);
                     command_line = NULL;
-                    *str = '\0';
-               }
+                }
             }
+            continue;
         }
+
+        sts = cmdsplit(ptr);
+        if( sts == -1 )
+            break;
+        if ((sts & 1) == 0) {
+            if( atfile != NULL ) {
+                fclose(atfile);
+                atfile = NULL;
+            }
+            free(command_line);
+            command_line = NULL;
+        }
+    } /* while 1 */
+
+    if( rl != NULL ) {
+        free( rl );
     }
 #ifdef USE_READLINE
-    if (rl != NULL) {
-      free( rl );
-    }
-    if (hfname != NULL) {
+    if( hfname != NULL ) {
         write_history( hfname );
     }
 #endif
