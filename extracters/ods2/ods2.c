@@ -1405,12 +1405,13 @@ void setdef(char *newdef)
 {
     register unsigned sts;
     struct dsc_descriptor defdsc;
+
     defdsc.dsc_a_pointer = newdef;
     defdsc.dsc_w_length = strlen(defdsc.dsc_a_pointer);
     if ((sts = sys_setddir(&defdsc,NULL,NULL)) & 1) {
         setdef_count++;
     } else {
-        printf("%%ODS2-E-SETDEF, Error %s setting default to %s\n",getmsg(sts, MSG_TEXT),newdef);
+        printf( "%%ODS2-E-SETDEF, Error %s setting default to %s\n", getmsg(sts, MSG_TEXT), newdef );
     }
 }
 
@@ -1493,7 +1494,7 @@ unsigned set(int argc,char *argv[],int qualc,char *qualv[])
             printf( "%%ODS2-E-NOQUAL, No qualifiers are permitted\n" );
             return 0;
         }
-        setdef(argv[2]);
+        setdef( argv[2] );
         return 1;
     case 1:{ /* directory_qualifiers */
         int options = checkquals(dir_default,dirquals,qualc,qualv);
@@ -1624,15 +1625,23 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
         sts = mount( ((options & mnt_write) != 0) | 2, devices, devs, labs, &vcb );
         if (sts & 1) {
             if (setdef_count == 0) {
-                char *colon,tmp[256],defdir[256];
+                char *colon, *buf;
+                size_t len;
 
-                snprintf( tmp, sizeof(tmp), "%s", vcb->vcbdev[0].dev->devnam);
-                colon = strchr(tmp,':');
-                if (colon != NULL) *colon = '\0';
-                snprintf( defdir, sizeof(defdir), "%s:[000000]", tmp );
-                setdef(defdir);
-                test_vcb = vcb;
+                len = strlen( vcb->vcbdev[0].dev->devnam );
+                buf = (char *) malloc( len  + sizeof( ":[000000]" ));
+                if( buf == NULL ) {
+                    perror( "malloc" );
+                } else {
+                    colon = strchr( vcb->vcbdev[0].dev->devnam, ':' );
+                    if( colon != NULL ) len = (size_t)(colon - vcb->vcbdev[0].dev->devnam);
+                    memcpy( buf, vcb->vcbdev[0].dev->devnam, len );
+                    memcpy( buf+len, ":[000000]", sizeof( ":[000000]" ) );
+                    setdef(buf);
+                    free( buf );
+                }
             }
+            test_vcb = vcb;
         } else {
             printf("%%ODS2-E-MOUNTERR, Mount failed with %s\n", getmsg(sts, MSG_TEXT));
 #ifdef DISKIMAGE
@@ -2195,20 +2204,16 @@ int main(int argc,char *argv[])
             int al;
             char *newp;
 
-            if (command_line == NULL) {
-                command_line = (char *)malloc(1);
-                *command_line = '\0';
-                l = 0;
-            }
             al = strlen(argv[i]);
-            newp = (char *)realloc(command_line,l+1+al+1);
+            newp = (char *)realloc( command_line, l+(l != 0)+al+1 );
             if( newp == NULL ) {
                 perror( "realloc" );
                 exit (1);
             }
             command_line = newp;
-            snprintf(command_line+l,1+al+1," %s",argv[i]);
-            l += 1+al;
+            if( l != 0 ) command_line[l++] = ' ';
+            memcpy( command_line+l, argv[i], al+1 );
+            l += al;
         }
     }
     while( 1 ) {
