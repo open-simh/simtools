@@ -517,7 +517,7 @@ unsigned accesschunk(struct FCB *fcb,unsigned vbn,struct VIOC **retvioc,
     register unsigned int blocks;
     register struct VIOC *vioc;
 #ifdef DEBUG
-    printf("Access chunk %8x %d (%x)\n",base,vbn,fcb->cache.hashval);
+    printf("Access chunk %d (%x)\n",vbn,fcb->cache.hashval);
 #endif
     if (vbn < 1 || vbn > fcb->hiblock) return SS$_ENDOFFILE;
     blocks = (vbn - 1) / VIOC_CHUNKSIZE * VIOC_CHUNKSIZE;
@@ -721,10 +721,6 @@ unsigned dismount(struct VCB * vcb)
         if (sts & 1) {
             cache_remove(&vcb->fcb->cache);
             while (vcb->dircache) cache_delete((struct CACHE *) vcb->dircache);
-#ifdef DEBUG
-            printf("Post close\n");
-            cachedump();
-#endif
             free(vcb);
         }
     }

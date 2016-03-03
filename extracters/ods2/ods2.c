@@ -1573,42 +1573,71 @@ struct param moupars[] = { {"volumes", REQ, LIST, NOPA,
                            { NULL, 0, 0, NOPA, NULL }
 };
 
+static int parselist( char ***items, size_t min, char *arg, const char *label ) {
+    size_t n = 0, i;
+    char **list = NULL;
+
+    *items = NULL;
+
+    while( *arg != '\0' ) {
+        char **nl;
+
+        while( *arg == ' ' || *arg == '\t' )
+            arg++;
+        if( *arg == '\0' )
+            break;
+
+        nl = (char **) realloc( list, (n < min? min +1: n +2) * sizeof( char * ) );
+        if( nl == NULL ) {
+            free( list );
+            printf( "%%ODS2-E-NOMEM, Not enough memory for %s\n", label );
+            return -1;
+        }
+        list = nl;
+
+        list[n++] = arg;
+        while( !(*arg == ',' || *arg == '\0') )
+            arg++;
+        if( *arg == '\0' )
+            break;
+        *arg++ = '\0';
+    }
+
+    if( list == NULL ) {
+        list = (char **) malloc( min + 1 );
+        if( list == NULL ) {
+            printf( "%%ODS2-E-NOMEM, Not enough memory for %s\n", label );
+            return -1;
+        }
+    }
+    for( i = n; i < min; i++ )
+        list[i] = NULL;
+
+    list[i] = NULL;
+
+    *items = list;
+    return (int)n;
+}
 unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
 {
-    char *dev = argv[1];
-    char *lab = argv[2];
     int sts = 1,devices = 0;
-    char *devs[100],*labs[100];
+    char **devs = NULL, **labs = NULL;
+
     int options;
 
-    options = checkquals(0,mouquals,qualc,qualv);
+    options = checkquals( 0, mouquals, qualc, qualv );
     if( options == -1 )
         return SS$_BADPARAM;
 
     UNUSED(argc);
 
-    memset( labs, 0, sizeof(labs) );
-    memset( devs, 0, sizeof(devs) );
+    if( (devices = parselist( &devs, 0, argv[1], "devices")) < 0 )
+        return SS$_BADPARAM;
+    if( parselist( &labs, devices, argv[2], "labels") < 0 ) {
+        free( devs );
+        return SS$_BADPARAM;
+    }
 
-    while (*lab != '\0') {
-        labs[devices++] = lab;
-        while (*lab != ',' && *lab != '\0') lab++;
-        if (*lab != '\0') {
-            *lab++ = '\0';
-        } else {
-            break;
-        }
-    }
-    devices = 0;
-    while (*dev != '\0') {
-        devs[devices++] = dev;
-        while (*dev != ',' && *dev != '\0') dev++;
-        if (*dev != '\0') {
-            *dev++ = '\0';
-        } else {
-            break;
-        }
-    }
     if (devices > 0) {
         struct VCB *vcb;
 #ifdef DISKIMAGE
@@ -1617,8 +1646,11 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
         for( i = 0; i < (unsigned)devices; i++ ) {
             char *drive;
             drive = diskio_mapfile( devs[i], (options & mnt_write) != 0 );
-            if( drive == NULL )
-                return 0;
+            if( drive == NULL ) {
+                free( devs );
+                free( labs );
+                return SS$_DEVNOTMOUNT;
+            }
             devs[i] = drive;
         }
 #endif
@@ -1651,6 +1683,9 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
 #endif
         }
     }
+
+    free( devs );
+    free( labs );
     return sts;
 }
 

@@ -82,11 +82,12 @@ char *diskio_mapfile( const char *filename, int options ) {
     for( l = 0; l < 26; l++ ) {
         if( diskfiles[l] == NULL && L < 0) {
 #ifdef _WIN32
+            char *pname;
             char dl[3] = { 'A', ':', '\0' };
             dl[0] += l;
             if( ff < 0 )
                 ff = l;
-            if( driveFromLetter( dl ) == NULL) {
+            if( (pname = driveFromLetter( dl )) == NULL) {
                 if( dl[0] >= 'C' ) {
                     if( L < 0 )
                         L = l;
@@ -94,7 +95,8 @@ char *diskio_mapfile( const char *filename, int options ) {
                     if( ffa < 0 )
                         ffa = l;
                 }
-            }
+            } else
+                free( pname );
 #else
             L = l;
 #endif
@@ -122,7 +124,11 @@ char *diskio_mapfile( const char *filename, int options ) {
     drives[L][3] = options;
     free(diskfiles[L]);
     diskfiles[L] = (char *) malloc( (l = strlen(filename) + 1) );
-    snprintf( diskfiles[L], l, "%s", filename );
+    if( diskfiles[L] == NULL ) {
+        perror( "malloc" );
+        return NULL;
+    }
+    memcpy( diskfiles[L], filename, l );
 
     printf( "%s assigned to %s\n", drives[L], diskfiles[L] );
 
@@ -160,6 +166,8 @@ int diskio_showdrives( void ) {
 }
 
 int diskio_unmapdrive( const char *drive ) {
+    if( drive[0] < 'A' || drive[0] > 'Z' )
+        abort();
     if( diskfiles[drive[0]-'A'] == NULL ) {
         return 0;
     }

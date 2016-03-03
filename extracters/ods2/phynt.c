@@ -685,7 +685,7 @@ unsigned phyio_write(unsigned chan,unsigned block,unsigned length,char *buffer)
             if (transfer != sectblks * 512) {
                 if (((sts = phy_getsect(chan,sectno)) & 1) == 0) break;
             }
-            memcpy(buffer,sectbuff + (offset * 512),transfer);
+            memcpy(sectbuff + (offset * 512),buffer,transfer);
             if (((sts = phy_putsect(chan,sectno)) & 1) == 0) break;
             buffer += transfer;
             length -= transfer;

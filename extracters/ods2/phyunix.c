@@ -95,7 +95,7 @@ unsigned phyio_read(unsigned handle,unsigned block,unsigned length,char *buffer)
 {
     off_t res;
 #ifdef DEBUG
-    printf("Phyio read block: %d into %x (%d bytes)\n",block,buffer,length);
+    printf("Phyio read block: %d into %p (%d bytes)\n",block,buffer,length);
 #endif
     read_count++;
     if ((res = lseek(handle,block*512,0)) < 0) {
@@ -115,7 +115,7 @@ unsigned phyio_read(unsigned handle,unsigned block,unsigned length,char *buffer)
 unsigned phyio_write(unsigned handle,unsigned block,unsigned length,char *buffer)
 {
 #ifdef DEBUG
-    printf("Phyio write block: %d from %x (%d bytes)\n",block,buffer,length);
+    printf("Phyio write block: %d from %p (%d bytes)\n",block,buffer,length);
 #endif
     write_count++;
     if (lseek(handle,block*512,0) < 0) return SS$_PARITY;
