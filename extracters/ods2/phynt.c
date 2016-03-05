@@ -803,17 +803,15 @@ void phyio_show( showtype_t type ) {
 /*************************************************************** phyio_help() */
 
 void phyio_help(FILE *fp ) {
-    fprintf( fp, "Specify the device to be mounted as a drive letter.\n" );
-    fprintf( fp, "E.g. mount D:\n" );
+    fprintf( fp, " mount D:\n" );
+    fprintf( fp, "Any drive letter mapped to a physical drive can be used\n" );
 #ifdef USE_ASPI
     fprintf( fp, "If the drive letter is C: or higher, commands are\n" );
     fprintf( fp, "sent directly to the drive, bypassing system drivers.\n" );
     fprintf( fp, "The drive must be a SCSI device\n" );
 #endif
-    fprintf( fp, "The drive letter must be between A: and Z:.\n" );
     fprintf( fp, "The drive is accessed as a physical device, which may require privileges.\n" );
-    fprintf( fp, "Use show DEVICES for a list of available devices.\n" );
-    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+    fprintf( fp, "For a list of devices, see SHOW DEVICES\n\n" );
     return;
 }
 

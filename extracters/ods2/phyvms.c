@@ -110,10 +110,12 @@ void phyio_show( showtype_t type ) {
 }
 
 void phyio_help(FILE *fp ) {
-    fprintf( fp, "Specify the device to be mounted as a VMS device or logical name\n" );
-    fprintf( fp, "E.g. mount DUB0:\n" );
+    fprintf( fp, "mount DUB0:\n" );
+    fprintf( fp, "The device can be specified as a physical device or logical name\n" );
     fprintf( fp, "You will need the LOGIO privilege\n" );
-    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+    fprintf( fp, "Use show DEVICES for a list of available devices.\n" );
+    fprintf( fp, "For a list of devices, use the DCL SHOW DEVICE command.\n\n" );
+
     return;
 }
 

@@ -81,26 +81,28 @@ static int devcmp( const void *d1, const void *d2 ) {
 
 static void showdevs( void ) {
     DIR *dirp;
-    struct dirent *dp;
     size_t i, cpl, n = 0, max = 0;
     struct devdat (*list)[1] = NULL;
 
-    if( (dirp = opendir( DEV_PREFIX )) == NULL )
-        return;
-
-    do {
-        struct stat stb;
-        errno = 0;
-        if( (dp = readdir(dirp)) != NULL ) {
-            char *fs;
+    errno = 0;
+    if( (dirp = opendir( DEV_PREFIX )) != NULL ) {
+        do {
+            int nml;
             size_t len;
+            unsigned unit;
+            char *fs;
+            struct dirent *dp;
+            struct devdat (*nl)[1];
+            struct stat stb;
+
+            errno = 0;
+            if( (dp = readdir(dirp)) == NULL )
+                break;
 
             len = strlen( dp->d_name );
             fs = malloc( sizeof( DEV_PREFIX ) + len );
-            if( fs == NULL ) {
-                perror( "malloc" );
-                exit( 1 );
-            }
+            if( fs == NULL )
+                break;
             memcpy( fs, DEV_PREFIX, sizeof( DEV_PREFIX ) -1 );
             memcpy( fs + sizeof( DEV_PREFIX ) -1, dp->d_name, len +1 );
 
@@ -109,64 +111,61 @@ static void showdevs( void ) {
                 free( fs );
                 continue;
             }
-            if( S_ISBLK( stb.st_mode ) ) {
-                struct devdat (*nl)[1];
-                unsigned unit = ~0;
-                int nml;
-                struct devdat *devp;
+            if( !S_ISBLK( stb.st_mode ) )
+                continue;
 
-                if( sscanf( fs, DEV_PREFIX "%*[^0123456789]%n%u",
-                                 &nml, &unit ) == 1 ) {
-                    fs[nml] = '\0';
-                }
-                for( i = 0; i < n; i++ ) {
-                    devp = (*list)+i;
-                    if( strcmp( devp->name, fs ) == 0 ) {
-                        if( unit != ~0U ) {
-                            if( unit > devp->high )
-                                devp->high = unit;
-                            if( unit < devp->low )
-                                devp->low = unit;
-                        }
-                        break;
+            memmove( fs, fs + sizeof( DEV_PREFIX ) -1, len +1 );
+            unit = ~0;
+            if( sscanf( fs, "%*[^0123456789]%n%u", &nml, &unit ) == 1 )
+                fs[nml] = '\0';
+            for( i = 0; i < n; i++ ) {
+                if( strcmp( (*list)[i].name, fs ) == 0 ) {
+                    if( unit != ~0U ) {
+                        if( unit > (*list)[i].high )
+                            (*list)[i].high = unit;
+                        if( unit < (*list)[i].low )
+                            (*list)[i].low = unit;
                     }
-                }
-                if( i >= n ) {
-                    nl = (struct devdat (*)[1]) realloc( list, (n+1) * sizeof( struct devdat ) );
-                    if( nl == NULL ) {
-                        for( i = 0; i < n; i++ )
-                            free( (*list)[i].name );
-                        free( list );
-                        perror( "malloc" );
-                        exit( 1 );
-                    }
-                    list = nl;
-                    (*list)[n].name = fs;
-                    (*list)[n].low = unit;
-                    (*list)[n++].high = unit;
+                    break;
                 }
             }
-        }
-    } while( dp != NULL );
+            if( i >= n ) {
+                nl = (struct devdat (*)[1])
+                    realloc( list, (n+1) * sizeof( struct devdat ) );
+                if( nl == NULL )
+                    break;
+                list = nl;
+                (*list)[n].name = fs;
+                (*list)[n].low = unit;
+                (*list)[n++].high = unit;
+            }
+        } while( TRUE );
+        (void) closedir(dirp);
+    }
     if( errno != 0 ) {
         printf( "%%ODS2-W-DIRERR, Error reading %s\n", DEV_PREFIX );
         perror( " - " );
+        for( i = 0; i < n; i++ )
+            free( (*list)[i].name );
+        free( list );
+        return;
     }
-    (void) closedir(dirp);
+
     if( n == 0 ) {
         printf( "%%ODS2-I-NODEV, No devices found\n" );
         return;
     }
 
     qsort( list, n, sizeof( struct devdat ), &devcmp );
+
     for( i = 0; i < n; i++ ) {
         char buf[128];
         int p;
-        p = snprintf( buf, sizeof(buf), "%s", (*list)[i].name + sizeof( DEV_PREFIX)-1 );
+        p = snprintf( buf, sizeof(buf), "%s", (*list)[i].name );
         if( (*list)[i].low != ~0U ) {
-            p+= snprintf( buf+p, sizeof(buf)-p, "%u", (*list)[i].low );
+            p += snprintf( buf+p, sizeof(buf)-p, "%u", (*list)[i].low );
             if( (*list)[i].high != (*list)[i].low )
-                p+= snprintf( buf+p, sizeof(buf)-p, "-%u", (*list)[i].high );
+                p += snprintf( buf+p, sizeof(buf)-p, "-%u", (*list)[i].high );
         }
         if( p > (int)max )
             max = p;
@@ -174,14 +173,16 @@ static void showdevs( void ) {
     cpl = 50 / (max + 1);
     if( cpl == 0 )
         cpl = 1;
+
     for( i = 0; i < n; i++ ) {
         int p;
         if( (i % cpl) == 0 ) {
             if( i ) putchar( '\n' );
             putchar( ' ' );
         }
-        p = printf( " %s", (*list)[i].name + sizeof( DEV_PREFIX)-1 ) -1;
+        p = printf( " %s", (*list)[i].name ) -1;
         free( (*list)[i].name );
+
         if( (*list)[i].low != ~0U ) {
             p += printf( "%u", (*list)[i].low );
             if( (*list)[i].high != (*list)[i].low )
@@ -217,14 +218,11 @@ void phyio_show( showtype_t type ) {
 }
 
 void phyio_help(FILE *fp ) {
-    fprintf( fp, "Specify the device to be mounted as using the format:\n" );
-    fprintf( fp, " mount %s%s\n\n", DEV_PREFIX, "device" );
-
+    fprintf( fp, " mount device\nThe device must be in %.*s.\n\n",
+             (int)(sizeof( DEV_PREFIX ) -2), DEV_PREFIX );
     fprintf( fp, "For example, if you are using " DEV_PREFIX "%s\n", "cdrom0" );
-    fprintf( fp, "  ODS2$> mount cdrom0\n\n" );
-
-    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
-    fprintf( fp, "Alternatively, you can mount the image on a loop device.\n" );
+    fprintf( fp, "  ODS2$> mount cdrom0\n" );
+    fprintf( fp, "For a list of devices, see SHOW DEVICES\n\n" );
     return;
 }
 

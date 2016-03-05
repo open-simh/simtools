@@ -1444,6 +1444,7 @@ static struct qual showkwds[] = { {"default",         0, 0, NV, "Default directo
                                   {"time",            4, 0, NV, "Time"},
                                   {"verify",          5, 0, NV, "Command file echo" },
                                   {"version",         6, 0, NV, "Version"},
+                                  {"volumes",         7, 0, NV, "Mounted volume information" },
                                   {NULL,              0, 0, NV, NULL }
 };
 static struct param showpars[] = { {"item_name", REQ, KEYWD, PA(showkwds), NULL },
@@ -1508,6 +1509,9 @@ unsigned doshow(int argc,char *argv[],int qualc,char *qualv[]) {
         return SS$_NORMAL;
     case 6:
         show_version();
+        return SS$_NORMAL;
+    case 7:
+        show_volumes();
         return SS$_NORMAL;
     }
     return SS$_NORMAL;
@@ -1681,9 +1685,9 @@ static struct qual mouquals[] = { {"image",    MOU_VIRTUAL, 0,         NV, "Moun
                                   {NULL,       0,           0,         NV, NULL } };
 
 static struct param moupars[] = { {"volumes", REQ, LIST, NOPA,
-                                   "devices or disk image(s) in volume set separated by comma"
+                                   "devices or disk image(s) of volume set in RVN order separated by comma"
                                   },
-                                  {"labels", OPT, LIST, NOPA, "volume labels separated by comma" },
+                                  {"labels", OPT, LIST, NOPA, "volume labels in RVN order separated by comma" },
                                   { NULL,    0,   0,    NOPA, NULL }
 };
 
@@ -2006,10 +2010,12 @@ static unsigned dohelp(int argc,char *argv[],int qualc,char *qualv[]) {
     if( argc <= 1 ) {
         show_version();
 
-        printf( "\n The orginal version of ods2 was developed by Paul Nankervis <Paulnank@au1.ibm.com>\n" );
-        printf( " This modified version was developed by Timothe Litt, and incorporated\n" );
-        printf( " significant previous modifications by Larry Baker of the USGS and by Hunter Goatley\n" );
-        printf("\n Please send problems/comments to litt@ieee.org\n");
+        printf( " The orginal version of ods2 was developed by Paul Nankervis\n" );
+        printf( " <Paulnank@au1.ibm.com>\n" );
+        printf( " This modified version was developed by Timothe Litt, and\n" );
+        printf( " incorporates significant previous modifications by Larry \n" );
+        printf( " Baker of the USGS and by Hunter Goatley\n" );
+        printf("\n Please send problems/comments to litt@ieee.org\n\n");
 
         printf(" Commands are:\n");
         cmdhelp( cmdset );
@@ -2032,8 +2038,27 @@ static unsigned dohelp(int argc,char *argv[],int qualc,char *qualv[]) {
                 qualhelp( 0, cmd->validquals );
             if( cmd->params != NULL )
                 parhelp( cmd, 0, NULL );
-            if( strcmp(cmd->name, "mount") == 0 )
+            if( strcmp(cmd->name, "mount") == 0 ) {
+                printf( "\n" );
+                printf( "You can mount a volume(-set) from either physical devices\n" );
+                printf( "such a CDROM or hard disk drive, or files containing an\n" );
+                printf( "image of a volume, such as a .ISO file or simulator disk\n\n" );
+                printf( "To mount a disk image, use the %cimage qualifier and\n",
+                        (vms_qual? '/': '-') );
+                printf( "specify the filename as the parameter.\n\n" );
+                printf( "If the filename contains %c, specify it in double quotes\n\n",
+                        (vms_qual? '/': '-') );
+                printf( "Mount will assign a virtual device name to each volume.\n" );
+                printf( "You can select a virtual device name using the format\n" );
+                printf( "  dka100=my_files.iso\n\n" );
+                printf( "To mount a physical device, use the format:\n" );
                 phyio_help(stdout);
+                printf( "To mount a volume set, specify all the members in RVN order\n" );
+                printf( "as a comma-separated list.\n\n" );
+                printf( "If you specify a list of volume labels, they must be in\n" );
+                printf( "the same order as the volumes, and each must match the label\n" );
+                printf( "stored in the data\n" );
+            }
             return 1;
         }
     }
@@ -2319,7 +2344,8 @@ int main( int argc,char *argv[] ) {
                         printf("$> %s\n", rl);
                 }
                 ptr = rl;
-            } else {
+            }
+            if( ptr == NULL ) {
 #ifdef VMS
                 if( getcmd( str, sizeof(str), "$> " ) == NULL ) break;
                 ptr = str;

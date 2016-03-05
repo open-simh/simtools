@@ -245,12 +245,16 @@ struct VCBDEV {
     struct HOME home;           /* Volume home block */
 };
 struct VCB {
+    struct VCB *next;           /* Next in mounted volume list (Must be first item) */
     unsigned status;            /* Volume status */
     unsigned devices;           /* Number of volumes in set */
     struct FCB *fcb;            /* File control block tree */
     struct DIRCACHE *dircache;  /* Directory cache tree */
     struct VCBDEV vcbdev[1];    /* List of volumes devices */
 };                              /* Volume control block */
+
+extern struct VCB *vcb_list;
+void show_volumes( void );
 
 /* RVN_TO_DEV( vcb, rvn ) - returns device from relative volume number */
 

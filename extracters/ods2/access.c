@@ -31,12 +31,16 @@
 #include "stsdef.h"
 #include "compat.h"
 #include "sysmsg.h"
+#include "vmstime.h"
+
 #ifndef TRUE
 #define TRUE ( 0 == 0 )
 #endif
 #ifndef FALSE
 #define FALSE ( 0 != 0 )
 #endif
+
+struct VCB *vcb_list = NULL;
 
 /* WCBKEY passes info to compare/create routines */
 
@@ -319,7 +323,7 @@ static void *wcb_create( unsigned hashval, void *keyval, unsigned *retsts ) {
                         break;
                     default:
                         printf( "Unknown type %x\n", (VMSWORD(*mp)>>14) );
-                        exit(1);
+                        abort();
                 }
                 curvbn += phylen;
                 if (phylen != 0 && curvbn > wcb->loblk) {
@@ -790,6 +794,8 @@ unsigned dismount(struct VCB * vcb)
             vcbdev++;
         }
         if (sts & STS$M_SUCCESS) {
+            struct VCB *lp;
+
             cache_remove(&vcb->fcb->cache);
 #ifdef DEBUG
             printf( "--->dismount(): cache_remove()\n" );
@@ -799,6 +805,12 @@ unsigned dismount(struct VCB * vcb)
 #ifdef DEBUG
                 printf( "--->dismount(): cache_delete()\n" );
 #endif
+            }
+            for( lp = (struct VCB *)&vcb_list; lp->next != NULL; lp = lp->next ) {
+                if( lp->next == vcb ) {
+                    lp->next = vcb->next;
+                    break;
+                }
             }
             free(vcb);
         }
@@ -832,6 +844,7 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
     if (flags & MOU_WRITE)   vcb->status |= VCB_WRITE;
     vcb->fcb = NULL;
     vcb->dircache = NULL;
+    vcb->devices = 0;
     vcbdev = vcb->vcbdev;
     for( device = 0; device < devices; device++, vcbdev++ ) {
         char *dname;
@@ -865,7 +878,8 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
             vcbdev->dev->access = flags;        /* Requested mount options */
                                                 /*    (e.g., /Write)       */
             sts = phyio_init( vcbdev->dev );
-            if ( !( sts & STS$M_SUCCESS ) ) break; 
+            if ( !( sts & STS$M_SUCCESS ) ) break;
+            vcb->devices++;
             if (vcbdev->dev->vcb != NULL) {
                 sts = SS$_DEVMOUNT;
                 break;
@@ -930,7 +944,6 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
         } /* for(each device) */
     }
     if (sts & STS$M_SUCCESS) {
-        vcb->devices = devices;
         vcbdev = vcb->vcbdev;
         for( device = 0; device < devices; device++, vcbdev++ ) {
             char *dname;
@@ -1017,7 +1030,7 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
 
                     if( memcmp(vcbdev->home.hm2$t_volname, volsetSYS[device+1].vsr$t_label, 12 ) != 0 ) {
                         printf( "%%ODS2-E-WRONGVOL, RVN %u of '%12.12s' is '%12.12s'.  %s contains '%12.12s'\n",
-                                device+1, vcb->vcbdev[0].home.hm2$t_strucname, 
+                                device+1, vcb->vcbdev[0].home.hm2$t_strucname,
                                 volsetSYS[device+1].vsr$t_label, dname, vcbdev->home.hm2$t_volname );
                         sts = SS$_NOSUCHVOL;
                         break;
@@ -1083,20 +1096,202 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
                 /* if (!(sts & 1)) ??; */
                 vcbdev->idxfcb->headvioc = NULL;
                 cache_untouch(&vcbdev->idxfcb->cache,0);
-                vcbdev->dev->vcb = NULL; 
+                vcbdev->dev->vcb = NULL;
                 /* ?? vcbdev->dev = NULL *//* **DECREF **/
+                sts = phyio_done( vcbdev->dev );
             }
             cache_remove( &vcb->fcb->cache );
             while( vcb->dircache ) cache_delete( (struct CACHE *) vcb->dircache );
         }
     } else { /* *** DECREF *** */
+        if( flags & MOU_VIRTUAL ) {
+            vcbdev = vcb->vcbdev;
+            for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
+                phyio_done( vcbdev->dev );
+            }
+        }
         free(vcb);
         vcb = NULL;
     }
-    if( (sts & 1) && (flags & 2) && VMSWORD(vcb->vcbdev[0].home.hm2$w_rvn) != 0 ) {
+    if( (sts & 1) && (flags & MOU_LOG) && VMSWORD(vcb->vcbdev[0].home.hm2$w_rvn) != 0 ) {
         printf ( "%%MOUNT-I-MOUNTEDVS, Volume set %12.12s mounted\n", vcb->vcbdev[0].home.hm2$t_strucname );
+    }
+    if( vcb != NULL ) {
+        vcb->next = vcb_list;
+        vcb_list = vcb;
     }
     if( volsetSYS != NULL ) free( volsetSYS );
     if (retvcb != NULL) *retvcb = vcb;
     return sts;
+}
+
+/***************************************************************** show_volumes */
+/* First, some private helper routines */
+
+/********************************************************** print_volhdr */
+static void print_volhdr( int volset, size_t devwid ) {
+    size_t i;
+
+    if( volset )
+        printf( "    RVN " );
+    else
+        printf( "  " );
+    printf(
+"%-*s Volume       Lvl Clust Owner/CreateDate  VolProt/Default FileProt\n",
+            (int)devwid, "Dev" );
+    if( volset )
+        printf( "    --- " );
+    else
+        printf( "  " );
+
+    for( i= 0; i < devwid; i++ )
+        putchar( '-' );
+    printf(
+" ------------ --- ----- ----------------- ---------------------------\n" );
+
+    return;
+}
+
+/********************************************************** print_prot() */
+static void print_prot( vmsword code, int vol ) {
+    static const char grp[4] = { "SOGW" };
+    static const char acc[2][4] = {{"RWED"}, {"RWCD"}};
+    int g, b, w;
+
+    w = 27;
+
+    for( g = 0; g < 4; g++ ) {
+        w -= printf( "%c:", grp[g] );
+        for( b = 0; b < 4; b++ ) {
+            if( !(code & (1<<(b + (4*g)))) ) {
+                putchar( acc[vol][b] );
+                w--;
+            }
+        }
+        if( g < 3 ) {
+            putchar( ',' );
+            w--;
+        }
+    }
+    while( w-- ) putchar( ' ' );
+}
+
+/********************************************************** print_volinf() */
+static void print_volinf( struct VCB *vcb,
+                          size_t devwid,
+                          unsigned device,
+                          size_t wrap ) {
+    struct VCBDEV *vcbdev;
+    size_t n;
+    vmsword timbuf[7];
+
+    vcbdev = vcb->vcbdev+device;
+
+    for( n = 0; n < strlen( vcbdev->dev->devnam ); n++ ) {
+        if( vcbdev->dev->devnam[n] == ':' )
+            break;
+        putchar( vcbdev->dev->devnam[n] );
+    }
+    printf( "%*s ", (int)(devwid-n), "" );
+
+    printf( "%12.12s", vcbdev->home.hm2$t_volname );
+
+    printf( " %u.%u %5u [%6o,%6o]",
+            VMSWORD( vcbdev->home.hm2$w_struclev ) >> 8,
+            VMSWORD( vcbdev->home.hm2$w_struclev ) & 0xFF,
+            VMSWORD( vcbdev->home.hm2$w_cluster ),
+            VMSWORD( vcbdev->home.hm2$w_volowner.uic$w_grp ),
+            VMSWORD( vcbdev->home.hm2$w_volowner.uic$w_mem )
+            );
+    printf( "   " );
+    print_prot( VMSWORD( vcbdev->home.hm2$w_protect ), 1 );
+    if( !(vcb->status & VCB_WRITE) )
+        printf( " write-locked" );
+
+    printf( "\n%*s ", (int)(wrap+devwid+23), "" );
+
+    if( sys$numtim( timbuf, vcbdev->home.hm2$q_credate ) & STS$M_SUCCESS ) {
+        static const char *months =
+            "-JAN-FEB-MAR-APR-MAY-JUN-JUL-AUG-SEP-OCT-NOV-DEC-";
+
+        printf( "%2u%.5s%4u %2u:%2u ", timbuf[2],
+                months+(4*(timbuf[1]-1)), timbuf[0],
+                timbuf[3], timbuf[4]);
+    } else
+        printf( "%*s", 41-23, "" );
+
+    print_prot( VMSWORD( vcbdev->home.hm2$w_fileprot ), 0 );
+    putchar( '\n' );
+}
+
+/********************************************************** show_volumes() */
+void show_volumes( void ) {
+    struct VCB *vcb;
+    size_t maxd =  sizeof( "Dev" ) -1;
+    int nvol = 0;
+    unsigned device;
+
+    if( vcb_list == NULL ) {
+        printf( " No volumes mounted\n" );
+        return;
+    }
+
+    for( vcb = vcb_list; vcb != NULL; vcb = vcb->next ) {
+        struct VCBDEV *vcbdev;
+
+        if( vcb->devices == 0 ) {
+            printf( "No devices for volume\n" );
+            abort();
+        }
+        nvol++;
+        vcbdev = vcb->vcbdev;
+        for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
+            size_t n;
+            for( n = 0; n < strlen( vcbdev->dev->devnam ); n++ )
+                if( vcbdev->dev->devnam[n] == ':' )
+                    break;
+            if( n > maxd )
+                maxd = n;
+        }
+    }
+    for( vcb = vcb_list; vcb != NULL; vcb = vcb->next ) {
+        struct VCBDEV *vcbdev;
+        unsigned device;
+
+        vcbdev = vcb->vcbdev;
+        if( VMSWORD(vcbdev->home.hm2$w_rvn) == 0 )
+            continue;
+
+        nvol--;
+        printf( "  Volume set %12.12s\n", vcbdev->home.hm2$t_strucname );
+
+        print_volhdr( TRUE, maxd );
+
+        for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
+            printf( "    %3d ", VMSWORD(vcbdev->home.hm2$w_rvn) );
+            print_volinf( vcb, maxd, device, 8 );
+        }
+    }
+    if( nvol == 0 )
+        return;
+
+    printf( "\n" );
+
+    print_volhdr( FALSE, maxd );
+    for( vcb = vcb_list; vcb != NULL; vcb = vcb->next ) {
+        struct VCBDEV *vcbdev;
+        unsigned device;
+
+        vcbdev = vcb->vcbdev;
+        if( VMSWORD(vcbdev->home.hm2$w_rvn) != 0 )
+            continue;
+
+        vcbdev = vcb->vcbdev;
+        for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
+            printf( "  " );
+            print_volinf( vcb, maxd, device, 2 );
+        }
+    }
+
+    return;
 }

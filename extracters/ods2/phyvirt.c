@@ -37,7 +37,7 @@ static struct VDEV {
     char *path;
 } *virt_device_list = NULL;
 
-static int virt_compare( unsigned keylen, const char *keynam, 
+static int virt_compare( unsigned keylen, const char *keynam,
                             const char *devnam );
 static struct VDEV *virt_insert( const char *devnam, unsigned devsiz,
                                  const char *path );
@@ -82,7 +82,7 @@ void virt_show( const char *devnam ) {
         for ( vp = virt_device_list; vp != NULL; vp = vp->next ) {
             n = strlen( vp->path );
             printf( "  %-*s %.*s\n", (int)maxd, vp->devnam, (int)maxp,
-                    (n > 64)? vp->path+(n-64): vp->path );
+                    (n > maxp)? vp->path+(n-maxp): vp->path );
         }
     } else {
         devlen = strlen( devnam );
@@ -164,7 +164,7 @@ unsigned virt_device( char *devnam, char **vname ) {
 
         if( (p = strchr( devnam, '=' )) != NULL ) {
             *p = '\0';
-            path = p+1;
+            path = ++p;
         } else {
             path = devnam;
             devnam = autodev();
