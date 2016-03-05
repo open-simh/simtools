@@ -18,6 +18,7 @@
 */
 
 #include <ctype.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,19 +58,22 @@ unsigned deallocfile(struct FCB *fcb);  /* Update.c */
 
 /* checksum() to produce header checksum values... */
 
-vmsword checksum( vmsword *block ) {
-    register int count;
+vmsword checksumn( vmsword *block, int count ) {
     register unsigned result;
     register unsigned short *ptr;
     register unsigned data;
 
     ptr = block;
     result = 0;
-    for ( count = 255; count > 0; --count ) {
+    for ( ; count > 0; --count ) {
         data = *ptr++;
         result += VMSWORD(data);
     }
-    return result;
+    return (vmsword)(result & 0xFFFF);
+}
+
+vmsword checksum( vmsword *block ) {
+    return checksumn( block, 255 );
 }
 
 /***************************************************************** fid_copy() */
@@ -821,7 +825,7 @@ unsigned dismount(struct VCB * vcb)
 /******************************************************************** mount() */
 
 #ifdef DEBUG
-#define HOME_LIMIT 1
+#define HOME_LIMIT 5
 #else
 #define HOME_LIMIT 100
 #endif
@@ -885,36 +889,53 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
                 break;
             }
             for (hba = 1; hba <= HOME_LIMIT; hba++) {
+                struct HOME *hom;
+
                 sts = phyio_read( vcbdev->dev, hba, sizeof( struct HOME ),
                                  (char *) &vcbdev->home );
                 if (!(sts & STS$M_SUCCESS)) break;
+                hom = &vcbdev->home;
 #ifdef DEBUG
                 printf( "--->mount(): LBA=%u, HM2$L_HOMELBN=%u, "
                         "HM2$T_FORMAT=\"%12.12s\", memcmp()=%u\n",
-                        hba, VMSLONG( vcbdev->home.hm2$l_homelbn ),
-                        vcbdev->home.hm2$t_format,
-                        memcmp( vcbdev->home.hm2$t_format, "DECFILE11B  ", 12 )
+                        hba, VMSLONG( hom->hm2$l_homelbn ),
+                        hom->hm2$t_format,
+                        memcmp( hom->hm2$t_format, "DECFILE11B  ", 12 )
                       );
 #endif
-                if (hba == VMSLONG(vcbdev->home.hm2$l_homelbn) &&
-                    memcmp(vcbdev->home.hm2$t_format,"DECFILE11B  ",12) == 0) {
+                if( (hba == VMSLONG(hom->hm2$l_homelbn) ||
+                     hba == VMSLONG(hom->hm2$l_alhomelbn)) &&
+                    (VMSLONG(hom->hm2$l_alhomelbn) != 0) &&
+                    (VMSLONG(hom->hm2$l_altidxlbn) != 0) &&
+                    (VMSWORD(hom->hm2$w_homevbn)   != 0) &&
+                    (VMSLONG(hom->hm2$l_ibmaplbn)  != 0) &&
+                    (VMSWORD(hom->hm2$w_ibmapsize) != 0) &&
+                    (VMSWORD(hom->hm2$w_resfiles)  >= 5) &&
+                    (VMSWORD(hom->hm2$w_checksum1) ==
+                     checksumn( (vmsword *)hom,
+                                (offsetof( struct HOME, hm2$w_checksum1 )/2) ))  &&
+                    (VMSWORD(hom->hm2$w_checksum2) ==
+                     checksum( (vmsword *)hom )) &&
+                    (memcmp(hom->hm2$t_format,"DECFILE11B  ",12) == 0) ) {
                     break;
                 }
-                sts = SS$_DATACHECK;
+#ifdef DEBUG
+                printf( "--->mount(): Home block validation failure\n" );
+                printf( "(VMSLONG(hom->hm2$l_alhomelbn) != 0) %u\n", (VMSLONG(hom->hm2$l_alhomelbn) != 0) );
+                printf( "(VMSLONG(hom->hm2$l_altidxlbn) != 0) %u\n", (VMSLONG(hom->hm2$l_altidxlbn) != 0) );
+                printf( "(VMSWORD(hom->hm2$w_homevbn)   != 0) %u\n", (VMSWORD(hom->hm2$w_homevbn)   != 0));
+                printf( "(VMSLONG(hom->hm2$l_ibmaplbn)  != 0) %u\n", (VMSLONG(hom->hm2$l_ibmaplbn)  != 0) );
+                printf( "(VMSWORD(hom->hm2$w_ibmapsize) != 0) %u\n", (VMSWORD(hom->hm2$w_ibmapsize) != 0));
+                printf( "(VMSWORD(hom->hm2$w_resfiles)  >= 5) %u\n", (VMSWORD(hom->hm2$w_resfiles)  >= 5));
+                printf( "(VMSWORD(hom->hm2$w_checksum1) = %u %u\n", VMSWORD(hom->hm2$w_checksum1),
+                        checksumn( (vmsword *)hom,
+                                   (offsetof( struct HOME, hm2$w_checksum1 )/2) ) );
+                printf( "(VMSWORD(hom->hm2$w_checksum2) = %u %u\n", VMSWORD(hom->hm2$w_checksum2),
+                        checksum( (vmsword *)hom ));
+#endif
+                sts = SS$_ENDOFFILE;
             }
             if( !(sts & 1) ) break;
-                if (VMSWORD(vcbdev->home.hm2$w_checksum2) !=
-                    checksum( (vmsword *) &vcbdev->home ) ) {
-#ifdef DEBUG
-                    printf( "--->mount(): Home block checksum failure: " );
-                    printf( "HM2$W_CHECKSUM=%u, checksum()=%u\n",
-                            VMSWORD( vcbdev->home.hm2$w_checksum2 ),
-                            checksum( (vmsword *) &vcbdev->home )
-                          );
-#endif
-                sts = SS$_DATACHECK;
-                break;
-            }
             if( label[device] != NULL ) {
                 int i;
                 char lbl[12+1]; /* Pad CLI-supplied label to match ODS */
@@ -929,7 +950,7 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
                 }
             if (!(sts & STS$M_SUCCESS)) break;
             if (flags & MOU_WRITE && !(vcbdev->dev->access & MOU_WRITE)) {
-                printf("%%MOUNT-I-WRITELOCK, %s is write locked\n",
+                printf("%%MOUNT-W-WRITELOCK, %s is write locked\n",
                        dname);
                 vcb->status &= ~VCB_WRITE;
             }
@@ -1104,11 +1125,9 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
             while( vcb->dircache ) cache_delete( (struct CACHE *) vcb->dircache );
         }
     } else { /* *** DECREF *** */
-        if( flags & MOU_VIRTUAL ) {
-            vcbdev = vcb->vcbdev;
-            for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
-                phyio_done( vcbdev->dev );
-            }
+        vcbdev = vcb->vcbdev;
+        for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
+            phyio_done( vcbdev->dev );
         }
         free(vcb);
         vcb = NULL;
