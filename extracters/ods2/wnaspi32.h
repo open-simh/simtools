@@ -10,7 +10,8 @@
 
 //***************************************************************************
 
-
+#ifndef _WNASPI32_H
+#define _WNASPI32_H
 
 #ifdef __cplusplus
 
@@ -374,3 +375,4 @@ typedef struct {
 
 #endif
 
+#endif /* #ifndef _WNASPI32_H */

@@ -1,6 +1,6 @@
 /*
 
-        Vmstime.c  v1.6A
+        Vmstime.c  V2.1
 
         Author: Paul Nankervis
 
@@ -53,10 +53,6 @@
               of a dollar symbol (ie sys_asctim instead of sys$asctim).
               This avoids problems on systems which don't handle
               the '$' well, and it avoids conflicts under VMS.
-              To call these routines from an application which uses
-              normal 'dollar' names simply include the header file
-              "vmstime.h" which will remap the names unless NO_DOLLAR
-              is defined first! (ie define sys$asctim as sys_asctim).
 
 */
 
@@ -71,8 +67,8 @@
 #else
 
 #ifndef NO_LOCALTIME
-#if defined(VMS) && defined(__GNUC__)
-#include <timeb.h>              /* For GCC include libraries on VMS (sigh!) */
+#if defined(VMS)
+#include <timeb.h>              /* For VAXC and GCC include libraries on VMS */
 #else
 #include <sys/timeb.h>          /* For ftime() */
 #endif
@@ -122,6 +118,8 @@
 
 #endif
 
+/***************************************************************** lib_addx() */
+
 unsigned lib_addx(void *addant,void *addee,void *result,int *lenadd)
 {
     register int count;
@@ -151,6 +149,7 @@ unsigned lib_addx(void *addant,void *addee,void *result,int *lenadd)
     return LIB__NORMAL;
 }
 
+/***************************************************************** lib_subx() */
 
 unsigned lib_subx(void *subant,void *subee,void *result,int *lenadd)
 {
@@ -181,13 +180,15 @@ unsigned lib_subx(void *subant,void *subee,void *result,int *lenadd)
     return LIB__NORMAL;
 }
 
+/********************************************************** vmstime_compare() */
+
 /* vmstime_compare() is used to compare times.
       returns -1 if time2 is bigger
                0 if times are equal
                1 if time1 is bigger
 */
 
-int vmstime_compare(VMSTIME time1,VMSTIME time2)
+int vmstime_compare(pVMSTIME time1,pVMSTIME time2)
 {
 #ifdef VMSTIME_64BIT
     if (*time1 > *time2) return 1;
@@ -211,12 +212,13 @@ int vmstime_compare(VMSTIME time1,VMSTIME time2)
     return 0;
 }
 
+/******************************************************** vmstime_date_time() */
 
 /* vmstime_date_time() is an internal routine assemble the date (day number)
    and time in a time quadword - basically the opposite of lib_day()
 */
 
-unsigned vmstime_date_time(int days,VMSTIME timadr,int day_time)
+unsigned vmstime_date_time(int days,pVMSTIME timadr,int day_time)
 {
     /* Put date/time into VMS quadword timbuf... */
 
@@ -251,6 +253,7 @@ unsigned vmstime_date_time(int days,VMSTIME timadr,int day_time)
     return SS__NORMAL;
 }
 
+/*********************************************************** lib_cvt_vectim() */
 
 /* lib_cvt_vectim() takes individual date/time fields from a
    seven word buffer and munges them into a time quadword...
@@ -258,7 +261,7 @@ unsigned vmstime_date_time(int days,VMSTIME timadr,int day_time)
 
 int vmstime_mthend[] = {0,31,60,91,121,152,182,213,244,274,305,335,366};
 
-unsigned lib_cvt_vectim(unsigned short timvec[7],VMSTIME timadr)
+unsigned lib_cvt_vectim(unsigned short timvec[7],pVMSTIME timadr)
 {
     register unsigned sts;
     register int year,month,days;
@@ -305,7 +308,7 @@ unsigned lib_cvt_vectim(unsigned short timvec[7],VMSTIME timadr)
     return sts;
 }
 
-
+/*************************************************************** sys_gettim() */
 
 /* sys_gettim() implemented here by getting C library time in seconds
    since 1-Jan-1970 and munging into a time quadword... Can use time()
@@ -315,12 +318,13 @@ unsigned lib_cvt_vectim(unsigned short timvec[7],VMSTIME timadr)
    a munged version of the internal UTC time
 */
 
-unsigned sys_gettim(VMSTIME timadr)
+unsigned sys_gettim(pVMSTIME timadr)
 {
 #ifdef _WIN32
     /* Get windows time adjust for timezone and convert to VMS... */
     GetSystemTimeAsFileTime((struct _FILETIME *)timadr);
-    FileTimeToLocalFileTime((struct _FILETIME *)timadr,(struct _FILETIME *)timadr);
+    FileTimeToLocalFileTime((struct _FILETIME *)timadr,
+                            (struct _FILETIME *)timadr);
     return vmstime_from_nt(timadr,timadr);
 #else
 #ifdef NO_LOCALTIME
@@ -348,14 +352,14 @@ unsigned sys_gettim(VMSTIME timadr)
 #endif
 }
 
-
+/************************************************************** vmstime_day() */
 
 /* vmstime_day() is a routine to crack time quadwords into a day number
    and time. It is different to lib_day() in that delta times are returned
    as negative values to distinguish small delta values from dates
 */
 
-unsigned vmstime_day(int *days,VMSTIME timadr,int *day_time)
+unsigned vmstime_day(int *days,pVMSTIME timadr,int *day_time)
 {
     VMSTIME wrktim;
 #ifdef VMSTIME_64BIT
@@ -370,7 +374,7 @@ unsigned vmstime_day(int *days,VMSTIME timadr,int *day_time)
     if (timadr == NULL) {
         register unsigned sts;
         sts = sys_gettim(wrktim);
-        if (!(sts & 1)) return sts;
+        if (!(sts & STS_M_SUCCESS)) return sts;
 #ifdef VMSTIME_64BIT
         timval = *wrktim;
     } else {
@@ -436,11 +440,13 @@ unsigned vmstime_day(int *days,VMSTIME timadr,int *day_time)
     return LIB__NORMAL;
 }
 
+/****************************************************************** lib_day() */
+
 /* lib_day() is a routine to crack time quadwords into a day number
    and time.
 */
 
-unsigned lib_day(int *days,VMSTIME timadr,int *day_time)
+unsigned lib_day(int *days,pVMSTIME timadr,int *day_time)
 {
     register unsigned sts;
     sts = vmstime_day(days,timadr,day_time);
@@ -448,12 +454,13 @@ unsigned lib_day(int *days,VMSTIME timadr,int *day_time)
     return sts;
 }
 
+/*********************************************************** vmstime_numtim() */
 
 /* vmstime_numtim() takes a time quadword and breaks it into a
    seven word time vector (year,month,day,hour...)
 */
 
-unsigned vmstime_numtim(unsigned short timvec[7],VMSTIME timadr,
+unsigned vmstime_numtim(unsigned short timvec[7],pVMSTIME timadr,
                         int *days,int *day_time,int *day_of_year)
 {
     register int date,time;
@@ -463,7 +470,7 @@ unsigned vmstime_numtim(unsigned short timvec[7],VMSTIME timadr,
     {
         register unsigned sts;
         sts = vmstime_day(days,timadr,day_time);
-        if (!(sts & 1)) return sts;
+        if (!(sts & STS_M_SUCCESS)) return sts;
         date = *days;
         time = *day_time;
     }
@@ -546,21 +553,25 @@ unsigned vmstime_numtim(unsigned short timvec[7],VMSTIME timadr,
     return SS__NORMAL;
 }
 
+/*************************************************************** sys_numtim() */
+
 /* sys_numtim() takes a time quadword and breaks it into a
    seven word time vector (year,month,day,hour...)
 */
 
-unsigned sys_numtim(unsigned short timvec[7],VMSTIME timadr)
+unsigned sys_numtim(unsigned short timvec[7],pVMSTIME timadr)
 {
     int days,day_time;
     return vmstime_numtim(timvec,timadr,&days,&day_time,NULL);
 }
 
+/*********************************************************** vmstime_getnum() */
+
 /* Define internal tables... */
 
-char vmstime_punct[] = "::.";
-char vmstime_digits[] = "0123456789";
-char vmstime_months[] = "-JAN-FEB-MAR-APR-MAY-JUN-JUL-AUG-SEP-OCT-NOV-DEC-";
+static const char vmstime_punct[] = "::.";
+static const char vmstime_digits[] = "0123456789";
+static const char vmstime_months[] = "-JAN-FEB-MAR-APR-MAY-JUN-JUL-AUG-SEP-OCT-NOV-DEC-";
 
 /* vmstime_getnum() internal routine to convert a printable number to binary */
 
@@ -583,12 +594,13 @@ char *vmstime_getnum(char *ptr,char *end,unsigned short *result,int *scale)
     return chrptr;
 }
 
+/*************************************************************** sys_bintim() */
 
 #define NOVALUE 0xFFFF
 
 /* sys_bintim() takes a printable time and converts it to a time quadword */
 
-unsigned sys_bintim(struct dsc_descriptor *timbuf,VMSTIME timadr)
+unsigned sys_bintim(struct dsc_descriptor *timbuf,pVMSTIME timadr)
 {
     int scale;
     unsigned short wrktim[7];
@@ -624,7 +636,7 @@ unsigned sys_bintim(struct dsc_descriptor *timbuf,VMSTIME timadr)
             register char upmth0 = toupper(chrptr[0]);
             register char upmth1 = toupper(chrptr[1]);
             register char upmth2 = toupper(chrptr[2]);
-            register char *mthptr = vmstime_months + 1;
+            register const char *mthptr = vmstime_months + 1;
             do {
                 if (upmth0 == mthptr[0] &&
                     upmth1 == mthptr[1] &&
@@ -671,7 +683,8 @@ unsigned sys_bintim(struct dsc_descriptor *timbuf,VMSTIME timadr)
         register int time_field;
         for (time_field = 0; time_field < 4 && chrptr < endptr; time_field++) {
             if (chrptr < endptr && isdigit(*chrptr)) {
-                chrptr = vmstime_getnum(chrptr,endptr,&wrktim[time_field + 3],&scale);
+                chrptr = vmstime_getnum(chrptr,endptr,&wrktim[time_field + 3],
+                                        &scale);
                 field_count++;
                 if (time_field == 3) {
                     register unsigned hundredth = wrktim[6] * 1000 / scale;
@@ -699,7 +712,7 @@ unsigned sys_bintim(struct dsc_descriptor *timbuf,VMSTIME timadr)
         register int field;
         unsigned short curtim[7];
         register unsigned sts = sys_numtim(curtim,NULL);
-        if (!(sts & 1)) return sts;
+        if (!(sts & STS_M_SUCCESS)) return sts;
         for (field = 0; field < 7; field++) {
             if (wrktim[field] == NOVALUE) wrktim[field] = curtim[field];
         }
@@ -707,11 +720,12 @@ unsigned sys_bintim(struct dsc_descriptor *timbuf,VMSTIME timadr)
     return lib_cvt_vectim(wrktim,timadr);
 }
 
+/*************************************************************** sys_asctim() */
 
 /* sys_asctim() converts a time quadword into printable form...  */
 
 unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
-                    VMSTIME timadr,unsigned cvtflg)
+                    pVMSTIME timadr,unsigned cvtflg)
 {
     unsigned short timvec[7];
     register int count,timval;
@@ -723,7 +737,7 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
     {
         register unsigned sts;
         sts = sys_numtim(timvec,timadr);
-        if (!(sts & 1)) return sts;
+        if (!(sts & STS_M_SUCCESS)) return sts;
     }
 
     /* See if we want delta days or date... */
@@ -810,10 +824,11 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
     return SS__NORMAL;
 }
 
+/********************************************************** lib_day_of_week() */
 
 /* lib_day_of_week() computes day of week from time quadword... */
 
-unsigned lib_day_of_week(VMSTIME timadr,unsigned *weekday)
+unsigned lib_day_of_week(pVMSTIME timadr,unsigned *weekday)
 {
     int days;
     register unsigned sts;
@@ -821,15 +836,17 @@ unsigned lib_day_of_week(VMSTIME timadr,unsigned *weekday)
     /* Use lib_day to crack quadword... */
 
     sts = lib_day(&days,timadr,NULL);
-    if (sts & 1) {
+    if (sts & STS_M_SUCCESS) {
         *weekday = ((days + 2) % 7) + 1;
     }
     return sts;
 }
 
+/****************************************************** lib_mult_delta_time() */
+
 /* lib_mult_delta_time multiplies a delta time by a scalar integer... */
 
-unsigned lib_mult_delta_time(int *multiple,VMSTIME timadr)
+unsigned lib_mult_delta_time(int *multiple,pVMSTIME timadr)
 {
     register int factor = *multiple;
 
@@ -858,10 +875,11 @@ unsigned lib_mult_delta_time(int *multiple,VMSTIME timadr)
     return LIB__NORMAL;
 }
 
+/************************************************************ lib_add_times() */
 
 /* lib_add_times() adds two quadword time values */
 
-unsigned lib_add_times(VMSTIME time1,VMSTIME time2,VMSTIME result)
+unsigned lib_add_times(pVMSTIME time1,pVMSTIME time2,pVMSTIME result)
 {
     if (ISDELTA(time1)) {
         if (ISDELTA(time2)) {
@@ -889,10 +907,11 @@ unsigned lib_add_times(VMSTIME time1,VMSTIME time2,VMSTIME result)
     return LIB__NORMAL;
 }
 
+/************************************************************ lib_sub_times() */
 
 /* lib_sub_times() subtracts two quadword time values */
 
-unsigned lib_sub_times(VMSTIME time1,VMSTIME time2,VMSTIME result)
+unsigned lib_sub_times(pVMSTIME time1,pVMSTIME time2,pVMSTIME result)
 {
 #ifdef VMSTIME_64BIT
     if (ISDELTA(time1) != ISDELTA(time2)) {
@@ -918,11 +937,12 @@ unsigned lib_sub_times(VMSTIME time1,VMSTIME time2,VMSTIME result)
     return LIB__NORMAL;
 }
 
+/*********************************************** lib_cvt_from_internal_time() */
 
 /* lib_cvt_from_internal_time() extracts a time field from a time value */
 
 unsigned lib_cvt_from_internal_time(unsigned *operation,
-                                    unsigned *result,VMSTIME input_time)
+                                    unsigned *result,pVMSTIME input_time)
 {
     register unsigned resval;
     unsigned short timvec[7];
@@ -931,7 +951,7 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
     {
         register unsigned sts;
         sts = vmstime_numtim(timvec,input_time,&days,&day_time,&day_of_year);
-        if (!(sts & 1)) return sts;
+        if (!(sts & STS_M_SUCCESS)) return sts;
     }
     if (timvec[0] != 0) {
         switch (*operation) {
@@ -948,7 +968,9 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
                 resval = (day_of_year * 24 + timvec[3]) * 60 + timvec[4];
                 break;
             case LIB$K_SECOND_OF_YEAR:
-                resval = ((day_of_year * 24 + timvec[3]) * 60 + timvec[4]) * 60 + timvec[5];
+                resval =
+                    ((day_of_year * 24 + timvec[3]) * 60 + timvec[4]) * 60 +
+                    timvec[5];
                 break;
             case LIB$K_DAY_OF_MONTH:
                 resval = timvec[2];
@@ -960,7 +982,9 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
                 resval = ((timvec[2] - 1) * 24 + timvec[3]) * 60 + timvec[4];
                 break;
             case LIB$K_SECOND_OF_MONTH:
-                resval = (((timvec[2] - 1) * 24 + timvec[3]) * 60 + timvec[4]) * 60 + timvec[5];
+                resval =
+                    (((timvec[2] - 1) * 24 + timvec[3]) * 60 + timvec[4]) * 60 +
+                    timvec[5];
                 break;
             case LIB$K_DAY_OF_WEEK:
                 resval = ((days + 2) % 7) + 1;
@@ -972,7 +996,9 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
                 resval = (((days + 2) % 7) * 24 + timvec[3]) * 60 + timvec[4];
                 break;
             case LIB$K_SECOND_OF_WEEK:
-                resval = ((((days + 2) % 7) * 24 + timvec[3]) * 60 + timvec[4]) * 60 + timvec[5];
+                resval =
+                    ((((days + 2) % 7) * 24 + timvec[3]) * 60 + timvec[4]) *
+                    60 + timvec[5];
                 break;
             case LIB$K_HOUR_OF_DAY:
                 resval = timvec[3];
@@ -1013,7 +1039,9 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
                 resval = (timvec[2] * 24 + timvec[3]) * 60 + timvec[4];
                 break;
             case LIB$K_DELTA_SECONDS:
-                resval = ((timvec[2] * 24 + timvec[3]) * 60 + timvec[4]) * 60 + timvec[5];
+                resval =
+                    ((timvec[2] * 24 + timvec[3]) * 60 + timvec[4]) * 60 +
+                    timvec[5];
                 break;
             case 0:
             case LIB$K_DELTA_WEEKS_F:
@@ -1030,18 +1058,20 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
     return LIB__NORMAL;
 }
 
-unsigned char vmstime_oneweek[] =   {0x00,0xc0,0x1b,0xd7,0x7f,0xfa,0xff,0xff};
-unsigned char vmstime_oneday[] =    {0x00,0x40,0x96,0xd5,0x36,0xff,0xff,0xff};
-unsigned char vmstime_onehour[] =   {0x00,0x98,0x3b,0x9e,0xf7,0xff,0xff,0xff};
-unsigned char vmstime_oneminute[] = {0x00,0xba,0x3c,0xdc,0xff,0xff,0xff,0xff};
-unsigned char vmstime_onesecond[] = {0x80,0x69,0x67,0xff,0xff,0xff,0xff,0xff};
+/************************************************* lib_cvt_to_internal_time() */
+
+static const unsigned char vmstime_oneweek[] =   {0x00,0xc0,0x1b,0xd7,0x7f,0xfa,0xff,0xff};
+static const unsigned char vmstime_oneday[] =    {0x00,0x40,0x96,0xd5,0x36,0xff,0xff,0xff};
+static const unsigned char vmstime_onehour[] =   {0x00,0x98,0x3b,0x9e,0xf7,0xff,0xff,0xff};
+static const unsigned char vmstime_oneminute[] = {0x00,0xba,0x3c,0xdc,0xff,0xff,0xff,0xff};
+static const unsigned char vmstime_onesecond[] = {0x80,0x69,0x67,0xff,0xff,0xff,0xff,0xff};
 
 /* lib_cvt_to_internal_time() converts a time field to a time value */
 
 unsigned lib_cvt_to_internal_time(unsigned *operation,int *input,
-                                  VMSTIME result)
+                                  pVMSTIME result)
 {
-    unsigned char *ptr;
+    unsigned const char *ptr;
     if (*input < 1) return LIB__IVTIME;
     switch (*operation) {
         case LIB$K_DELTA_WEEKS:
@@ -1066,21 +1096,25 @@ unsigned lib_cvt_to_internal_time(unsigned *operation,int *input,
     return lib_mult_delta_time(input,result);
 }
 
+/********************************************************** vmstime_from_nt() */
+
 /* Difference between VMS and NT is 94187 days.... */
 
-unsigned char vmstime_nt_offset[] = {0x00,0xc0,0xac,0x76,0x88,0xe3,0xde,0xfe};
+static const unsigned char vmstime_nt_offset[] = {0x00,0xc0,0xac,0x76,0x88,0xe3,0xde,0xfe};
 
 /* vmstime_from_nt() convert Windows NT time to vmstime */
 
-unsigned vmstime_from_nt(VMSTIME nt_time,VMSTIME vms_time)
+unsigned vmstime_from_nt(pVMSTIME nt_time,pVMSTIME vms_time)
 {
     if (ISDELTA(nt_time)) return LIB__IVTIME;
     return lib_sub_times(nt_time,(pVMSTIME) vmstime_nt_offset,vms_time);
 }
 
+/************************************************************ vmstime_to_nt() */
+
 /* vmstime_to_nt() convert vmstime to Windows NT time */
 
-unsigned vmstime_to_nt(VMSTIME vms_time,VMSTIME nt_time)
+unsigned vmstime_to_nt(pVMSTIME vms_time,pVMSTIME nt_time)
 {
     if (ISDELTA(vms_time)) return LIB__IVTIME;
     return lib_add_times(vms_time,(pVMSTIME) vmstime_nt_offset,nt_time);

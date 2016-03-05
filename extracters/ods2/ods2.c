@@ -1,12 +1,13 @@
-#define MODULE_NAME	ODS2
+#define MODULE_NAME  ODS2
 
 /*     Feb-2016, v1.4 add readline support, dir/full etc
  *     See git commit messages for details.
+ *     V2.1 - Merge and adapte code from Larry Baker's V2.0
  */
 
 /*     Jul-2003, v1.3hb, some extensions by Hartmut Becker */
 
-/*     Ods2.c v1.3   Mainline ODS2 program   */
+/*     ODS2.c V2.1   Mainline ODS2 program   */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -26,6 +27,7 @@
                 DIRECT.C        Routines for handling directories
                 ODS2.C          The mainline program
                 PHYVMS.C        Routine to perform physical I/O
+                PHYVIRT.C       Routines for managing virtual disks.
                 RMS.C           Routines to handle RMS structures
                 SYSMSG.C        Routines to convert status codes to text
                 UPDATE.C        Routines for updating ODS2 structures
@@ -44,7 +46,7 @@
                       access.c,device.c,cache.c,phyos2.c,vmstime.c
 
        For accessing disk images (e.g. .ISO or simulator files),
-       replace PHYVMS.C with DISKIO.c and define DISKIMAGE
+       simply mount /image (or /virtual) filename.
 
        The included make/mms/com files do all this for you.
 */
@@ -53,7 +55,8 @@
  *   Feb 2016 Timothe Litt <litt at acm _ddot_ org>
  *      Bug fixes, readline support, build on NT without wnaspi32,
  *      Decode error messages, patch from vms2linux.de. VS project files.
- *      Rework command parsing and help.  Bugs, bugs & bugs.  See git
+ *      Rework command parsing and help.  Bugs, bugs & bugs.  Merge
+ *      code from Larry Baker, USGS.  See git
  *      commit history for details.
  *
  *   31-AUG-2001 01:04	Hunter Goatley <goathunter@goatley.com>
@@ -61,11 +64,17 @@
  *	For VMS, added routine getcmd() to read commands with full
  *	command recall capabilities.
  *
+ *    8-JUN-2005		Larry Baker <baker@usgs.gov>
+ *
+ *  Add #include guards in .h files.
+ *  Use named constants in place of literals.
+ *  Replace BIG_ENDIAN with ODS2_BIG_ENDIAN (Linux always #defines
+ *     BIG_ENDIAN).
+ *  Add SUBST DRIVE: FILE to "mount" a file (vs. a disk).
+ *  Implement quoted arguments (paired " or '; no escape characters)
+ *     in cmdsplit(), e.g., to specify a Unix path or a null argument.
+ *  Remove VMSIO conditional code (need to "mount" a file now).
  */
-
-/*  This version will compile and run using normal VMS I/O by
-    defining VMSIO
-*/
 
 /*  This is the top level set of routines. It is fairly
     simple minded asking the user for a command, doing some
@@ -81,66 +90,66 @@
 #ifdef __DECC
 #pragma module MODULE_NAME MODULE_IDENT
 #else
-#ifdef vaxc
+#ifdef VAXC
 #module MODULE_NAME MODULE_IDENT
-#endif /* vaxc */
+#endif /* VAXC */
 #endif /* __DECC */
+#include <smgdef.h>		/* For VMS version of getcmd()                */
+#include <smgmsg.h>             /* SMG$_EOF */
+#include <smg$routines.h>
 #endif /* VMS */
 
 #define DEBUGx on
-#define VMSIOx on
 
 #define _BSD_SOURCE
+#include <ctype.h>		/* isalpha(), isspace(), tolower()            */
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include "version.h"
 #include "compat.h"
-#ifdef DISKIMAGE
-#include "diskio.h"
-#endif
 #include "sysmsg.h"
 #include "phyio.h"
+#include "phyvirt.h"
 
 #ifdef _WIN32
 #include <Windows.h>
 #endif
+#include "access.h"
+#include "descrip.h"
+#include "device.h"
+#include "direct.h"
+#include "ods2.h"
+#include "phyio.h"
+#include "rms.h"
+#include "ssdef.h"
+#include "stsdef.h"
 
-#ifdef VMSIO
-#include <ssdef.h>
-#include <descrip.h>
+#ifdef VMS
 #include <starlet.h>
-#include <rms.h>
-#include <fiddef.h>
-
-#define sys_parse       sys$parse
-#define sys_search      sys$search
-#define sys_open        sys$open
-#define sys_close       sys$close
-#define sys_connect     sys$connect
-#define sys_disconnect  sys$disconnect
-#define sys_get         sys$get
-#define sys_put         sys$put
-#define sys_create      sys$create
-#define sys_erase       sys$erase
-#define sys_extend      sys$extend
-#define sys_asctim      sys$asctim
-#define sys_setddir     sys$setddir
-#define dsc_descriptor  dsc$descriptor
-#define dsc_w_length    dsc$w_length
-#define dsc_a_pointer   dsc$a_pointer
 
 #else
-#include "ssdef.h"
-#include "descrip.h"
-#include "access.h"
-#include "rms.h"
+#include "vmstime.h"
 #endif
 
-#define PRINT_ATTR (FAB$M_CR | FAB$M_PRN | FAB$M_FTN)
+#ifdef VAXC
+#ifdef EXIT_SUCCESS
+#undef EXIT_SUCCESS
+#endif
+#define EXIT_SUCCESS SS$_NORMAL
+#endif
+
+#ifndef TRUE
+#define TRUE ( 0 == 0 )
+#endif
+#ifndef FALSE
+#define FALSE ( 0 != 0 )
+#endif
+
+#define MAXREC 32767
+#define PRINT_ATTR ( FAB$M_CR | FAB$M_PRN | FAB$M_FTN )
 
 #ifdef USE_READLINE
 #define _XOPEN_SOURCE
@@ -149,10 +158,53 @@
 #include <readline/history.h>
 #endif
 
+/* Read a line of input - unlimited length
+ * Removes \n, returns NULL at EOF
+ * Caller responsible for free()
+ */
+static char *fgetline( FILE *stream, int keepnl ) {
+    size_t bufsize = 0,
+           xpnsize = 80,
+           idx = 0;
+    char *buf = NULL;
+    int c;
+
+    while( (c = fgetc(stream)) != EOF && c != '\n' ) {
+        if( idx + (keepnl != 0) +1 > bufsize ) { /* Allow space for char + (optional \n) + \0 */
+            char *nbuf;
+            bufsize += xpnsize;
+            nbuf = (char *) realloc( buf, bufsize );
+            if( nbuf == NULL ) {
+                perror( "realloc" );
+                abort();
+            }
+            buf = nbuf;
+        }
+        buf[idx++] = c;
+    }
+    if( c == '\n' ) {
+        if( keepnl )
+            buf[idx++] = '\n';
+    } else {
+        if( c == EOF && idx == 0 ) {
+            free( buf );
+            return NULL;
+        }
+    }
+    if( bufsize == 0 ) {
+        buf = (char *) malloc( 1 );
+        if( buf == NULL ) {
+            perror( "malloc" );
+            abort();
+        }
+    }
+    buf[idx] = '\0';
+    return buf;
+}
+
 /* keycomp: routine to compare parameter to a keyword - case insensitive! */
 
-int keycomp(const char *param, const char *keywrd)
-{
+static int keycomp(const char *param, const char *keywrd) {
     while (*param != '\0') {
         if (tolower(*param++) != *keywrd++) return 0;
     }
@@ -201,7 +253,7 @@ struct CMDSET {
     char *helpstr;
 };
 
-void qualhelp( int par, struct qual *qtable );
+static void qualhelp( int par, struct qual *qtable );
 
 /* Qualifier style = vms = /qualifier; else -option
  */
@@ -214,8 +266,7 @@ static int verify_cmd = 1;
  * qualifier values (/Qual=value).
  */
 
-int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
-{
+static int checkquals(int result, struct qual qualset[],int qualc,char *qualv[]) {
     int i;
     const char *type;
 
@@ -285,8 +336,7 @@ int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
     return result;
 }
 
-
-int prvmstime(VMSTIME vtime, const char *sfx) {
+static int prvmstime(VMSTIME vtime, const char *sfx) {
     int sts = 0;
     char tim[24];
     static const VMSTIME nil;
@@ -308,7 +358,7 @@ int prvmstime(VMSTIME vtime, const char *sfx) {
     return sts;
 }
 
-void pwrap( int *pos, const char *fmt, ... ) {
+static void pwrap( int *pos, const char *fmt, ... ) {
     char pbuf[200], *p, *q;
     va_list ap;
     va_start(ap, fmt );
@@ -342,7 +392,6 @@ void pwrap( int *pos, const char *fmt, ... ) {
     }
 }
 
-/* dir: a directory routine */
 
 #define dir_extra (dir_date | dir_fileid | dir_owner | dir_prot | dir_size)
 #define  dir_date        (1 <<  0)
@@ -370,49 +419,55 @@ void pwrap( int *pos, const char *fmt, ... ) {
 
 #define dir_default (dir_heading|dir_names|dir_trailing)
 
-struct qual datekwds[] = { {"created",  dir_created,  0, NV, "Date file created (default)"},
-                           {"modified", dir_modified, 0, NV, "Date file modified"},
-                           {"expired",  dir_expired,  0, NV, "Date file expired"},
-                           {"backup",   dir_backup,   0, NV, "Date of last backup"},
-                           {NULL,       0,            0, NV, NULL}
+static struct qual datekwds[] = { {"created",  dir_created,  0, NV, "Date file created (default)"},
+                                  {"modified", dir_modified, 0, NV, "Date file modified"},
+                                  {"expired",  dir_expired,  0, NV, "Date file expired"},
+                                  {"backup",   dir_backup,   0, NV, "Date of last backup"},
+                                  {NULL,       0,            0, NV, NULL}
 };
-struct qual sizekwds[] = { {"both",       dir_used|dir_allocated, 0, NV, "Both used and allocated" },
-                           {"allocation", dir_allocated,          0, NV, "Blocks allocated to file" },
-                           {"used",       dir_used,               0, NV, "Blocks used in file" },
-                           {NULL,         0,                      0, NV, NULL}
+static struct qual sizekwds[] = { {"both",       dir_used|dir_allocated, 0, NV, "Both used and allocated" },
+                                  {"allocation", dir_allocated,          0, NV, "Blocks allocated to file" },
+                                  {"used",       dir_used,               0, NV, "Blocks used in file" },
+                                  {NULL,         0,                      0, NV, NULL}
 };
-struct qual dirquals[] = { {"brief",         dir_default,   ~dir_default,    NV, "Brief display - names with header/trailer (default)"},
-                           {"date",          dir_date,       dir_dates,      KV(datekwds), "-Include file date(s)", },
-                           {"nodate",        0,              dir_date,       NV, NULL, },
-                           {"file_id",       dir_fileid,     0,              NV, "-Include file ID", },
-                           {"nofile_id",     0,              dir_fileid,     NV, NULL },
-                           {"full",          dir_full|dir_heading|dir_trailing,
+static struct qual dirquals[] = { {"brief",         dir_default,   ~dir_default,    NV,
+                                   "Brief display - names with header/trailer (default)"},
+                                  {"date",          dir_date,       dir_dates,      KV(datekwds),
+                                   "-Include file date(s)", },
+                                  {"nodate",        0,              dir_date,       NV, NULL, },
+                                  {"file_id",       dir_fileid,     0,              NV, "-Include file ID", },
+                                  {"nofile_id",     0,              dir_fileid,     NV, NULL },
+                                  {"full",          dir_full|dir_heading|dir_trailing,
                                                             ~dir_full,       NV, "Include full details", },
-                           {"grand_total",   dir_grand,     ~dir_grand & ~(dir_size|dir_sizes),
+                                  {"grand_total",   dir_grand,     ~dir_grand & ~(dir_size|dir_sizes),
                                                                              NV, "-Include only grand total",},
-                           {"nogrand_total", 0,              dir_grand,      NV, NULL},
-                           {"heading",       dir_heading,    0,              NV, "-Include heading", },
-                           {"noheading",     0,              dir_heading,    NV, NULL},
-                           {"owner",         dir_owner,      0,              NV, "-Include file owner", },
-                           {"noowner",       0,              dir_owner,      NV, NULL, },
-                           {"protection",    dir_prot,       0,              NV, "-Include file protection", },
-                           {"noprotection",  0,              dir_prot,       NV, NULL, },
-                           {"size",          dir_size,       dir_sizes,      KV(sizekwds), "-Include file size (blocks)", },
-                           {"nosize",        0,              dir_size|dir_sizes,
-                                                                             NV, NULL, },
-                           {"total",         dir_total|dir_heading,
-                                                            ~dir_total & ~(dir_size|dir_sizes),
-                                                                             NV, "Include only directory name and summary",},
-                           {"trailing",      dir_trailing,   0,              NV, "-Include trailing summary line",},
-                           {"notrailing",    0,              dir_trailing,   NV, NULL},
-                           {NULL,            0,              0,              NV, NULL} };
-int dir_defopt = dir_default;
+                                  {"nogrand_total", 0,              dir_grand,      NV, NULL},
+                                  {"heading",       dir_heading,    0,              NV, "-Include heading", },
+                                  {"noheading",     0,              dir_heading,    NV, NULL},
+                                  {"owner",         dir_owner,      0,              NV, "-Include file owner", },
+                                  {"noowner",       0,              dir_owner,      NV, NULL, },
+                                  {"protection",    dir_prot,       0,              NV,
+                                   "-Include file protection", },
+                                  {"noprotection",  0,              dir_prot,       NV, NULL, },
+                                  {"size",          dir_size,       dir_sizes,      KV(sizekwds),
+                                   "-Include file size (blocks)", },
+                                  {"nosize",        0,              dir_size|dir_sizes,
+                                                                                    NV, NULL, },
+                                  {"total",         dir_total|dir_heading,
+                                                                   ~dir_total & ~(dir_size|dir_sizes),
+                                                                                    NV,
+                                   "Include only directory name and summary",},
+                                  {"trailing",      dir_trailing,   0,              NV,
+                                   "-Include trailing summary line",},
+                                  {"notrailing",    0,              dir_trailing,   NV, NULL},
+                                  {NULL,            0,              0,              NV, NULL} };
+static int dir_defopt = dir_default;
 
-struct param dirpars[] = { {"filespec", OPT, VMSFS, NOPA, "for files to select. Wildcards are allowed."},
-                           { NULL,      0,   0,     NOPA, NULL }
+static struct param dirpars[] = { {"filespec", OPT, VMSFS, NOPA, "for files to select. Wildcards are allowed."},
+                                  { NULL,      0,   0,     NOPA, NULL }
 };
 
-void dirtotal( int options, int size, int alloc ) {
+static void dirtotal( int options, int size, int alloc ) {
     if ( !(options & dir_size) )
         return;
     fputs( ", ", stdout );
@@ -431,18 +486,17 @@ void dirtotal( int options, int size, int alloc ) {
     return;
 }
 
-unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
-{
+static unsigned dodir(int argc,char *argv[],int qualc,char *qualv[]) {
     char res[NAM$C_MAXRSS + 1],rsa[NAM$C_MAXRSS + 1];
-    int sts,options;
-    int filecount = 0;
+    int options;
+    unsigned sts;
+    int filecount = 0, nobackup = 0, contigb = 0, contig = 0, directory = 0;
     struct NAM nam = cc$rms_nam;
     struct FAB fab = cc$rms_fab;
     struct XABDAT dat = cc$rms_xabdat;
     struct XABFHC fhc = cc$rms_xabfhc;
     struct XABPRO pro = cc$rms_xabpro;
     struct XABITM itm = cc$rms_xabitm;
-    int nobackup = 0, contigb = 0, contig = 0, directory = 0;
     struct item_list xitems[] = {
         { XAB$_UCHAR_NOBACKUP,    sizeof(int), NULL, 0 },
         { XAB$_UCHAR_CONTIG,      sizeof(int), NULL, 0 },
@@ -450,6 +504,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
         { XAB$_UCHAR_DIRECTORY,   sizeof(int), NULL, 0 },
         { 0, 0, NULL, 0 }
     };
+
     UNUSED(argc);
 
     nam.nam$l_esa = res;
@@ -496,7 +551,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
         options |= dir_created;
 
     sts = sys_parse(&fab);
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         char dir[NAM$C_MAXRSS + 1];
         int namelen;
         int dirlen = 0;
@@ -510,7 +565,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
         nam.nam$l_rsa = rsa;
         nam.nam$b_rss = NAM$C_MAXRSS;
         fab.fab$l_fop = FAB$M_NAM;
-        while ((sts = sys_search(&fab)) & 1) {
+        while ( ( sts = sys_search( &fab ) ) & STS$M_SUCCESS ) {
 
             if (dirlen != nam.nam$b_dev + nam.nam$b_dir ||
                 memcmp(rsa, dir, nam.nam$b_dev + nam.nam$b_dir) != 0) {
@@ -562,7 +617,7 @@ unsigned dir(int argc,char *argv[],int qualc,char *qualv[])
                     }
                 }
                 sts = sys_open(&fab);
-                if ((sts & 1) == 0) {
+                if ( !( sts & STS$M_SUCCESS ) ) {
                     printf("%%ODS2-E-OPENERR, Open error: %s\n", getmsg(sts, MSG_TEXT));
                 } else {
                     sts = sys_close(&fab);
@@ -718,7 +773,7 @@ Journaling enabled: None
             }
             dirfiles++;
         }
-        if (sts == RMS$_NMF) sts = 1;
+        if (sts == RMS$_NMF) sts = SS$_NORMAL;
         if (printcol > 0) printf("\n");
         if (options & dir_trailing) {
             printf("\nTotal of %d file%s",dirfiles,(dirfiles == 1 ? "" : "s"));
@@ -736,7 +791,7 @@ Journaling enabled: None
             fputs(".\n",stdout);
         }
     }
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         if (filecount < 1) printf("%%DIRECT-W-NOFILES, no files found\n");
     } else {
         printf("%%DIR-E-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
@@ -744,22 +799,25 @@ Journaling enabled: None
     return sts;
 }
 
+/******************************************************************* docopy() */
 
 /* copy: a file copy routine */
 
-#define MAXREC 32767
-struct qual copyquals[] = { {"ascii",  0, 1, NV, "Copy file in ascii mode (default)"},
-                            {"binary", 1, 0, NV, "Copy file in binary mode", },
-                            {NULL,     0, 0, NV, NULL}
-                           };
+#define COP_BINARY 1
 
-struct param copypars[] = { {"from_filespec", REQ, VMSFS, NOPA, "for source file. Wildcards are allowed."},
-                            {"to_filespec",   REQ, LCLFS, NOPA, "for destination file. Wildcards are replaced from source file name."},
-                            { NULL, 0, 0, NOPA, NULL }
+static struct qual copyquals[] = { {"ascii",  0,          COP_BINARY, NV, "Copy file in ascii mode (default)"},
+                                   {"binary", COP_BINARY, 0,          NV, "Copy file in binary mode", },
+                                   {NULL,     0,          0,          NV, NULL}
 };
 
-unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
-{
+static struct param copypars[] = { {"from_filespec", REQ, VMSFS, NOPA,
+                                    "for source file. Wildcards are allowed."},
+                                   {"to_filespec",   REQ, LCLFS, NOPA,
+                                    "for destination file. Wildcards are replaced from source file name."},
+                                   { NULL, 0, 0, NOPA, NULL }
+};
+
+static unsigned docopy(int argc,char *argv[],int qualc,char *qualv[]) {
     int sts,options;
     struct NAM nam = cc$rms_nam;
     struct FAB fab = cc$rms_fab;
@@ -777,30 +835,31 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
     if( options == -1 )
         return SS$_BADPARAM;
     sts = sys_parse(&fab);
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         nam.nam$l_rsa = rsa;
         nam.nam$b_rss = NAM$C_MAXRSS;
         fab.fab$l_fop = FAB$M_NAM;
-        while ((sts = sys_search(&fab)) & 1) {
+        while ( ( sts = sys_search( &fab ) ) & STS$M_SUCCESS ) {
             sts = sys_open(&fab);
-            if ((sts & 1) == 0) {
+            if ( !( sts & STS$M_SUCCESS ) ) {
                 printf("%%COPY-F-OPENFAIL, Open error: %s\n",getmsg(sts, MSG_TEXT));
                 perror("-COPY-F-ERR ");
             } else {
                 struct RAB rab = cc$rms_rab;
                 rab.rab$l_fab = &fab;
-                if ((sts = sys_connect(&rab)) & 1) {
+                if ((sts = sys_connect(&rab)) & STS_M_SUCCESS) {
                     FILE *tof;
                     char name[NAM$C_MAXRSS + 1];
                     unsigned records = 0;
                     {
-                        char *out = name,*inp = argv[2];
-                        int dot = 0;
+                        char *out = name,*inp = argv[2]; /* unquote(argv[2]) */
+                        int dot = FALSE;
                         while (*inp != '\0') {
                             if (*inp == '*') {
                                 inp++;
                                 if (dot) {
-                                    memcpy(out,nam.nam$l_type + 1,nam.nam$b_type - 1);
+                                    memcpy(out,nam.nam$l_type + 1,
+                                           nam.nam$b_type - 1);
                                     out += nam.nam$b_type - 1;
                                 } else {
                                     unsigned length = nam.nam$b_name;
@@ -810,9 +869,9 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
                                 }
                             } else {
                                 if (*inp == '.') {
-                                    dot = 1;
+                                    dot = TRUE;
                                 } else {
-                                    if (strchr(":]\\/",*inp)) dot = 0;
+                                    if (strchr(":]\\/",*inp)) dot = FALSE;
                                 }
                                 *out++ = *inp++;
                             }
@@ -836,7 +895,7 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
                         filecount++;
                         rab.rab$l_ubf = rec;
                         rab.rab$w_usz = MAXREC;
-                        while ((sts = sys_get(&rab)) & 1) {
+                        while ( ( sts = sys_get( &rab ) ) & STS$M_SUCCESS ) {
                             unsigned rsz = rab.rab$w_rsz;
                             if ((options & 1) == 0 &&
                                  fab.fab$b_rat & PRINT_ATTR) rec[rsz++] = '\n';
@@ -856,19 +915,21 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
                     sys_disconnect(&rab);
                     rsa[nam.nam$b_rsl] = '\0';
                     if (sts == RMS$_EOF) {
-                        printf("%%COPY-S-COPIED, %s copied to %s (%d record%s)\n",
-                               rsa,name,records,(records == 1 ? "" : "s"));
+                        printf(
+                            "%%COPY-S-COPIED, %s copied to %s (%d record%s)\n",
+                            rsa,name,records,(records == 1 ? "" : "s")
+                        );
                     } else {
                         printf("%%COPY-F-ERROR Status: %s for %s\n",getmsg(sts, MSG_TEXT),rsa);
-                        sts = 1;
+                        sts = SS$_NORMAL;
                     }
                 }
                 sys_close(&fab);
             }
         }
-        if (sts == RMS$_NMF) sts = 1;
+        if (sts == RMS$_NMF) sts = SS$_NORMAL;
     }
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         if (filecount > 0) printf("%%COPY-S-NEWFILES, %d file%s created\n",
                                   filecount,(filecount == 1 ? "" : "s"));
     } else {
@@ -877,138 +938,200 @@ unsigned copy(int argc,char *argv[],int qualc,char *qualv[])
     return sts;
 }
 
-/* import: a file copy routine */
+/***************************************************************** doimport() */
 
-struct param importpars[] = { {"from_filespec", REQ, LCLFS, NOPA, "for source file."},
-                              {"to_filespec",   REQ, VMSFS, NOPA, "for destination file."},
-                              { NULL, 0, 0, NOPA, NULL }
+static struct qual importquals[] = { {"ascii",  0,          COP_BINARY, NV,
+                                      "Transfer file in ascii mode (default)"},
+                                     {"binary", COP_BINARY, 0,          NV, "Transfer file in binary mode", },
+                                     {NULL,     0,          0,          NV, NULL}
+};
+static struct param importpars[] = { {"from_filespec", REQ, LCLFS, NOPA, "for source file."},
+                                     {"to_filespec",   REQ, VMSFS, NOPA, "for destination file."},
+                                     { NULL, 0, 0, NOPA, NULL }
 };
 
-unsigned import(int argc,char *argv[],int qualc,char *qualv[])
-{
-    int sts = 0;
+static unsigned doimport( int argc, char *argv[], int qualc, char *qualv[] ) {
+    int options;
+    unsigned sts;
+    char *name;
     FILE *fromf;
+    struct FAB fab = cc$rms_fab;
+    struct RAB rab = cc$rms_rab;
 
     UNUSED(argc);
-    UNUSED(qualc);
-    UNUSED(qualv);
 
-    fromf = openf(argv[1],"r");
-    if (fromf != NULL) {
-        struct FAB fab = cc$rms_fab;
-        fab.fab$l_fna = argv[2];
-        fab.fab$b_fns = strlen(fab.fab$l_fna);
-        if ((sts = sys_create(&fab)) & 1) {
-            struct RAB rab = cc$rms_rab;
-            rab.rab$l_fab = &fab;
-            if ((sts = sys_connect(&rab)) & 1) {
-                char rec[MAXREC + 2];
-                rab.rab$l_rbf = rec;
-                rab.rab$w_usz = MAXREC;
-                while (fgets(rec,sizeof(rec),fromf) != NULL) {
-                    rab.rab$w_rsz = strlen(rec);
-                    sts = sys_put(&rab);
-                    if ((sts & 1) == 0) break;
-                }
-                sys_disconnect(&rab);
-            }
-            sys_close(&fab);
-        }
-        fclose(fromf);
-        if (!(sts & 1)) {
-            printf("%%IMPORT-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
-        }
-    } else {
-        printf("%%ODS2-E-OPENERR, Can't open %s\n",argv[1]);
+    options = checkquals( 0, importquals, qualc, qualv );
+    if( options == -1 )
+        return SS$_BADPARAM;
+
+    sts = SS$_BADFILENAME;
+    name = argv[1]; /*unquote( argv[1] );*/
+    if ( *name == '\0' ) {
+        return sts;
     }
+    fromf = openf( name, (options & COP_BINARY)? "rb": "r" );
+    if( fromf == NULL ) {
+        printf( "%%ODS2-E-OPENERR, Can't open %s\n", name );
+        perror( "  - " );
+        return sts;
+    }
+    fab.fab$b_fac = FAB$M_PUT;
+    fab.fab$l_fop = FAB$M_OFP | FAB$M_TEF;
+    fab.fab$b_org = FAB$C_SEQ;
+    if( options & COP_BINARY ) {
+        fab.fab$w_mrs = 512;
+        fab.fab$b_rfm = FAB$C_FIX;
+    } else {
+        fab.fab$b_rat = 0;
+        fab.fab$b_rfm = FAB$C_STM;
+    }
+
+    fab.fab$l_fna = argv[2];
+    fab.fab$b_fns = strlen( fab.fab$l_fna );
+    sts = sys_create( &fab );
+    if ( sts & STS$M_SUCCESS ) {
+        rab.rab$l_fab = &fab;
+        sts = sys_connect( &rab );
+        if ( sts & STS$M_SUCCESS ) {
+            if( options & COP_BINARY ) {
+                char buf[512];
+                size_t len;
+
+                rab.rab$l_rbf = buf;
+                while( (len = fread( buf, 1, 512, fromf )) > 0 ) {
+                    if( len != 512 )
+                        memset( buf+len, 0, 512-len );
+                    rab.rab$w_rsz = len;
+                    sts = sys_put( &rab );
+                    if ( !( sts & STS$M_SUCCESS ) ) {
+                        break;
+                    }
+                }
+            } else {
+                while ( (rab.rab$l_rbf = fgetline( fromf, TRUE )) != NULL ) {
+                    rab.rab$w_rsz = strlen( rab.rab$l_rbf );
+                    sts = sys_put( &rab );
+                    free( rab.rab$l_rbf );
+                    if ( !( sts & STS$M_SUCCESS ) ) {
+                        break;
+                    }
+                }
+            }
+            sys_disconnect( &rab );
+        }
+        sys_close( &fab );
+    }
+    fclose( fromf );
+    if ( !(sts & STS$M_SUCCESS) ) {
+            printf("%%IMPORT-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
+    }
+
     return sts;
 }
 
+/******************************************************************* dodiff() */
 
-/* diff: a simple file difference routine */
+/* dodiff: a simple file difference routine */
 
-struct param diffpars[] = { {"ods-2_filespec",    REQ, VMSFS, NOPA, "for file on ODS-2 volume."},
-                            {"local__filespec",   REQ, LCLFS, NOPA, "for file on local filesystem."},
-                            { NULL, 0, 0, NOPA, NULL }
+static struct param diffpars[] = { {"ods-2_filespec", REQ, VMSFS, NOPA, "for file on ODS-2 volume."},
+                                   {"local_filespec", REQ, LCLFS, NOPA, "for file on local filesystem."},
+                                   { NULL,            0,   0,     NOPA, NULL }
 };
-unsigned diff(int argc,char *argv[],int qualc,char *qualv[])
-{
-    int sts;
-    struct FAB fab = cc$rms_fab;
+
+unsigned dodiff(int argc,char *argv[],int qualc,char *qualv[]) {
+    int sts, records = 0;
+    char rec[MAXREC + 2], *cpy = NULL;
+    char *name;
     FILE *tof;
-    int records = 0;
+    struct FAB fab = cc$rms_fab;
+    struct RAB rab = cc$rms_rab;
 
     UNUSED(argc);
     UNUSED(qualc);
     UNUSED(qualv);
 
-    fab.fab$l_fna = argv[1];
-    fab.fab$b_fns = strlen(fab.fab$l_fna);
-    tof = openf(argv[2],"r");
-    if (tof == NULL) {
-        printf("%%ODS2-E-OPENERR, Could not open file %s\n",argv[1]);
-        sts = 0;
-    } else {
-        if ((sts = sys_open(&fab)) & 1) {
-            struct RAB rab = cc$rms_rab;
-            rab.rab$l_fab = &fab;
-            if ((sts = sys_connect(&rab)) & 1) {
-                char rec[MAXREC + 2],cpy[MAXREC + 1];
-                rab.rab$l_ubf = rec;
-                rab.rab$w_usz = MAXREC;
-                while ((sts = sys_get(&rab)) & 1) {
-                    rec[rab.rab$w_rsz++] = '\n';
-                    rec[rab.rab$w_rsz] = '\0';
-                    fgets(cpy,MAXREC,tof);
-                    if (rab.rab$w_rsz != strlen( cpy ) || memcmp(rec,cpy,rab.rab$w_rsz) != 0) {
-                        printf("%%DIFF-F-DIFFERENT Files are different!\n");
-                        sts = 4;
-                        break;
-                    } else {
-                        records++;
-                    }
-                }
-                sys_disconnect(&rab);
-            }
-            sys_close(&fab);
-        }
-        fclose(tof);
-        if (sts == RMS$_EOF) sts = 1;
+    name = argv[1];
+    sts = SS$_BADFILENAME;
+    if ( *name == '\0' ) {
+        return sts;
     }
-    if (sts & 1) {
-        printf("%%DIFF-I-Compared %d records\n",records);
-    } else {
+    records = 0;
+    fab.fab$l_fna = name;
+    fab.fab$b_fns = strlen( fab.fab$l_fna );
+    tof = openf( argv[2], "r" );
+    if ( tof == NULL ) {
+        printf("%%ODS2-E-OPENERR, Could not open file %s\n",name);
+        perror( "  - " );
+        return SS$_NOSUCHFILE;
+    }
+    sts = sys_open( &fab );
+    if ( sts & STS$M_SUCCESS ) {
+        rab.rab$l_fab = &fab;
+        sts = sys_connect( &rab );
+        if( sts & STS$M_SUCCESS ) {
+            rab.rab$l_ubf = rec;
+            rab.rab$w_usz = MAXREC;
+            while( (sts = sys_get( &rab )) & STS$M_SUCCESS ) {
+                rec[rab.rab$w_rsz] = '\0';
+                cpy = fgetline( tof, FALSE );
+                if( cpy == NULL ||
+                    rab.rab$w_rsz != strlen( cpy ) ||
+                    memcmp(rec,cpy,rab.rab$w_rsz) != 0 ) {
+
+                    printf("%%DIFF-F-DIFFERENT Files are different!\n");
+                    sts = 4;
+                    break;
+                }
+                free(cpy);
+                cpy = NULL;
+                records++;
+            }
+            if( cpy != NULL ) free(cpy);
+            sys_disconnect(&rab);
+        }
+        sys_close(&fab);
+    }
+    fclose(tof);
+    if (sts == RMS$_EOF) sts = SS$_NORMAL;
+    if ( sts & STS$M_SUCCESS ) {
+        printf( "%%DIFF-I-Compared %d records\n", records );
+    } else if ( sts != 4 ) {
         printf("%%DIFF-F-Error %s in difference\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
 
+/******************************************************************* dotype() */
 
-/* typ: a file TYPE routine */
+/* dotype: a file TYPE routine */
 
-struct param typepars[] = { {"filespec", REQ, VMSFS, NOPA, "for file on ODS-2 volume."},
-                            { NULL, 0, 0, NOPA, NULL }
+static struct param typepars[] = { {"filespec", REQ, VMSFS, NOPA, "for file on ODS-2 volume."},
+                                   { NULL, 0, 0, NOPA, NULL }
 };
-unsigned typ(int argc,char *argv[],int qualc,char *qualv[])
-{
+
+static unsigned dotype(int argc,char *argv[],int qualc,char *qualv[]) {
     int sts;
-    int records = 0;
+    int records;
     struct FAB fab = cc$rms_fab;
+    struct RAB rab = cc$rms_rab;
 
     UNUSED(argc);
     UNUSED(qualc);
     UNUSED(qualv);
 
+    records = 0;
+
     fab.fab$l_fna = argv[1];
     fab.fab$b_fns = strlen(fab.fab$l_fna);
-    if ((sts = sys_open(&fab)) & 1) {
-        struct RAB rab = cc$rms_rab;
+    sts = sys_open( &fab );
+    if ( sts & STS$M_SUCCESS ) {
         rab.rab$l_fab = &fab;
-        if ((sts = sys_connect(&rab)) & 1) {
+        sts = sys_connect( &rab );
+        if ( sts & STS$M_SUCCESS ) {
             char rec[MAXREC + 2];
             rab.rab$l_ubf = rec;
             rab.rab$w_usz = MAXREC;
-            while ((sts = sys_get(&rab)) & 1) {
+            while ( ( sts = sys_get( &rab ) ) & STS$M_SUCCESS ) {
                 unsigned rsz = rab.rab$w_rsz;
                 if (fab.fab$b_rat & PRINT_ATTR) rec[rsz++] = '\n';
                 rec[rsz++] = '\0';
@@ -1018,46 +1141,46 @@ unsigned typ(int argc,char *argv[],int qualc,char *qualv[])
             sys_disconnect(&rab);
         }
         sys_close(&fab);
-        if (sts == RMS$_EOF) sts = 1;
+        if (sts == RMS$_EOF) sts = SS$_NORMAL;
     }
-    if ((sts & 1) == 0) {
+    if ( !( sts & STS$M_SUCCESS ) ) {
         printf("%%TYPE-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
 
+/***************************************************************** dosearch() */
 
+/* dosearch: a simple file search routine */
 
-/* search: a simple file search routine */
-
-struct param searchpars[] = { {"filespec", REQ, VMSFS,  NOPA, "for file to search. Wildcards are allowed."},
-                              {"string",   REQ, STRING, NOPA, "string to search for."},
-                              { NULL, 0, 0, NOPA, NULL }
+static struct param searchpars[] = { {"filespec", REQ, VMSFS,  NOPA, "for file to search. Wildcards are allowed."},
+                                     {"string",   REQ, STRING, NOPA, "string to search for."},
+                                     { NULL, 0, 0, NOPA, NULL }
 };
 
-unsigned search(int argc,char *argv[],int qualc,char *qualv[])
-{
+static unsigned dosearch(int argc,char *argv[],int qualc,char *qualv[]) {
     int sts = 0;
     int filecount = 0;
     int findcount = 0;
     char res[NAM$C_MAXRSS + 1],rsa[NAM$C_MAXRSS + 1];
+    register char firstch, *searstr, *searend, *s;
     struct NAM nam = cc$rms_nam;
     struct FAB fab = cc$rms_fab;
-    register char *searstr = argv[2];
-    register char firstch = tolower(*searstr++);
-    register char *searend = searstr + strlen(searstr);
+    struct RAB rab = cc$rms_rab;
 
     UNUSED(argc);
     UNUSED(qualc);
     UNUSED(qualv);
 
-    {
-        char *str = searstr;
-        while (str < searend) {
-            *str = tolower(*str);
-            str++;
-        }
+    searstr = argv[2]; /* unquote( argv[2] ); */
+
+    searend = searstr + strlen( searstr );
+    for ( s = searstr; s < searend; s++ ) {
+        *s = tolower( *s );
     }
+    firstch = *searstr++;
+    filecount = 0;
+    findcount = 0;
     nam = cc$rms_nam;
     fab = cc$rms_fab;
     nam.nam$l_esa = res;
@@ -1068,35 +1191,40 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
     fab.fab$l_dna = "";
     fab.fab$b_dns = strlen(fab.fab$l_dna);
     sts = sys_parse(&fab);
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         nam.nam$l_rsa = rsa;
         nam.nam$b_rss = NAM$C_MAXRSS;
         fab.fab$l_fop = FAB$M_NAM;
-        while ((sts = sys_search(&fab)) & 1) {
+        while ( ( sts = sys_search( &fab ) ) & STS$M_SUCCESS ) {
             sts = sys_open(&fab);
-            if ((sts & 1) == 0) {
+            if ( !( sts & STS$M_SUCCESS ) ) {
                 printf("%%SEARCH-F-OPENFAIL, Open error: %s\n",getmsg(sts, MSG_TEXT));
             } else {
-                struct RAB rab = cc$rms_rab;
                 rab.rab$l_fab = &fab;
-                if ((sts = sys_connect(&rab)) & 1) {
+                sts = sys_connect( &rab );
+                if ( sts & STS$M_SUCCESS ) {
                     int printname = 1;
                     char rec[MAXREC + 2];
                     filecount++;
                     rab.rab$l_ubf = rec;
                     rab.rab$w_usz = MAXREC;
-                    while ((sts = sys_get(&rab)) & 1) {
+                    while ( ( sts = sys_get( &rab ) ) & STS$M_SUCCESS ) {
                         register char *strng = rec;
-                        register char *strngend = strng + (rab.rab$w_rsz - (searend - searstr));
+                        register char *strngend = strng + (rab.rab$w_rsz -
+                                                  (searend - searstr));
                         while (strng < strngend) {
                             register char ch = *strng++;
-                            if (ch == firstch || (ch >= 'A' && ch <= 'Z' && ch + 32 == firstch)) {
+                            if (ch == firstch ||
+                                (ch >= 'A' && ch <= 'Z' &&
+                                 ch + 32 == firstch)) {
                                 register char *str = strng;
                                 register char *cmp = searstr;
                                 while (cmp < searend) {
                                     register char ch2 = *str++;
                                     ch = *cmp;
-                                    if (ch2 != ch && (ch2 < 'A' || ch2 > 'Z' || ch2 + 32 != ch)) break;
+                                    if (ch2 != ch &&
+                                        (ch2 < 'A' || ch2 > 'Z' ||
+                                         ch2 + 32 != ch)) break;
                                     cmp++;
                                 }
                                 if (cmp >= searend) {
@@ -1104,11 +1232,16 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
                                     rec[rab.rab$w_rsz] = '\0';
                                     if (printname) {
                                         rsa[nam.nam$b_rsl] = '\0';
-                                        printf("\n******************************\n%s\n\n",rsa);
+                                        printf(
+                                            "\n******************************\n"
+                                        );
+                                        printf("%s\n\n",rsa);
                                         printname = 0;
                                     }
                                     fputs(rec,stdout);
-                                    if (fab.fab$b_rat & PRINT_ATTR) fputc('\n',stdout);
+                                    if (fab.fab$b_rat & PRINT_ATTR) {
+                                        fputc('\n',stdout);
+                                    }
                                     break;
                                 }
                             }
@@ -1117,19 +1250,23 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
                     sys_disconnect(&rab);
                 }
                 if (sts == SS$_NOTINSTALL) {
-                    printf("%%SEARCH-W-NOIMPLEM, file operation not implemented\n");
-                    sts = 1;
+                    printf(
+                        "%%SEARCH-W-NOIMPLEM, file operation not implemented\n"
+                    );
+                    sts = SS$_NORMAL;
                 }
                 sys_close(&fab);
             }
         }
-        if (sts == RMS$_NMF || sts == RMS$_FNF) sts = 1;
+        if (sts == RMS$_NMF || sts == RMS$_FNF) sts = SS$_NORMAL;
     }
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         if (filecount < 1) {
             printf("%%SEARCH-W-NOFILES, no files found\n");
         } else {
-            if (findcount < 1) printf("%%SEARCH-I-NOMATCHES, no strings matched\n");
+            if (findcount < 1) {
+                printf("%%SEARCH-I-NOMATCHES, no strings matched\n");
+            }
         }
     } else {
         printf("%%SEARCH-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
@@ -1137,25 +1274,25 @@ unsigned search(int argc,char *argv[],int qualc,char *qualv[])
     return sts;
 }
 
+/***************************************************************** dodelete() */
 
-/* del: you don't want to know! */
+/* dodelete: you don't want to know! */
 
-struct qual delquals[] = { {"log",   1, 0, NV, "-List name of each file deleted. (Default)"},
-                           {"nolog", 0, 1, NV, NULL },
-                           { NULL,   0, 0, NV, NULL }
+static struct qual delquals[] = { {"log",   1, 0, NV, "-List name of each file deleted. (Default)"},
+                                  {"nolog", 0, 1, NV, NULL },
+                                  { NULL,   0, 0, NV, NULL }
 };
-struct param delpars[] = { {"filespec", REQ, VMSFS, NOPA, "for files to be deleted from ODS-2 volume.  Wildcards are permitted.."},
-                           { NULL,      0,   0,     NOPA, NULL }
+static struct param delpars[] = { {"filespec", REQ, VMSFS, NOPA,
+                                   "for files to be deleted from ODS-2 volume.  Wildcards are permitted.."},
+                                  { NULL,      0,   0,     NOPA, NULL }
 };
 
-unsigned del(int argc,char *argv[],int qualc,char *qualv[])
-{
+static unsigned dodelete(int argc,char *argv[],int qualc,char *qualv[]) {
     int sts = 0;
+    char res[NAM$C_MAXRSS + 1], rsa[NAM$C_MAXRSS + 1];
     struct NAM nam = cc$rms_nam;
     struct FAB fab = cc$rms_fab;
-    char res[NAM$C_MAXRSS + 1],rsa[NAM$C_MAXRSS + 1];
-    int filecount = 0;
-    int options;
+    int options, filecount = 0;
 
     UNUSED(argc);
 
@@ -1169,7 +1306,7 @@ unsigned del(int argc,char *argv[],int qualc,char *qualv[])
     fab.fab$l_fna = argv[1];
     fab.fab$b_fns = strlen(fab.fab$l_fna);
     sts = sys_parse(&fab);
-    if (sts & 1) {
+    if ( sts & STS$M_SUCCESS ) {
         if (nam.nam$b_ver < 2) {
             printf("%%DELETE-F-NOVER, you must specify a version!!\n");
             return SS$_BADPARAM;
@@ -1178,22 +1315,23 @@ unsigned del(int argc,char *argv[],int qualc,char *qualv[])
         nam.nam$l_rsa = rsa;
         nam.nam$b_rss = NAM$C_MAXRSS;
         fab.fab$l_fop = FAB$M_NAM;
-        while ((sts = sys_search(&fab)) & 1) {
+            while ( ( sts = sys_search( &fab ) ) & STS$M_SUCCESS ) {
             sts = sys_erase(&fab);
-            if ((sts & 1) == 0) {
+                if ( !( sts & STS$M_SUCCESS ) ) {
                 printf("%%DELETE-F-DELERR, Delete error: %s\n",getmsg(sts, MSG_TEXT));
                 break;
             } else {
                 filecount++;
                 if( options & 1 ) {
                     rsa[nam.nam$b_rsl] = '\0';
-                    printf("%%DELETE-I-DELETED, Deleted %s\n",rsa);
+                    if( options & 1 )
+                        printf("%%DELETE-I-DELETED, Deleted %s\n",rsa);
                 }
             }
         }
-        if (sts == RMS$_NMF) sts = 1;
+        if (sts == RMS$_NMF) sts = SS$_NORMAL;
     }
-    if (sts & 1) {
+        if ( sts & STS$M_SUCCESS ) {
         if (filecount < 1) {
             printf("%%DELETE-W-NOFILES, no files deleted\n");
         }
@@ -1204,35 +1342,38 @@ unsigned del(int argc,char *argv[],int qualc,char *qualv[])
     return sts;
 }
 
-/* test: you don't want to know! */
+/******************************************************************* dotest() */
 
-struct param testpars[] = { {"parameter", REQ, STRING, NOPA, "for test."},
-                            { NULL, 0, 0, NOPA, NULL }
+static struct param testpars[] = { {"parameter", REQ, STRING, NOPA, "for test."},
+                                   { NULL, 0, 0, NOPA, NULL }
 };
 
 struct VCB *test_vcb;
 
-unsigned test(int argc,char *argv[],int qualc,char *qualv[])
-{
-    int sts = 0;
+/* dotest: you don't want to know! */
+
+static unsigned dotest( int argc, char *argv[], int qualc, char *qualv[] ) {
+    unsigned sts = 0;
     struct fiddef fid;
 
     UNUSED(argc);
     UNUSED(qualc);
     UNUSED(qualv);
 
-    sts = update_create(test_vcb,NULL,"Test.File",&fid,NULL);
-    printf("Test status of %d (%s)\n",sts,argv[1]);
+    sts = update_create( test_vcb, NULL, "Test.File", &fid, NULL );
+    printf( "Test status of %d (%s)\n", sts, argv[1] );
     return sts;
 }
 
+/***************************************************************** doextend() */
+
 /* more test code... */
 
-struct param extendpars[] = { {"ods-2_filespec", REQ, VMSFS, NOPA, "for file on ODS-2 volume."},
-                            { NULL, 0, 0, NOPA, NULL }
+static struct param extendpars[] = { {"ods-2_filespec", REQ, VMSFS, NOPA, "for file on ODS-2 volume."},
+                                     { NULL, 0, 0, NOPA, NULL }
 };
-unsigned extend(int argc,char *argv[],int qualc,char *qualv[])
-{
+
+static unsigned doextend(int argc,char *argv[],int qualc,char *qualv[]) {
     int sts;
     struct FAB fab = cc$rms_fab;
 
@@ -1243,28 +1384,41 @@ unsigned extend(int argc,char *argv[],int qualc,char *qualv[])
     fab.fab$l_fna = argv[1];
     fab.fab$b_fns = strlen(fab.fab$l_fna);
     fab.fab$b_fac = FAB$M_UPD;
-    if ((sts = sys_open(&fab)) & 1) {
+    sts = sys_open( &fab );
+    if ( sts & STS$M_SUCCESS ) {
         fab.fab$l_alq = 32;
         sts = sys_extend(&fab);
         sys_close(&fab);
     }
-    if ((sts & 1) == 0) {
+    if ( !( sts & STS$M_SUCCESS ) ) {
         printf("%%EXTEND-F-ERROR Status: %s\n",getmsg(sts, MSG_TEXT));
     }
     return sts;
 }
 
+/****************************************************************** dostats() */
+
+/* dostats: print some simple statistics */
+
+static unsigned dostats( void ) {
+
+    printf("Statistics:-\n");
+    direct_show();
+    cache_show();
+    phyio_show(SHOW_STATS);
+
+    return SS$_NORMAL;
+}
+
+/******************************************************************* doshow() */
 
 /* show: version */
 
 #define MNAMEX(n) #n
 #define MNAME(n) MNAMEX(n)
 
-void show_version( void ) {
+static void show_version( void ) {
     printf(" %s %s", MNAME(MODULE_NAME), MODULE_IDENT );
-#ifdef DISKIMAGE
-    printf( " for image files" );
-#endif
     printf( " built %s %s", __DATE__, __TIME__ );
 #ifdef USE_READLINE
     printf(" with readline version %s", rl_library_version );
@@ -1283,20 +1437,20 @@ void show_version( void ) {
 
 /* show: the show command */
 
-struct qual showkwds[] = { {"default",         0, 0, NV, "Default directory"},
-#if defined(DISKIMAGE) || defined(_WIN32)
-                           {"devices",         1, 0, NV, "Devices"},
-#endif
-                           {"qualifier_style", 2, 0, NV, "Qualifier style (Unix, VMS)" },
-                           {"time",            3, 0, NV, "Time"},
-                           {"verify",          4, 0, NV, "Command file echo" },
-                           {"version",         5, 0, NV, "Version"},
-                           {NULL,              0, 0, NV, NULL }
+static struct qual showkwds[] = { {"default",         0, 0, NV, "Default directory"},
+                                  {"devices",         1, 0, NV, "Devices"},
+                                  {"qualifier_style", 2, 0, NV, "Qualifier style (Unix, VMS)" },
+                                  {"statistics",      3, 0, NV, "Debugging statistics", },
+                                  {"time",            4, 0, NV, "Time"},
+                                  {"verify",          5, 0, NV, "Command file echo" },
+                                  {"version",         6, 0, NV, "Version"},
+                                  {NULL,              0, 0, NV, NULL }
 };
-struct param showpars[] = { {"item_name", REQ, KEYWD, PA(showkwds), NULL },
-                            {NULL,        0,   0,     NOPA,         NULL }
+static struct param showpars[] = { {"item_name", REQ, KEYWD, PA(showkwds), NULL },
+                                   {NULL,        0,   0,     NOPA,         NULL }
 };
-unsigned show(int argc,char *argv[],int qualc,char *qualv[]) {
+
+unsigned doshow(int argc,char *argv[],int qualc,char *qualv[]) {
     int parnum;
 
     UNUSED(argc);
@@ -1314,18 +1468,25 @@ unsigned show(int argc,char *argv[],int qualc,char *qualv[]) {
         struct dsc_descriptor curdsc;
         curdsc.dsc_w_length = NAM$C_MAXRSS;
         curdsc.dsc_a_pointer = curdir;
-        if ((sts = sys_setddir(NULL,&curlen,&curdsc)) & 1) {
+        sts = sys_setddir( NULL, &curlen, &curdsc );
+        if ( sts & STS$M_SUCCESS ) {
             curdir[curlen] = '\0';
-            printf(" %s\n",curdir);
+            puts( curdir );
         } else {
             printf("%%ODS2-E-GETDEF, Error %s getting default\n",getmsg(sts, MSG_TEXT));
         }
         return sts;
     }
+    case 1:
+        phyio_show( SHOW_DEVICES );
+        virt_show( NULL );
+        return SS$_NORMAL;
     case 2:
         printf ( "  Qualifier style: %s\n", vms_qual? "/VMS": "-unix" );
         return SS$_NORMAL;
-    case 3: {
+    case 3:
+        return dostats();
+    case 4: {
         unsigned sts;
         char timstr[24];
         unsigned short timlen;
@@ -1333,8 +1494,8 @@ unsigned show(int argc,char *argv[],int qualc,char *qualv[]) {
 
         timdsc.dsc_w_length = 20;
         timdsc.dsc_a_pointer = timstr;
-        sts = sys_asctim(&timlen,&timdsc,NULL,0);
-        if (sts & 1) {
+        sts = sys$asctim( &timlen, &timdsc, NULL, 0 );
+        if ( sts & STS$M_SUCCESS ) {
             timstr[timlen] = '\0';
             printf("  %s\n",timstr);
         } else {
@@ -1342,100 +1503,57 @@ unsigned show(int argc,char *argv[],int qualc,char *qualv[]) {
         }
     }
         return SS$_NORMAL;
-    case 4:
+    case 5:
         printf( "Command file verification is %s\n", (verify_cmd? "on": "off") );
         return SS$_NORMAL;
-    case 5:
+    case 6:
         show_version();
         return SS$_NORMAL;
-
-#if defined( _WIN32 ) && !defined( DISKIMAGE )
-    case 1: {
-        TCHAR *namep = NULL, *dname = NULL;
-        TCHAR devname[sizeof("Z:")];
-        int n = 0;
-        TCHAR l;
-
-        for( l = 'A'; l <= 'Z'; l++ ) {
-            snprintf( devname, sizeof( devname ), "%c:", l );
-            dname = namep = driveFromLetter( devname );
-            if( namep != NULL ) {
-                const char *type = NULL;
-#define WINDEVPFX "\\Device\\"
-                if( strncmp( dname, WINDEVPFX, sizeof(WINDEVPFX)-1 ) == 0 )
-                    dname += sizeof( WINDEVPFX ) -1;
-#undef WINDEVPFX
-                if( !n++ )
-                    printf( "Drv   Type    PhysicalName\n"
-                            "--- --------- ------------\n" );
-                printf( " %s ", devname );
-                switch( GetDriveType( devname ) ) {
-                case DRIVE_REMOVABLE:
-                    type = "Removable"; break;
-                case DRIVE_FIXED:
-                    type = "Fixed";     break;
-                case DRIVE_REMOTE:
-                    type = "Network";
-                    dname = NULL;       break;
-                case DRIVE_CDROM:
-                    type = "CDROM";     break;
-                case DRIVE_RAMDISK:
-                    type = "RAMdisk";   break;
-                default:
-                    type = "Other";
-                    dname = NULL;       break;
-                }
-                printf( "%-9s %s\n", type, (dname? dname: "") );
-                free(namep);
-            }
-        }
     }
-        return SS$_NORMAL;
-#endif
-#ifdef DISKIMAGE
-    case 1:
-        return diskio_showdrives();
-#endif
-    }
+    return SS$_NORMAL;
 }
 
-unsigned setdef_count = 0;
+/******************************************************************* setdef() */
 
-void setdef(char *newdef)
+static unsigned setdef_count = 0;
+
+static unsigned setdef( char *newdef )
 {
     register unsigned sts;
     struct dsc_descriptor defdsc;
 
-    defdsc.dsc_a_pointer = newdef;
-    defdsc.dsc_w_length = strlen(defdsc.dsc_a_pointer);
-    if ((sts = sys_setddir(&defdsc,NULL,NULL)) & 1) {
+    defdsc.dsc_a_pointer = (char *) newdef;
+    defdsc.dsc_w_length = strlen( defdsc.dsc_a_pointer );
+    sts = sys_setddir( &defdsc, NULL, NULL );
+    if ( sts & STS$M_SUCCESS ) {
         setdef_count++;
     } else {
         printf( "%%ODS2-E-SETDEF, Error %s setting default to %s\n", getmsg(sts, MSG_TEXT), newdef );
     }
+    return sts;
 }
 
-/* set: the set command */
+/******************************************************************** doset() */
 
-hlpfunc_t sethelp;
+static hlpfunc_t sethelp;
 
-struct qual setkwds[] = { {"default",              0, 0, NV, "Default directory"},
-                          {"directory_qualifiers", 1, 0, NV, "Default qualifiers for DIRECTORY command" },
-                          {"qualifier_style",      2, 0, NV, "Qualifier style (Unix, VMS)" },
-                          {"verify",               3, 0, NV, "-Display commands in indirect files" },
-                          {"noverify",             4, 0, NV, NULL },
-                          {NULL,                   0, 0, NV, NULL }
+static struct qual setkwds[] = { {"default",              0, 0, NV, "Default directory"},
+                                 {"directory_qualifiers", 1, 0, NV, "Default qualifiers for DIRECTORY command" },
+                                 {"qualifier_style",      2, 0, NV, "Qualifier style (Unix, VMS)" },
+                                 {"verify",               3, 0, NV, "-Display commands in indirect files" },
+                                 {"noverify",             4, 0, NV, NULL },
+                                 {NULL,                   0, 0, NV, NULL }
 };
-struct qual setqskwds[] = {{"unix", 1, 0, NV, "Unix style options, '-option'"},
-                           {"vms",  2, 0, NV, "VMS style qualifiers, '/qualifier'"},
-                           {NULL,   0, 0, NV, NULL }
+static struct qual setqskwds[] = {{"unix", 1, 0, NV, "Unix style options, '-option'"},
+                                  {"vms",  2, 0, NV, "VMS style qualifiers, '/qualifier'"},
+                                  {NULL,   0, 0, NV, NULL }
 };
-struct param setpars[] = { {"item_name", REQ, KEYWD, PA(setkwds),         NULL },
-                           {"value"    , CND, KEYWD, sethelp, setqskwds,  NULL },
-                           {NULL,        0,   0,      NOPA,               NULL },
+static struct param setpars[] = { {"item_name", REQ, KEYWD, PA(setkwds),         NULL },
+                                  {"value"    , CND, KEYWD, sethelp, setqskwds,  NULL },
+                                  {NULL,        0,   0,      NOPA,               NULL },
 };
 
-const char * sethelp( struct CMDSET *cmd, struct param *p, int argc, char **argv ) {
+static const char * sethelp( struct CMDSET *cmd, struct param *p, int argc, char **argv ) {
     int par;
 
     UNUSED( cmd );
@@ -1477,8 +1595,7 @@ const char * sethelp( struct CMDSET *cmd, struct param *p, int argc, char **argv
     return NULL;
 }
 
-unsigned set(int argc,char *argv[],int qualc,char *qualv[])
-{
+static unsigned doset(int argc,char *argv[],int qualc,char *qualv[]) {
     int parnum;
 
     UNUSED(argc);
@@ -1494,8 +1611,7 @@ unsigned set(int argc,char *argv[],int qualc,char *qualv[])
             printf( "%%ODS2-E-NOQUAL, No qualifiers are permitted\n" );
             return 0;
         }
-        setdef( argv[2] );
-        return 1;
+        return setdef( argv[2] );
     case 1:{ /* directory_qualifiers */
         int options = checkquals(dir_default,dirquals,qualc,qualv);
         if( options == -1 )
@@ -1528,16 +1644,13 @@ unsigned set(int argc,char *argv[],int qualc,char *qualv[])
     }
 }
 
-#ifndef VMSIO
-
 /* The bits we need when we don't have real VMS routines underneath... */
 
-struct param dmopars[] = { {"drive_letter", REQ, STRING, NOPA, "Drive containing volume to dismount", },
-                           {NULL,           0,   0,      NOPA, NULL }
+static struct param dmopars[] = { {"drive_letter", REQ, STRING, NOPA, "Drive containing volume to dismount", },
+                                  {NULL,           0,   0,      NOPA, NULL }
 };
 
-unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[])
-{
+unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[]) {
     struct DEV *dev;
     int sts;
 
@@ -1545,7 +1658,7 @@ unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[])
     UNUSED(qualc);
     UNUSED(qualv);
 
-    sts = device_lookup(strlen(argv[1]),argv[1],0,&dev);
+    sts = device_lookup(strlen(argv[1]),argv[1],FALSE,&dev);
     if (sts & 1) {
         if (dev->vcb != NULL) {
             sts = dismount(dev->vcb);
@@ -1553,24 +1666,25 @@ unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[])
             sts = SS$_DEVNOTMOUNT;
         }
     }
-    if ((sts & 1) == 0) printf("%%DISMOUNT-E-STATUS Error: %s\n",getmsg(sts, MSG_TEXT));
+    if (!(sts & STS$M_SUCCESS)) printf("%%DISMOUNT-E-STATUS Error: %s\n",getmsg(sts, MSG_TEXT));
     return sts;
 }
 
-#define mnt_write 1
-
-struct qual mouquals[] = { {"readonly", 0,         mnt_write, NV, "Only allow reading from volume"},
-                           {"write",    mnt_write, 0,         NV, "Allow writing to volume", },
-                           {NULL,       0,         0,         NV, NULL } };
-struct param moupars[] = { {"volumes", REQ, LIST, NOPA,
-#ifdef DISKIMAGE
-"disk images in volume set separated by comma"
-#else
-"devices in volume set separated by comma"
+#if MOU_WRITE != 1
+#error MOU_WRITE != 1
 #endif
-                           },
-                           {"labels", OPT, LIST, NOPA, "volume labels separated by comma" },
-                           { NULL, 0, 0, NOPA, NULL }
+
+static struct qual mouquals[] = { {"image",    MOU_VIRTUAL, 0,         NV, "Mount a disk image file", },
+                                  {"readonly", 0,           MOU_WRITE, NV, "Only allow reading from volume"},
+                                  {"virtual",  MOU_VIRTUAL, 0,         NV, NULL, },
+                                  {"write",    MOU_WRITE,   0,         NV, "Allow writing to volume", },
+                                  {NULL,       0,           0,         NV, NULL } };
+
+static struct param moupars[] = { {"volumes", REQ, LIST, NOPA,
+                                   "devices or disk image(s) in volume set separated by comma"
+                                  },
+                                  {"labels", OPT, LIST, NOPA, "volume labels separated by comma" },
+                                  { NULL,    0,   0,    NOPA, NULL }
 };
 
 static int parselist( char ***items, size_t min, char *arg, const char *label ) {
@@ -1604,7 +1718,7 @@ static int parselist( char ***items, size_t min, char *arg, const char *label ) 
     }
 
     if( list == NULL ) {
-        list = (char **) malloc( min + 1 );
+        list = (char **) malloc( (min + 1) * sizeof( char * ) );
         if( list == NULL ) {
             printf( "%%ODS2-E-NOMEM, Not enough memory for %s\n", label );
             return -1;
@@ -1618,8 +1732,8 @@ static int parselist( char ***items, size_t min, char *arg, const char *label ) 
     *items = list;
     return (int)n;
 }
-unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
-{
+
+static unsigned domount(int argc,char *argv[],int qualc,char *qualv[]) {
     int sts = 1,devices = 0;
     char **devs = NULL, **labs = NULL;
 
@@ -1640,22 +1754,8 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
 
     if (devices > 0) {
         struct VCB *vcb;
-#ifdef DISKIMAGE
-        unsigned i;
-
-        for( i = 0; i < (unsigned)devices; i++ ) {
-            char *drive;
-            drive = diskio_mapfile( devs[i], (options & mnt_write) != 0 );
-            if( drive == NULL ) {
-                free( devs );
-                free( labs );
-                return SS$_DEVNOTMOUNT;
-            }
-            devs[i] = drive;
-        }
-#endif
-        sts = mount( ((options & mnt_write) != 0) | 2, devices, devs, labs, &vcb );
-        if (sts & 1) {
+        sts = mount( options | MOU_LOG, devices, devs, labs, &vcb );
+        if (sts & STS$M_SUCCESS) {
             if (setdef_count == 0) {
                 char *colon, *buf;
                 size_t len;
@@ -1676,11 +1776,6 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
             test_vcb = vcb;
         } else {
             printf("%%ODS2-E-MOUNTERR, Mount failed with %s\n", getmsg(sts, MSG_TEXT));
-#ifdef DISKIMAGE
-            for( i = 0; i < (unsigned)devices; i++ ) {
-                (void) diskio_unmapdrive( devs[i] );
-            }
-#endif
         }
     }
 
@@ -1689,29 +1784,9 @@ unsigned domount(int argc,char *argv[],int qualc,char *qualv[])
     return sts;
 }
 
+/******************************************************************* dohelp() */
 
-void direct_show(void);
-void phyio_show(void);
-
-/* statis: print some simple statistics */
-
-unsigned statis(int argc,char *argv[],int qualc,char *qualv[])
-{
-    UNUSED(argc);
-    UNUSED(argv);
-    UNUSED(qualc);
-    UNUSED(qualv);
-
-    printf("Statistics:-\n");
-    direct_show();
-    cache_show();
-    phyio_show();
-    return 1;
-}
-
-#endif
-
-void cmdhelp( struct CMDSET *cmdset ) {
+static void cmdhelp( struct CMDSET *cmdset ) {
     struct CMDSET *cmd;
     int n = 0;
     size_t max = 0;
@@ -1730,7 +1805,7 @@ void cmdhelp( struct CMDSET *cmdset ) {
     printf( "\n" );
 }
 
-void qualhelp( int par, struct qual *qtable ) {
+static void qualhelp( int par, struct qual *qtable ) {
     struct qual *q;
     int n = 0;
     size_t max = 0;
@@ -1792,7 +1867,7 @@ void qualhelp( int par, struct qual *qtable ) {
 #undef NOSTR
 #undef NOSTR_LEN
 
-void parhelp( struct CMDSET *cmd, int argc, char **argv) {
+static void parhelp( struct CMDSET *cmd, int argc, char **argv) {
     struct param *p;
     struct param *ptable;
     const char *footer = NULL;
@@ -1890,43 +1965,39 @@ void parhelp( struct CMDSET *cmd, int argc, char **argv) {
 }
 
 /* help: Display help guided by command table. */
+#define NCMD 16
+static struct CMDSET cmdset[NCMD+1];
 
-struct CMDSET cmdset[];
-
-struct param helppars[] = { {"command",   OPT, CMDNAM, PA(cmdset),         NULL },
-                            {"parameter", OPT, STRING, NOPA,               NULL },
-                            {"value",     OPT, STRING, NOPA,               NULL },
-                           {NULL,        0,   0,      NOPA,               NULL },
+static struct param helppars[] = { {"command",   OPT, CMDNAM, PA(cmdset),         NULL },
+                                   {"parameter", OPT, STRING, NOPA,               NULL },
+                                   {"value",     OPT, STRING, NOPA,               NULL },
+                                   {NULL,        0,   0,      NOPA,               NULL },
 };
 
 /* information about the commands we know... */
-unsigned help(int argc,char *argv[],int qualc,char *qualv[]);
+static unsigned dohelp(int argc,char *argv[],int qualc,char *qualv[]);
 
-struct CMDSET cmdset[] = {
-    { "copy",      copy,      0,copyquals,copypars,   "Copy a file from VMS to host file", },
-    { "import",    import,    0,NULL,     importpars, "Copy a file from host to VMS", },
-    { "delete",    del,       0,delquals, delpars,    "Delete a VMS file", },
-    { "difference",diff,      0,NULL,     diffpars,   "Compare VMS file to host file", },
-    { "directory", dir,       0,dirquals,dirpars,     "List directory of VMS files", },
+static struct CMDSET cmdset[NCMD+1] = {
+    { "copy",      docopy,    0,copyquals,copypars,   "Copy a file from VMS to host file", },
+    { "import",    doimport,  0,NULL,     importpars, "Copy a file from host to VMS", },
+    { "delete",    dodelete,  0,delquals, delpars,    "Delete a VMS file", },
+    { "difference",dodiff,    0,NULL,     diffpars,   "Compare VMS file to host file", },
+    { "directory", dodir,     0,dirquals,dirpars,     "List directory of VMS files", },
     { "exit",      NULL,      2,NULL,     NULL,       "Exit ODS2", },
-    { "extend",    extend,    0,NULL,     extendpars, NULL },
-    { "help",      help,      0,NULL,     helppars,   "Obtain help on a command", },
+    { "extend",    doextend,  0,NULL,     extendpars, NULL },
+    { "help",      dohelp,    0,NULL,     helppars,   "Obtain help on a command", },
     { "quit",      NULL,      2,NULL,     NULL,       "Exit ODS-2", },
-    { "show",      show,      0,NULL,     showpars,   "Display state", },
-    { "search",    search,    0,NULL,     searchpars, "Search VMS file for a string", },
-    { "set",       set,       0,NULL,    setpars,     "Set PARAMETER - set HELP for list", },
-#ifndef VMSIO
+    { "show",      doshow,    0,NULL,     showpars,   "Display state", },
+    { "search",    dosearch,  0,NULL,     searchpars, "Search VMS file for a string", },
+    { "set",       doset,     0,NULL,    setpars,     "Set PARAMETER - set HELP for list", },
     { "dismount",  dodismount,0,NULL,     dmopars,    "Dismount a VMS volume", },
     { "mount",     domount,   0,mouquals, moupars,    "Mount a VMS volume", },
-    { "statistics",statis,    0,NULL,     NULL,       "Display debugging statistics", },
-#endif
-    { "test",      test,      0,NULL,     testpars,   NULL },
-    { "type",      typ,       0,NULL,     typepars,   "Display a VMS file on the terminal", },
+    { "test",      dotest,    0,NULL,     testpars,   NULL },
+    { "type",      dotype,    0,NULL,     typepars,   "Display a VMS file on the terminal", },
     { NULL,        NULL,      0,NULL,     NULL, NULL } /* ** END MARKER ** */
 };
 
-unsigned help(int argc,char *argv[],int qualc,char *qualv[])
-{
+static unsigned dohelp(int argc,char *argv[],int qualc,char *qualv[]) {
     struct CMDSET *cmd;
 
     UNUSED(qualc);
@@ -1935,7 +2006,10 @@ unsigned help(int argc,char *argv[],int qualc,char *qualv[])
     if( argc <= 1 ) {
         show_version();
 
-        printf("\n Please send problems/comments to Paulnank@au1.ibm.com\n");
+        printf( "\n The orginal version of ods2 was developed by Paul Nankervis <Paulnank@au1.ibm.com>\n" );
+        printf( " This modified version was developed by Timothe Litt, and incorporated\n" );
+        printf( " significant previous modifications by Larry Baker of the USGS and by Hunter Goatley\n" );
+        printf("\n Please send problems/comments to litt@ieee.org\n");
 
         printf(" Commands are:\n");
         cmdhelp( cmdset );
@@ -1976,10 +2050,10 @@ unsigned help(int argc,char *argv[],int qualc,char *qualv[])
     return 1;
 }
 
+/*************************************************************** cmdexecute() */
 /* cmdexecute: identify and execute a command */
 
-int cmdexecute(int argc,char *argv[],int qualc,char *qualv[])
-{
+static int cmdexecute( int argc, char *argv[], int qualc, char *qualv[] ) {
     char *ptr;
     struct CMDSET *cmd, *cp = NULL;
     unsigned cmdsiz;
@@ -2038,6 +2112,8 @@ int cmdexecute(int argc,char *argv[],int qualc,char *qualv[])
     return sts;
 }
 
+/***************************************************************** cmdsplit() */
+
 /* cmdsplit: break a command line into its components */
 
 /*
@@ -2049,8 +2125,7 @@ int cmdexecute(int argc,char *argv[],int qualc,char *qualv[])
  * Of course, one can just "" the string (VMS double quote rules)...
  */
 #define MAXITEMS 32
-int cmdsplit(char *str)
-{
+static int cmdsplit(char *str) {
     int argc = 0,qualc = 0;
     char *argv[MAXITEMS],*qualv[MAXITEMS];
     char *sp = str;
@@ -2111,10 +2186,7 @@ int cmdsplit(char *str)
 }
 
 #ifdef VMS
-#include <smgdef.h>
-#include <smg$routines.h>
-
-char *getcmd( char *inp, size_t max, char *prompt ) {
+static char *getcmd( char *inp, size_t max, char *prompt ) {
     struct dsc_descriptor prompt_d = { strlen(prompt),DSC$K_DTYPE_T,
                                        DSC$K_CLASS_S, prompt };
     struct dsc_descriptor input_d = { max -1,DSC$K_DTYPE_T,
@@ -2145,45 +2217,6 @@ char *getcmd( char *inp, size_t max, char *prompt ) {
 }
 #endif /* VMS */
 
-/* Read a line of input - unlimited length
- * Removes \n, returns NULL at EOF
- * Caller responsible for free()
- */
-char *fgetline( FILE *stream ) {
-    size_t bufsize = 0,
-           xpnsize = 80,
-           idx = 0;
-    char *buf = NULL;
-    int c;
-
-    while( (c = fgetc(stream)) != EOF && c != '\n' ) {
-        if( idx + 2 > bufsize ) {
-            char *nbuf;
-            bufsize += xpnsize;
-            nbuf = (char *) realloc( buf, bufsize );
-            if( nbuf == NULL ) {
-                perror( "realloc" );
-                abort();
-            }
-            buf = nbuf;
-        }
-        buf[idx++] = c;
-    }
-    if( c == EOF && idx == 0 ) {
-        free( buf );
-        return NULL;
-    }
-    if( bufsize == 0 ) {
-        buf = (char *) malloc( 1 );
-        if( buf == NULL ) {
-            perror( "malloc" );
-            abort();
-        }
-    }
-    buf[idx] = '\0';
-    return buf;
-}
-
 /* main: the simple mainline of this puppy... */
 
 /*
@@ -2201,8 +2234,7 @@ char *fgetline( FILE *stream ) {
  * The same command concatenation can be implemented for the prompted input.
  */
 
-int main(int argc,char *argv[])
-{
+int main( int argc,char *argv[] ) {
     int sts;
     char *command_line = NULL;
     FILE *atfile = NULL;
@@ -2274,7 +2306,7 @@ int main(int argc,char *argv[])
         if( ptr == NULL ) {
             if (atfile != NULL) {
                 if( rl != NULL ) free( rl );
-                if( (rl = fgetline(atfile)) == NULL) {
+                if( (rl = fgetline(atfile, FALSE)) == NULL) {
                     fclose(atfile);
                     atfile = NULL;
                 } else {
@@ -2307,7 +2339,7 @@ int main(int argc,char *argv[])
                 }
 #else
                 printf("$> ");
-                if( (rl = fgetline(stdin)) == NULL) break;
+                if( (rl = fgetline(stdin, FALSE)) == NULL) break;
                 ptr = rl;
 #endif
 #endif

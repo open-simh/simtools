@@ -6,6 +6,9 @@
 //
 //***************************************************************************
 
+#ifndef _SCSIDEFS_H
+#define _SCSIDEFS_H
+
 //***************************************************************************
 //       %%% TARGET STATUS VALUES %%%
 //***************************************************************************
@@ -269,3 +272,4 @@ typedef struct {
 #define ANSI_RESLO     0x3  // Reserved (low)
 #define ANSI_RESHI     0x7  // Reserved (high)
 
+#endif /* #ifndef _SCSIDEFS_H */

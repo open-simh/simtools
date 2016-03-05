@@ -3,11 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 11.00
 # Visual C++ Express 2010
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ODS2", "ODS2.vcxproj", "{BCCEAED2-1732-D796-1F70-040DE5DA42AD}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ODS2-Image", "ODS2-Image\ODS2-Image.vcxproj", "{1FF595D0-8CF9-4EF5-9A1B-A3FF3F3CF24C}"
-	ProjectSection(ProjectDependencies) = postProject
-		{BCCEAED2-1732-D796-1F70-040DE5DA42AD} = {BCCEAED2-1732-D796-1F70-040DE5DA42AD}
-	EndProjectSection
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -18,10 +13,6 @@ Global
 		{BCCEAED2-1732-D796-1F70-040DE5DA42AD}.Debug|Win32.Build.0 = Debug|Win32
 		{BCCEAED2-1732-D796-1F70-040DE5DA42AD}.Release|Win32.ActiveCfg = Release|Win32
 		{BCCEAED2-1732-D796-1F70-040DE5DA42AD}.Release|Win32.Build.0 = Release|Win32
-		{1FF595D0-8CF9-4EF5-9A1B-A3FF3F3CF24C}.Debug|Win32.ActiveCfg = Debug|Win32
-		{1FF595D0-8CF9-4EF5-9A1B-A3FF3F3CF24C}.Debug|Win32.Build.0 = Debug|Win32
-		{1FF595D0-8CF9-4EF5-9A1B-A3FF3F3CF24C}.Release|Win32.ActiveCfg = Release|Win32
-		{1FF595D0-8CF9-4EF5-9A1B-A3FF3F3CF24C}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

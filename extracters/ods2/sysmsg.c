@@ -69,6 +69,7 @@ const struct VMSMSG {
 {SS$_WASCLR, "%SYSTEM-S-NORMAL, normal successful completion"},
 {SS$_WASSET, "%SYSTEM-S-WASSET, Event flag was set"},
 {SS$_WRITLCK, "%SYSTEM-F-WRITLCK, write lock error"},
+{SS$_OFFSET_TOO_BIG, "SYSTEM-F-OFFSET_TOO_BIG, Volume is too large for local file system: needs 64-bit I/O" },
 {0, NULL},
   };
 

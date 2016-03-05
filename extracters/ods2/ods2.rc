@@ -28,8 +28,8 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,4
- PRODUCTVERSION 1,0,0,4
+ FILEVERSION 2,0,0,1
+ PRODUCTVERSION 2,0,0,1
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -47,14 +47,14 @@ BEGIN
             VALUE "Comments", "This application reads ODS-2 (VMS) disks under Windows NT and Windows 2000\0"
             VALUE "CompanyName", "Paul Nankervis <paulnank@au1.ibm.com>\0"
             VALUE "FileDescription", "ODS-2 Reader for Windows (Modified)\0"
-            VALUE "FileVersion", "V1.4\0"
+            VALUE "FileVersion", "V2.1\0"
             VALUE "InternalName", "ODS2\0"
-            VALUE "LegalCopyright", "Copyright © 2001\0"
+            VALUE "LegalCopyright", "Copyright ï¿½ 2001, 2016\0"
             VALUE "LegalTrademarks", "\0"
             VALUE "OriginalFilename", "ODS2.EXE\0"
             VALUE "PrivateBuild", "\0"
             VALUE "ProductName", "ODS2\0"
-            VALUE "ProductVersion", "V1.4\0"
+            VALUE "ProductVersion", "V2.1\0"
             VALUE "SpecialBuild", "\0"
         END
     END

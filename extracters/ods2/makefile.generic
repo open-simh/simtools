@@ -31,9 +31,9 @@
 
 # #####################################################
 
-all : ods2 ods2i
+all : ods2
 
-OBJS = $(ODS2_OBJS) $(ODS2I_OBJS)
+OBJS = $(ODS2_OBJS)
 
 COMMON_OBJS =  \
 access$(OBJ) \
@@ -41,21 +41,18 @@ cache$(OBJ) \
 compat$(OBJ)\
 device$(OBJ) \
 direct$(OBJ) \
+phyvirt$(OBJ) \
 rms$(OBJ) \
 sysmsg$(OBJ) \
 update$(OBJ) \
 vmstime$(OBJ)
 
 ODS2_OBJS = ods2$(OBJ) $(COMMON_OBJS) $(PHYSIO)$(OBJ)
-ODS2I_OBJS = ods2i$(OBJ) $(COMMON_OBJS) diskio$(OBJ)
 
 ods2 : $(ODS2_OBJS) $(LIBS)
 	$(CC) $(CCFLAGS) -o ods2 $(ODS2_OBJS) $(LDFLAGS)
 
-ods2i : $(ODS2I_OBJS)
-	$(CC) $(CCFLAGS) -o ods2i $(ODS2I_OBJS) $(LDFLAGS)
-
-access$(OBJ) : access.c ssdef.h access.h phyio.h compat.h sysmsg.h
+access$(OBJ) : access.c ssdef.h access.h phyio.h compat.h sysmsg.h phyvirt.h
 	$(CC) -c $(CCFLAGS) $(DEFS) access.c
 
 cache$(OBJ) : cache.c cache.h ssdef.h
@@ -70,17 +67,14 @@ device$(OBJ) : device.c ssdef.h access.h phyio.h
 direct$(OBJ) : direct.c direct.h access.h fibdef.h descrip.h ssdef.h
 	$(CC) -c $(CCFLAGS) $(DEFS) direct.c
 
-diskio$(OBJ) : diskio.c diskio.h compat.h phyio.h ssdef.h
-	$(CC) -c $(CCFLAGS) $(DEFS) diskio.c
-
 ods2$(OBJ) : ods2.c compat.h sysmsg.h phyio.h ssdef.h descrip.h access.h rms.h version.h
 	$(CC) -c $(CCFLAGS) $(VERSION) $(DEFS) ods2.c
 
-ods2i$(OBJ) : ods2.c compat.h diskio.h sysmsg.h phyio.h ssdef.h descrip.h access.h rms.h version.h
-	$(CC) -c $(CCFLAGS) $(DEFS) -DDISKIMAGE -o ods2i$(OBJ) ods2.c
-
-$(PHYSIO)$(OBJ) : $(PHYSIO).c phyio.h ssdef.h compat.h $(PHYSIOH)
+$(PHYSIO)$(OBJ) : $(PHYSIO).c phyio.h phyvirt.h ssdef.h compat.h $(PHYSIOH)
 	$(CC) -c $(CCFLAGS) $(DEFS) $(PHYSIO).c
+
+phyvirt$(OBJ) : phyvirt.c phyvirt.h compat.h ssdef.h
+	$(CC) -c $(CCFLAGS) $(DEFS) phyvirt.c
 
 rms$(OBJ) : rms.c rms.h compat.h direct.h access.h fibdef.h descrip.h ssdef.h
 	$(CC) -c $(CCFLAGS) $(DEFS) rms.c

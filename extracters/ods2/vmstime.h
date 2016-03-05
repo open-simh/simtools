@@ -1,6 +1,6 @@
 /*
 
-       Vmstime.h  v1.6A
+       Vmstime.h  V2.1
 
        Author: Paul Nankervis
 
@@ -15,10 +15,12 @@
 */
 
 
-#ifndef __VMSTIME__
-#define __VMSTIME__ loaded
+#ifndef _VMSTIME_H
+#define _VMSTIME_H
 
 #include "descrip.h"
+#include "ssdef.h"
+#include "stsdef.h"
 
 #ifdef __ALPHA
 #define VMSTIME_64BIT __int64
@@ -50,6 +52,7 @@ typedef unsigned char *pVMSTIME;
 #define LIB__ABSTIMREQ 1410044
 #define LIB__DELTIMREQ 1410052
 #define LIB__INVOPER 1410060
+#define STS_M_SUCCESS 1
 
 #ifndef NO_DOLLAR
 #ifndef SS$_NORMAL
@@ -61,6 +64,7 @@ typedef unsigned char *pVMSTIME;
 #define LIB$_ABSTIMREQ LIB__ABSTIMREQ
 #define LIB$_DELTIMREQ LIB__DELTIMREQ
 #define LIB$_INVOPER   LIB__INVOPER
+#define STS$M_SUCCESS  STS_M_SUCCESS
 #endif
 #endif
 #endif
@@ -151,24 +155,25 @@ typedef unsigned char *pVMSTIME;
 #endif
 
 
-unsigned sys_gettim(VMSTIME timadr);
-unsigned sys_numtim(unsigned short timvec[7],VMSTIME timadr);
-unsigned sys_bintim(struct dsc_descriptor *timbuf,VMSTIME timadr);
+unsigned sys_gettim(pVMSTIME timadr);
+unsigned sys_numtim(unsigned short timvec[7],pVMSTIME timadr);
+unsigned sys_bintim(struct dsc_descriptor *timbuf,pVMSTIME timadr);
 unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
-                    VMSTIME timadr,unsigned cvtflg);
+                    pVMSTIME timadr,unsigned cvtflg);
 unsigned lib_add_times(VMSTIME time1,VMSTIME time2,VMSTIME result);
 unsigned lib_addx(void *addant,void *addee,void *result,int *lenadd);
 unsigned lib_cvt_from_internal_time(unsigned *operation,
                                     unsigned *result,VMSTIME input_time);
 unsigned lib_cvt_to_internal_time(unsigned *operation,int *input,
                                   VMSTIME result);
-unsigned lib_cvt_vectim(unsigned short timbuf[7],VMSTIME timadr);
-unsigned lib_day(int *days,VMSTIME timadr,int *day_time);
-unsigned lib_day_of_week(VMSTIME timadr,unsigned *weekday);
-unsigned lib_mult_delta_time(int *multiple,VMSTIME timadr);
+unsigned lib_cvt_vectim(unsigned short timbuf[7],pVMSTIME timadr);
+unsigned lib_day(int *days,pVMSTIME timadr,int *day_time);
+unsigned lib_day_of_week(pVMSTIME timadr,unsigned *weekday);
+unsigned lib_mult_delta_time(int *multiple,pVMSTIME timadr);
 unsigned lib_subx(void *subant,void *subee,void *result,int *lenadd);
 unsigned lib_sub_times(VMSTIME time1,VMSTIME time2,VMSTIME result);
 unsigned vmstime_from_nt(VMSTIME nt_time,VMSTIME vms_time);
 unsigned vmstime_to_nt(VMSTIME vms_time,VMSTIME nt_time);
 int vmstime_compare(VMSTIME time1,VMSTIME time2);
-#endif
+
+#endif /* #ifndef _VMSTIME_H */

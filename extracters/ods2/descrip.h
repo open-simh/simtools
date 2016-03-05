@@ -1,4 +1,4 @@
-/* Descrip.h v1.4    Definitions for descriptors */
+/* Descrip.h V2.1    Definitions for descriptors */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -17,7 +17,8 @@
              (ie #ifdef DOLLAR to #ifndef NO_DOLLAR)
 */
 
-#ifndef _DESCRIPTOR
+#ifndef _DESCRIP_H
+#define _DESCRIP_H
 
 #ifndef NO_DOLLAR
 #ifndef $DESCRIPTOR
@@ -45,4 +46,4 @@ struct dsc_descriptor {
 #define _DESCRIPTOR(symbol,value) \
         struct dsc_descriptor symbol = {sizeof(value)-1,0,0,value}
 
-#endif
+#endif /* #ifndef _DESCRIP_H */

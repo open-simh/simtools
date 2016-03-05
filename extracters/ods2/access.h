@@ -1,4 +1,4 @@
-/* Access.h v1.3    Definitions for file access routines */
+/* Access.h V2.1    Definitions for file access routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,18 +10,28 @@
         the contibution of the original author.
 */
 
-#define NO_DOLLAR
+#ifndef _ACCESS_H
+#define _ACCESS_H
+
 #include "cache.h"
 #include "vmstime.h"
 
-#ifdef USE_BIG_ENDIAN
-#define VMSLONG(l) ((l & 0xff) << 24 | (l & 0xff00) << 8 | (l & 0xff0000) >> 8 | l >> 24)
-#define VMSWORD(w) ((w & 0xff) << 8 | w >> 8)
-#define VMSSWAP(l) ((l & 0xff0000) << 8 | (l & 0xff000000) >> 8 |(l & 0xff) << 8 | (l & 0xff00) >> 8)
+#ifdef ODS2_BIG_ENDIAN
+#define VMSLONG( l ) ( ( (l) & 0x000000ff ) << 24 | \
+                       ( (l) & 0x0000ff00 ) <<  8 | \
+                       ( (l) & 0x00ff0000 ) >>  8 | \
+                         (l)                >> 24   )
+#define VMSWORD( w ) ( ( (w) & 0x00ff ) << 8 | \
+                         (w)            >> 8   )
+#define VMSSWAP( l ) ( ( (l) & 0x00ff0000 ) << 8 | \
+                       ( (l) & 0xff000000 ) >> 8 | \
+                       ( (l) & 0x000000ff ) << 8 | \
+                       ( (l) & 0x0000ff00 ) >> 8   )
 #else
-#define VMSLONG(l) l
-#define VMSWORD(w) w
-#define VMSSWAP(l) ((l & 0xffff) << 16 | l >> 16)
+#define VMSLONG( l ) (l)
+#define VMSWORD( w ) (w)
+#define VMSSWAP( l ) ( ( (l) & 0x0000ffff ) << 16 | \
+                         (l)                >> 16   )
 #endif
 
 typedef unsigned char vmsbyte;
@@ -29,11 +39,11 @@ typedef unsigned short vmsword;
 typedef unsigned int vmsswap;
 typedef unsigned int vmslong;
 
-#define FH2$M_NOBACKUP   0x2
-#define FH2$M_CONTIGB    0x20
-#define FH2$M_CONTIG     0x80
-#define FH2$M_DIRECTORY  0x2000
-#define FH2$M_MARKDEL    0x8000
+#define FH2$M_NOBACKUP   0x00002
+#define FH2$M_CONTIGB    0x00020
+#define FH2$M_CONTIG     0x00080
+#define FH2$M_DIRECTORY  0x02000
+#define FH2$M_MARKDEL    0x08000
 #define FH2$M_ERASE      0x20000
 
 #ifdef __ALPHA
@@ -41,11 +51,11 @@ typedef unsigned int vmslong;
 #pragma nomember_alignment
 #endif
 
+
 struct UIC {
     vmsword uic$w_mem;
     vmsword uic$w_grp;
 };
-
 
 struct fiddef {
     vmsword fid$w_num;
@@ -53,7 +63,6 @@ struct fiddef {
     vmsbyte fid$b_rvn;
     vmsbyte fid$b_nmx;
 };
-
 
 struct RECATTR {
     vmsbyte fat$b_rtype;
@@ -70,7 +79,6 @@ struct RECATTR {
     vmsbyte fat$_UU0[8];
     vmsword fat$w_versions;
 };
-
 
 struct HOME {
     vmslong hm2$l_homelbn;
@@ -115,7 +123,6 @@ struct HOME {
     vmsword hm2$w_checksum2;
 };
 
-
 struct IDENT {
     char fi2$t_filename[20];
     vmsword fi2$w_revision;
@@ -125,7 +132,6 @@ struct IDENT {
     VMSTIME fi2$q_bakdate;
     char fi2$t_filenamext[66];
 };
-
 
 struct HEAD {
     vmsbyte fh2$b_idoffset;
@@ -196,7 +202,6 @@ struct WCB {
     unsigned char rvn[EXTMAX];
 };                              /* Window control block */
 
-
 #define VIOC_CHUNKSIZE 4
 
 struct VIOC {
@@ -206,9 +211,6 @@ struct VIOC {
     unsigned modmask;           /* Bit mask for modified blocks */
     char data[VIOC_CHUNKSIZE][512];     /* Chunk data */
 };                              /* Chunk of a file */
-
-
-#define FCB_WRITE 1             /* FCB open for write... */
 
 struct FCB {
     struct CACHE cache;
@@ -221,9 +223,9 @@ struct FCB {
     unsigned hiblock;           /* Highest block mapped */
     unsigned highwater;         /* First high water block */
     unsigned char status;       /* FCB status bits */
+#define FCB_WRITE 1             /* FCB open for write... */
     unsigned char rvn;          /* Initial file relative volume */
 };                              /* File control block */
-
 
 struct DIRCACHE {
     struct CACHE cache;
@@ -232,9 +234,7 @@ struct DIRCACHE {
     char dirnam[1];             /* Directory name */
 };                              /* Directory cache entry */
 
-
 #define VCB_WRITE 1
-
 struct VCBDEV {
     struct DEV *dev;            /* Pointer to device info */
     struct FCB *idxfcb;         /* Index file control block */
@@ -252,22 +252,23 @@ struct VCB {
     struct VCBDEV vcbdev[1];    /* List of volumes devices */
 };                              /* Volume control block */
 
+/* RVN_TO_DEV( vcb, rvn ) - returns device from relative volume number */
 
-struct DEV {
-    struct CACHE cache;
-    struct VCB *vcb;            /* Pointer to volume (if mounted) */
-    unsigned handle;            /* Device physical I/O handle */
-    unsigned status;            /* Device physical status */
-    unsigned long long sectors;           /* Device physical sectors */
-    unsigned sectorsize;        /* Device physical sectorsize */
-    char devnam[1];             /* Device name */
-};                              /* Device information */
+/* returns NULL if RVN illegal or device not mounted */
+
+#define RVN_TO_DEV( vcb, rvn ) ( ( rvn < 2 ) ? \
+                                     vcb->vcbdev : \
+                                     ( ( rvn <= vcb->devices ) ? \
+                                           &vcb->vcbdev[rvn - 1] : \
+                                           NULL \
+                                     ) \
+                               )
 
 void fid_copy(struct fiddef *dst,struct fiddef *src,unsigned rvn);
-unsigned device_lookup(unsigned devlen,char *devnam,int create,struct DEV **retdev);
 
 unsigned dismount(struct VCB *vcb);
-unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],struct VCB **vcb);
+unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
+               struct VCB **vcb);
 
 unsigned accesserase(struct VCB *vcb,struct fiddef *fid);
 unsigned deaccessfile(struct FCB *fcb);
@@ -282,4 +283,6 @@ unsigned update_freecount(struct VCBDEV *vcbdev,unsigned *retcount);
 unsigned update_create(struct VCB *vcb,struct fiddef *did,char *filename,
                        struct fiddef *fid,struct FCB **fcb);
 unsigned update_extend(struct FCB *fcb,unsigned blocks,unsigned contig);
-unsigned short checksum(vmsword *block);
+vmsword checksum( vmsword *block );
+
+#endif /* # ifndef _ACCESS_H */

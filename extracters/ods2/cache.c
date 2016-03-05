@@ -1,4 +1,4 @@
-/* Cache.c v1.3   Caching control routines */
+/* Cache.c V2.1   Caching control routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -49,38 +49,52 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <memory.h>
-#include "ssdef.h"
+
 #include "cache.h"
+#include "ssdef.h"
 
+#ifndef TRUE
+#define TRUE ( 0 == 0 )
+#endif
+#ifndef FALSE
+#define FALSE ( 0 != 0 )
+#endif
 
-#define DEBUG                   /* Debug mode? */
+#ifndef DEBUG
+#define DEBUG
+#endif
+
 #define IMBALANCE 5             /* Tree imbalance limit */
 #define CACHELIM  256           /* Free object limit */
 #define CACHEGOAL 128           /* Free object goal */
 
-int cachefinds = 0;
-int cachecreated = 0;
-int cachepurges = 0;
-int cachepeak = 0;
-int cachecount = 0;
-int cachefreecount = 0;
-int cachedeletes = 0;
+static int cachefinds = 0;
+static int cachecreated = 0;
+static int cachepurges = 0;
+static int cachepeak = 0;
+static int cachecount = 0;
+static int cachefreecount = 0;
+static int cachedeletes = 0;
 
-int cachedeleteing = 0;         /* Cache deletion in progress... */
+static int cachedeleteing = FALSE;         /* Cache deletion in progress... */
 
 struct CACHE lrulist = {&lrulist,&lrulist,NULL,NULL,NULL,NULL,0,0,1,0};
 
+/*************************************************************** cache_show() */
 
 /* cache_show() - to print cache statistics */
 
 void cache_show(void)
 {
     printf("CACHE_SHOW Find %d Create %d Purge %d Peak %d Count %d Free %d\n",
-           cachefinds,cachecreated,cachepurges,cachepeak,cachecount,cachefreecount);
-    if (cachecreated - cachedeletes != cachecount) printf(" - Deleted %d\n",cachedeletes);
+           cachefinds,cachecreated,cachepurges,cachepeak,cachecount,
+           cachefreecount);
+    if (cachecreated - cachedeletes != cachecount) {
+        printf(" - Deleted %d\n",cachedeletes);
+    }
 }
 
+/*********************************************************** cache_refcount() */
 
 /* cache_refcount() - compute reference count for cache subtree... */
 
@@ -89,12 +103,17 @@ int cache_refcount(struct CACHE *cacheobj)
     register int refcount = 0;
     if (cacheobj != NULL) {
         refcount = cacheobj->refcount;
-        if (cacheobj->left != NULL) refcount += cache_refcount(cacheobj->left);
-        if (cacheobj->right != NULL) refcount += cache_refcount(cacheobj->right);
+        if (cacheobj->left != NULL) {
+            refcount += cache_refcount(cacheobj->left);
+        }
+        if (cacheobj->right != NULL) {
+            refcount += cache_refcount(cacheobj->right);
+        }
     }
     return refcount;
 }
 
+/************************************************************* cache_delete() */
 
 /* cache_delete() - blow away item from cache - allow item to select a proxy (!)
    and adjust 'the tree' containing the item. */
@@ -103,15 +122,15 @@ struct CACHE *cache_delete(struct CACHE *cacheobj)
 {
     while (cacheobj->objmanager != NULL) {
         register struct CACHE *proxyobj;
-        cachedeleteing = 1;
-        proxyobj = (*cacheobj->objmanager) (cacheobj,0);
-        cachedeleteing = 0;
+        cachedeleteing = TRUE;
+        proxyobj = (*cacheobj->objmanager) (cacheobj,FALSE);
+        cachedeleteing = FALSE;
         if (proxyobj == NULL) return NULL;
         if (proxyobj == cacheobj) break;
         cacheobj = proxyobj;
     }
 #ifdef DEBUG
-    if (cachedeleteing != 0) printf("CACHE deletion while delete in progress\n");
+    if (cachedeleteing) printf("CACHE deletion while delete in progress\n");
 #endif
     if (cacheobj->refcount != 0) {
 #ifdef DEBUG
@@ -169,12 +188,13 @@ struct CACHE *cache_delete(struct CACHE *cacheobj)
     return cacheobj;
 }
 
+/************************************************************** cache_purge() */
 
 /* cache_purge() - trim size of free list */
 
 void cache_purge(void)
 {
-    if (cachedeleteing == 0) {
+    if (!cachedeleteing) {
         register struct CACHE *cacheobj = lrulist.lastlru;
         cachepurges++;
         while (cachefreecount > CACHEGOAL && cacheobj != &lrulist) {
@@ -195,7 +215,7 @@ void cache_purge(void)
     }
 }
 
-
+/************************************************************** cache_flush() */
 
 /* cache_flush() - flush modified entries in cache */
 
@@ -204,12 +224,13 @@ void cache_flush(void)
     register struct CACHE *cacheobj = lrulist.lastlru;
     while (cacheobj != &lrulist) {
         if (cacheobj->objmanager != NULL) {
-            (*cacheobj->objmanager) (cacheobj,1);
+            (*cacheobj->objmanager) (cacheobj,TRUE);
         }
         cacheobj = cacheobj->lastlru;
     }
 }
 
+/************************************************************* cache_remove() */
 
 /* cache_remove() - delete all possible objects from cache subtree */
 
@@ -226,6 +247,8 @@ void cache_remove(struct CACHE *cacheobj)
         }
     }
 }
+
+/************************************************************** cache_touch() */
 
 /* cache_touch() - to increase the access count on an object... */
 
@@ -244,6 +267,8 @@ void cache_touch(struct CACHE *cacheobj)
         cachefreecount--;
     }
 }
+
+/************************************************************ cache_untouch() */
 
 /* cache_untouch() - to deaccess an object... */
 
@@ -276,6 +301,8 @@ void cache_untouch(struct CACHE *cacheobj,int recycle)
     }
 }
 
+/*************************************************************** cache_find() */
+
 /* cache_find() - to find or create cache entries...
 
         The grand plan here was to use a hash code as a quick key
@@ -288,10 +315,12 @@ void cache_untouch(struct CACHE *cacheobj,int recycle)
         initialize an object if it is not found.
 */
 
-void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
-                 int (*compare_func) (unsigned hashval,void *keyval,void *node),
-                 void *(*create_func) (unsigned hashval,void *keyval,unsigned *retsts))
-{
+void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
+                  int (*compare_func) ( unsigned hashval, void *keyval,
+                                        void *node ),
+                  void *(*create_func) ( unsigned hashval, void *keyval,
+                                         unsigned *retsts ) ) {
+
     register struct CACHE *cacheobj,**parent = (struct CACHE **) root;
     cachefinds++;
     while ((cacheobj = *parent) != NULL) {
@@ -301,7 +330,9 @@ void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
             printf("CACHE Parent pointer is corrupt\n");
         }
 #endif
-        if (cmp == 0 && compare_func != NULL) cmp = (*compare_func) (hashval,keyval,cacheobj);
+        if (cmp == 0 && compare_func != NULL) {
+            cmp = (*compare_func) (hashval,keyval,cacheobj);
+        }
         if (cmp == 0) {
             cache_touch(cacheobj);
             if (retsts != NULL) *retsts = SS$_NORMAL;
@@ -312,7 +343,9 @@ void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
             register struct CACHE *left_path = cacheobj->left;
             if (left_path != NULL && cacheobj->balance-- < -IMBALANCE) {
                 cacheobj->left = left_path->right;
-                if (cacheobj->left != NULL) cacheobj->left->parent = &cacheobj->left;
+                if (cacheobj->left != NULL) {
+                    cacheobj->left->parent = &cacheobj->left;
+                }
                 left_path->right = cacheobj;
                 cacheobj->parent = &left_path->right;
                 *parent = left_path;
@@ -325,7 +358,9 @@ void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
             register struct CACHE *right_path = cacheobj->right;
             if (right_path != NULL && cacheobj->balance++ > IMBALANCE) {
                 cacheobj->right = right_path->left;
-                if (cacheobj->right != NULL) cacheobj->right->parent = &cacheobj->right;
+                if (cacheobj->right != NULL) {
+                    cacheobj->right->parent = &cacheobj->right;
+                }
                 right_path->left = cacheobj;
                 cacheobj->parent = &right_path->left;
                 *parent = right_path;
@@ -352,8 +387,8 @@ void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
             cacheobj->right = NULL;
             cacheobj->parent = parent;
             cacheobj->hashval = hashval;
-            cacheobj->balance = 0;
             cacheobj->refcount = 1;
+            cacheobj->balance = 0;
             *parent = cacheobj;
             cachecreated++;
             if (cachecount++ >= cachepeak) cachepeak = cachecount;

@@ -1,7 +1,4 @@
-#ifndef PHYIO_H
-#define PHYIO_H
-
-    /* Phyio.h  v1.2-2   Definition of Physical I/O routines */
+/* Phyio.h  V2.1   Definition of Physical I/O routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -18,6 +15,9 @@
              phyio_show() which doesn't need to do anything - but
                           it would generally print some statistics
                           about the other phyio calls.
+             phyio_path() returns the full path of the supplied filnam.a  The
+                          returned character string must be deallocated by the
+                          caller.
              phyio_init() to prepare a device for use by future
                           read/write calls. The device name would usually
                           map to a local device - for example rra: to /dev/rra
@@ -25,6 +25,7 @@
                           (channel, file handle, reference number...) for
                           future reference, and optionally some device
                           information.
+            phyio_done()  makes a device unavailable.
             phyio_read()  will return a specified number of bytes into a
                           buffer from the start of a 512 byte block on the
                           device referred to by the handle.
@@ -33,20 +34,27 @@
 
 */
 
-#include <stdio.h>
+#ifndef _PHYIO_H
+#define _PHYIO_H
+
+#include "device.h"
 
 #define PHYIO_READONLY 1
 
-struct phyio_info {
-    unsigned status;
-    unsigned long long sectors;
-    unsigned sectorsize;
-};
+typedef enum showtype {
+    SHOW_STATS,
+    SHOW_FILE64,
+    SHOW_DEVICES
+} showtype_t;
 
-void phyio_show(void);
-unsigned phyio_init(int devlen,char *devnam,unsigned *handle,struct phyio_info *info);
-unsigned phyio_read(unsigned handle,unsigned block,unsigned length,char *buffer);
-unsigned phyio_write(unsigned handle,unsigned block,unsigned length,char *buffer);
+void phyio_show( showtype_t type );
+char *phyio_path( const char *filnam );
+unsigned phyio_init( struct DEV *dev );
+unsigned phyio_done( struct DEV *dev );
+unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
+                     char *buffer );
+unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
+                      const char *buffer );
 void phyio_help(FILE *fp );
 
-#endif
+#endif /* #ifndef _PHYIO_H */

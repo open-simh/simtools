@@ -1,4 +1,4 @@
-/* RMS.h v1.3   RMS routine definitions */
+/* RMS.h V2.1   RMS routine definitions */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,7 +10,8 @@
         the contibution of the original author.
 */
 
-#ifndef RMS$_RTB
+#ifndef _RMS_H
+#define _RMS_H
 
 #include "vmstime.h"
 
@@ -31,7 +32,7 @@
 #define RMS$_DNF 114762
 
 #define NAM$C_MAXRSS 255
-#define NAM$M_SYNCHK 1
+#define NAM$M_SYNCHK 0x8
 
 #define XAB$C_DAT 18
 #define XAB$C_FHC 29
@@ -205,10 +206,10 @@ extern struct RAB cc$rms_rab;
 #define FAB$C_IDX 32
 #define FAB$C_HSH 48
 
-#define FAB$M_FTN 1
-#define FAB$M_CR  2
-#define FAB$M_PRN 4
-#define FAB$M_BLK 8
+#define FAB$M_FTN 0x1
+#define FAB$M_CR  0x2
+#define FAB$M_PRN 0x4
+#define FAB$M_BLK 0x8
 
 #define FAB$M_PUT 0x1
 #define FAB$M_GET 0x2
@@ -315,4 +316,5 @@ unsigned sys_erase(struct FAB *fab);
 unsigned sys_extend(struct FAB *fab);
 unsigned sys_setddir(struct dsc_descriptor *newdir,unsigned short *oldlen,
                      struct dsc_descriptor *olddir);
-#endif
+
+#endif /* #ifndef _RMS_H */

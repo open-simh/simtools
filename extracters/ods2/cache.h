@@ -1,4 +1,4 @@
-/* Cache.h v1.3    Definitions for cache routines */
+/* Cache.h V2.1    Definitions for cache routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,27 +10,30 @@
         the contibution of the original author.
 */
 
-#ifndef CACHE_LOADED
+#ifndef _CACHE_H
+#define _CACHE_H
 
-#define CACHE_LOADED
-
-#ifndef VAXC	/* Stupid VAX C doesn't allow "signed" keyword */
-#define signed signed
-#else
+#ifdef VAXC     /* Stupid VAX C doesn't allow "signed" keyword */
 #define signed
+#else
+#define signed signed
 #endif
 
 struct CACHE {
-    struct CACHE *nextlru;	/* next object on least recently used list */
-    struct CACHE *lastlru;	/* last object on least recently used list */
-    struct CACHE *left;		/* left branch of binary tree */
-    struct CACHE *right;	/* right branch of binary tree */
-    struct CACHE **parent;	/* address of pointer to this object */
+    struct CACHE *nextlru;      /* next object on least recently used list */
+    struct CACHE *lastlru;      /* last object on least recently used list */
+    struct CACHE *left;         /* left branch of binary tree */
+    struct CACHE *right;        /* right branch of binary tree */
+    struct CACHE **parent;      /* address of pointer to this object */
     void *(*objmanager) (struct CACHE * cacheobj,int flushonly);
-    unsigned hashval;		/* object hash value */
-    short refcount;		/* object reference count */
-    signed char balance;	/* object tree imbalance factor */
-    signed char objtype;	/* object type (for debugging) */
+    unsigned hashval;           /* object hash value */
+    short refcount;             /* object reference count */
+    signed char balance;        /* object tree imbalance factor */
+    signed char objtype;        /* object type (for debugging) */
+#define OBJTYPE_DEV 1
+#define OBJTYPE_FCB 2
+#define OBJTYPE_WCB 3
+#define OBJTYPE_VIOC 7
 };
 
 void cache_show(void);
@@ -41,7 +44,10 @@ void cache_flush(void);
 void cache_remove(struct CACHE *cacheobj);
 void cache_touch(struct CACHE * cacheobj);
 void cache_untouch(struct CACHE * cacheobj,int recycle);
-void *cache_find(void **root,unsigned hashval,void *keyval,unsigned *retsts,
-                 int (*compare_func) (unsigned hashval,void *keyval,void *node),
-                 void *(*create_func) (unsigned hashval,void *keyval,unsigned *retsts));
-#endif
+void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
+                  int (*compare_func) ( unsigned hashval, void *keyval,
+                                        void *node ),
+                  void *(*create_func) ( unsigned hashval, void *keyval,
+                                         unsigned *retsts ) );
+
+#endif /* #ifndef _CACHE_H */

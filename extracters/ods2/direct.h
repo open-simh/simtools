@@ -1,4 +1,4 @@
-/* Direct.h v1.3    Definitions for directory access routines */
+/* Direct.h V2.1    Definitions for directory access routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -10,7 +10,8 @@
         the contibution of the original author.
 */
 
-
+#ifndef _DIRECT_H
+#define _DIRECT_H
 
 struct dir$rec {
     vmsword dir$size;
@@ -26,6 +27,9 @@ struct dir$ent {
 };
 
 
+void direct_show( void );
 unsigned direct(struct VCB *vcb,struct dsc_descriptor *fibdsc,
                 struct dsc_descriptor *filedsc,unsigned short *reslen,
                 struct dsc_descriptor *resdsc,unsigned action);
+
+#endif /* #ifndef _DIRECT_H */
