@@ -7,7 +7,7 @@ CC=gcc
 CCFLAGS = -O4 -g
 
 DEFS = -DUSE_READLINE
-LDFLAGS = -lreadline
+LDFLAGS = -lreadline -ltermcap
 
 # Object file extension
 OBJ = .o

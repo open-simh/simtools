@@ -111,8 +111,10 @@ static void showdevs( void ) {
                 free( fs );
                 continue;
             }
-            if( !S_ISBLK( stb.st_mode ) )
+            if( !S_ISBLK( stb.st_mode ) ) {
+                free( fs );
                 continue;
+            }
 
             memmove( fs, fs + sizeof( DEV_PREFIX ) -1, len +1 );
             unit = ~0;
@@ -126,14 +128,17 @@ static void showdevs( void ) {
                         if( unit < (*list)[i].low )
                             (*list)[i].low = unit;
                     }
+                    free( fs );
                     break;
                 }
             }
             if( i >= n ) {
                 nl = (struct devdat (*)[1])
                     realloc( list, (n+1) * sizeof( struct devdat ) );
-                if( nl == NULL )
+                if( nl == NULL ) {
+                    free( fs );
                     break;
+                }
                 list = nl;
                 (*list)[n].name = fs;
                 (*list)[n].low = unit;
@@ -206,7 +211,8 @@ void phyio_show( showtype_t type ) {
                 init_count, read_count, write_count );
         return;
     case SHOW_FILE64:
-        printf( "\nLarge ODS-2 image files (>2GB) are supported.\n" );
+        printf( "Large ODS-2 image files (>2GB) are %ssupported.\n",
+                (sizeof( off_t ) < 8)? "NOT ": "" );
         return;
     case SHOW_DEVICES:
         printf( " Physical devices\n" );
@@ -338,6 +344,9 @@ unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
         return SS$_PARITY;
     }
     if ( ( res = read( dev->handle, buffer, length ) ) != length ) {
+        if( res == 0 ) {
+            return SS$_ENDOFFILE;
+        }
         perror( "read " );
         printf("read failed %" PRIuMAX "u\n", (uintmax_t)res);
         return SS$_PARITY;

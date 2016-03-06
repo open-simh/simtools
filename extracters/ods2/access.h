@@ -256,6 +256,13 @@ struct VCB {
 extern struct VCB *vcb_list;
 void show_volumes( void );
 
+struct disktype {
+    const char *name;
+    unsigned long sectorsize, sectors, tracks, cylinders;
+};
+
+extern struct disktype disktype[];
+
 /* RVN_TO_DEV( vcb, rvn ) - returns device from relative volume number */
 
 /* returns NULL if RVN illegal or device not mounted */
@@ -288,5 +295,7 @@ unsigned update_create(struct VCB *vcb,struct fiddef *did,char *filename,
                        struct fiddef *fid,struct FCB **fcb);
 unsigned update_extend(struct FCB *fcb,unsigned blocks,unsigned contig);
 vmsword checksum( vmsword *block );
+
+void access_rundown( void );
 
 #endif /* # ifndef _ACCESS_H */

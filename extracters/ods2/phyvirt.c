@@ -52,7 +52,7 @@ void virt_show( const char *devnam ) {
     unsigned devlen, devsiz;
     struct VDEV *vp;
 
-    if ( devnam == NULL ) {
+    if( devnam == NULL ) {
         size_t maxd = sizeof( "Device" ) -1,
                maxp = sizeof( "File" ) -1,
                n;
@@ -61,7 +61,7 @@ void virt_show( const char *devnam ) {
             printf( " No virtual devices are assigned\n" );
             return;
         }
-        for ( vp = virt_device_list; vp != NULL; vp = vp->next ) {
+        for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
             n = strlen( vp->devnam );
             if( n > maxd )
                 maxd = n;
@@ -79,23 +79,23 @@ void virt_show( const char *devnam ) {
         for( n = 0; n < maxp; n++ ) putchar( '-' );
         putchar( '\n' );
 
-        for ( vp = virt_device_list; vp != NULL; vp = vp->next ) {
+        for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
             n = strlen( vp->path );
             printf( "  %-*s %.*s\n", (int)maxd, vp->devnam, (int)maxp,
                     (n > maxp)? vp->path+(n-maxp): vp->path );
         }
     } else {
         devlen = strlen( devnam );
-        for ( devsiz = 0; devsiz < devlen; devsiz++ ) {
-            if ( devnam[devsiz] == ':' ) {
+        for( devsiz = 0; devsiz < devlen; devsiz++ ) {
+            if( devnam[devsiz] == ':' ) {
                 break;
             }
         }
-        if ( devsiz == 0 ) {
+        if( devsiz == 0 ) {
             return;
         }
-        for ( vp = virt_device_list; vp != NULL; vp = vp->next ) {
-            if ( virt_compare( devsiz, (char *) devnam, vp->devnam ) == 0 ) {
+        for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
+            if( virt_compare( devsiz, (char *) devnam, vp->devnam ) == 0 ) {
                 printf( " %s => %s\n", vp->devnam, vp->path );
                 return;
             }
@@ -111,13 +111,13 @@ static int virt_compare( unsigned keylen, const char *keynam,
     register int cmp;
 
     cmp = 0;
-    while ( keylen-- > 0 ) {
+    while( keylen-- > 0 ) {
         cmp = toupper( *keynam++ ) - toupper( *devnam++ );
-        if ( cmp != 0 ) {
+        if( cmp != 0 ) {
             break;
         }
     }
-    if ( cmp == 0 && *devnam != '\0' && *devnam != ':' ) {
+    if( cmp == 0 && *devnam != '\0' && *devnam != ':' ) {
         cmp = -1;
     }
     return cmp;
@@ -133,16 +133,16 @@ char *virt_lookup( const char *devnam ) {
     struct VDEV *vp;
 
     devlen = strlen( devnam );
-    for ( devsiz = 0; devsiz < devlen; devsiz++ ) {
-        if ( devnam[devsiz] == ':' ) {
+    for( devsiz = 0; devsiz < devlen; devsiz++ ) {
+        if( devnam[devsiz] == ':' ) {
             break;
         }
     }
-    if ( devsiz == 0 ) {
+    if( devsiz == 0 ) {
         return NULL;
     }
-    for ( vp = virt_device_list; vp != NULL; vp = vp->next ) {
-        if ( virt_compare( devsiz, (char *) devnam, vp->devnam ) == 0 ) {
+    for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
+        if( virt_compare( devsiz, (char *) devnam, vp->devnam ) == 0 ) {
             return vp->path;
         }
     }
@@ -176,21 +176,22 @@ unsigned virt_device( char *devnam, char **vname ) {
         }
         path = p;
 
-        for ( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
+        for( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
             if( strcmp( (*vpp)->path, path ) == 0 ) {
                 printf( "%%ODS2-E-MAPPED, %s is in use on virtual drive %s\n", path, (*vpp)->devnam );
+                free( path );
                 return SS$_DEVMOUNT;
             }
         }
     }
     devlen = strlen( devnam );
 
-    for ( devsiz = 0; devsiz < devlen; devsiz++ ) {
-        if ( devnam[devsiz] == ':' ) {
+    for( devsiz = 0; devsiz < devlen; devsiz++ ) {
+        if( devnam[devsiz] == ':' ) {
             break;
         }
     }
-    if ( devsiz == 0 ) {
+    if( devsiz == 0 ) {
         free( path );
         return SS$_BADPARAM;
     }
@@ -216,21 +217,21 @@ static struct VDEV *virt_insert( const char *devnam, unsigned devsiz,
     struct VDEV *vp, **vpp, **here;
 
     here = NULL;
-    for ( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
-        if ( virt_compare( devsiz, (char *) devnam, (*vpp)->devnam ) < 0 ) {
+    for( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
+        if( virt_compare( devsiz, (char *) devnam, (*vpp)->devnam ) < 0 ) {
             here = vpp;
         }
     }
-    if ( here == NULL ) {
+    if( here == NULL ) {
         here = vpp;
     }
     vp = (struct VDEV *) malloc( sizeof( struct VDEV ) );
-    if ( vp == NULL ) {
+    if( vp == NULL ) {
         return NULL;
     }
     vp->devnam = (char *) malloc( devsiz + 1 );
     vp->path = (char *) malloc( (pathsiz = strlen( path )) + 1 );
-    if ( vp->devnam == NULL || vp->path == NULL ) {
+    if( vp->devnam == NULL || vp->path == NULL ) {
         free( vp->devnam );
         free( vp->path );
         free( vp );
@@ -251,8 +252,8 @@ static void virt_remove( const char *devnam, unsigned devsiz ) {
 
     struct VDEV *vp, **vpp;
 
-    for ( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
-        if ( virt_compare( devsiz, (char *) devnam, (*vpp)->devnam ) == 0 ) {
+    for( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
+        if( virt_compare( devsiz, (char *) devnam, (*vpp)->devnam ) == 0 ) {
             vp = *vpp;
             *vpp = (*vpp)->next;
             free( vp->devnam );

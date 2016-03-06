@@ -5,7 +5,7 @@
  *
  * Microsoft deprecates sprintf, but doesn't supply standard
  * replacement until very recent IDEs.
- * Microsoft doesn't like fopen.
+ * Microsoft doesn't like fopen, or strerror, or getcwd.
  * One needs to use a M$ call to translate system errors.
  *
  * Finding out about drive letter assignments is unique to windows.
@@ -18,12 +18,14 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <string.h>
 #endif
 
 #if defined(_MSC_VER) && _MSC_VER < 1900
 
-int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
-{
+/******************************************************************* c99_vsnprintf() */
+
+int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap) {
     int count = -1;
 
     if (size != 0)
@@ -34,8 +36,9 @@ int c99_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap)
     return count;
 }
 
-int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
-{
+/******************************************************************* c99_snprintf() */
+
+int c99_snprintf(char *outBuf, size_t size, const char *format, ...) {
     int count;
     va_list ap;
 
@@ -48,6 +51,8 @@ int c99_snprintf(char *outBuf, size_t size, const char *format, ...)
 #endif
 
 #ifdef _MSC_VER
+
+/******************************************************************* openf() */
 
 FILE *openf( const char *filename, const char *mode ) {
   errno_t err;
@@ -63,11 +68,24 @@ FILE *openf( const char *filename, const char *mode ) {
 
 #ifdef _WIN32
 
+/******************************************************************* ods2_strerror() */
+
+const char *ods2_strerror( int errn ) {
+    static char buf[256];
+
+    if( strerror_s( buf, sizeof( buf ), errn ) != 0 )
+        snprintf( buf, sizeof( buf ), "Untranslatable error %u", errn );
+
+    return buf;
+}
+
+/******************************************************************* w32_errstr() */
+
 TCHAR *w32_errstr( DWORD eno, ... ) {
     va_list ap;
     TCHAR *msg;
 
-    if( eno == 0 )
+    if( eno == NO_ERROR )
         eno = GetLastError();
     va_start(ap,eno);
 
@@ -80,6 +98,8 @@ TCHAR *w32_errstr( DWORD eno, ... ) {
     va_end(ap);
     return msg;
 }
+
+/******************************************************************* driveFromLetter() */
 
 char *driveFromLetter( const char *letter ) {
     DWORD rv = ERROR_INSUFFICIENT_BUFFER;

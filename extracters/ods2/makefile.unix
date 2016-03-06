@@ -9,7 +9,7 @@ CCFLAGS = -O4 -g
 # Include readline support
 
 DEFS = -DUSE_READLINE
-LDFLAGS = -lreadline
+LDFLAGS = -lreadline -ltermcap
 
 # Object file extension
 OBJ = .o

@@ -15,6 +15,8 @@
 
 #include "vmstime.h"
 
+#define RMS$_FACILITY 1
+
 #define RMS$_RTB 98728
 #define RMS$_EOF 98938
 #define RMS$_FNF 98962
@@ -170,10 +172,11 @@ struct NAM {
     void *nam$l_wcc;
     int nam$b_nop;
     int nam$l_fnb;
+    struct NAM *nam$l_rlf;
 };
 
 #ifdef RMS$INITIALIZE
-struct NAM cc$rms_nam = {0,0,0,0,0,0,0,0,0,0,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,0,0};
+struct NAM cc$rms_nam = {0,0,0,0,0,0,0,0,0,0,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,0,0,0,NULL};
 #else
 extern struct NAM cc$rms_nam;
 #endif
@@ -316,5 +319,7 @@ unsigned sys_erase(struct FAB *fab);
 unsigned sys_extend(struct FAB *fab);
 unsigned sys_setddir(struct dsc_descriptor *newdir,unsigned short *oldlen,
                      struct dsc_descriptor *olddir);
+
+unsigned sys_initialize(void);
 
 #endif /* #ifndef _RMS_H */

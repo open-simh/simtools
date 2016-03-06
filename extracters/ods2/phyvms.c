@@ -39,6 +39,7 @@
 #include <mntdef.h>
 #include <rms.h>                /* struct FAB */
 #include <ssdef.h>
+#include <stsdef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,15 +68,23 @@ unsigned sys$dassgn();
 #include <starlet.h>
 #endif
 
+#ifndef SS$_NOMOREDEV
+#define SS$_NOMOREDEV 2648
+#endif
+
+#ifndef EFN$C_ENF
+#define EFN$C_ENF 0 /* 128 in recent VMS */
+#endif
+
 #include "ods2.h"
 #include "phyio.h"
 #include "virtual.h"
 
 struct ITMLST {
-    unsigned short length;
-    unsigned short itmcod;
-    void *buffer;
-    unsigned long *retlen;
+    unsigned short  length;
+    unsigned short  itmcod;
+    void           *buffer;
+    unsigned short *retlen;
 };
 
 #define chk( sts )  { register chksts; \
@@ -83,9 +92,85 @@ struct ITMLST {
                           lib$stop( chksts ); \
                     }
 
+#define MSGID(sts) ((sts) & (STS$M_COND_ID|STS$M_SEVERITY))
+
 static unsigned init_count = 0;
 static unsigned read_count = 0;
 static unsigned write_count = 0;
+
+/*************************************************************** showdevs() */
+static void showdevs( void ) {
+    unsigned long status;
+    size_t max = 0;
+    int pass;
+
+    max = 0
+    for( pass = 0; pass < 2; pass++ ) {
+        unsigned long ctx[2] = { 0, 0 };
+        size_t col = 0;
+        unsigned short retlen, iosb[4];
+        char devnam[64+1],
+             dspnam[64+1];
+        struct dsc$descriptor_s retdsc = { sizeof( devnam ) -1,
+                                           DSC$K_DTYPE_T,
+                                           DSC$K_CLASS_S, devnam };
+        $DESCRIPTOR( searchdsc, "*" );
+        unsigned long devclass = DC$_DISK;
+        struct ITMLST scanlist[] = {
+            { sizeof( devclass ), DC$_DISK, &devclass, NULL },
+            { 0,                  0,        NULL,     NULL }
+        };
+        struct ITMLST dvilist[] = {
+            { sizeof( dspnam ) -1, DVI$_DISPLAY_DEVNAM, dspnam, &retlen },
+            { 0,                   0,                   NULL,   NULL }
+        };
+
+        while( 1 ) {
+            char *name;
+            size_t len;
+
+            status = sys$device_scan( &retdsc, &retlen,
+                                      &searchdsc, scanlist, &ctx );
+            if( MSGID(status) != SS$_NORMAL )
+                break;
+            name = devnam;
+            name[retlen] = '\0';
+            len = retlen;
+            status = sys$getdviw( EFN$C_ENF, 0, &retdsc, dvilist, iosb,
+                                  NULL, 0, NULL );
+            if( MSGID(status) == SS$_NORMAL ) {
+                name = dspnam;
+                dspnam[retlen] = '\0';
+                len = retlen;
+            }
+            if( pass == 0 ) {
+                if( len > max )
+                    max = len;
+                continue;
+            }
+            if( col + max > 75 ) {
+                putchar( '\n' );
+                col = 0;
+            }
+            col += 1+ max;
+
+            printf( " %-*s", (int)max, name );
+        }
+    }
+    switch( MSGID(status) ) {
+    case SS$_NOMOREDEV:
+        break;
+    case SS$_NOSUCHDEV:
+        printf( "No devices found\n" );
+    case SS$_NORMAL:
+        break;
+    default:
+        printf( "%%ODS2-W-ERRDEV, Error scanning devices: %s\n",
+                getmsg( status, MSG_TEXT ) );
+        break;
+    }
+    return;
+}
 
 /*************************************************************** phyio_show() */
 
@@ -96,13 +181,12 @@ void phyio_show( showtype_t type ) {
                 init_count, read_count, write_count );
         return;
     case SHOW_FILE64:
-        printf( "\nLarge ODS-2 image files (>2GB) are supported.\n" );
+        printf( "Large ODS-2 image files (>2GB) are %ssupported.\n",
+                (sizeof( off_t ) < 8)? "NOT ": "" );
         return;
     case SHOW_DEVICES:
-#if 0 /* VMS doesn't make listing devices easy */
         printf( " Physical devices\n" );
         showdevs();
-#endif
         return;
     default:
         abort();
@@ -178,6 +262,7 @@ unsigned phyio_init( struct DEV *dev ) {
         unsigned long devclass, cylinders, tracks, sectors;
         char devname[65];
         unsigned long devchar;
+        unsigned short iosb[4];
         struct ITMLST dvi_itmlst[7] = {
             { sizeof( devclass ),  DVI$_DEVCLASS,  &devclass,  NULL },
             { sizeof( devname ),   DVI$_ALLDEVNAM, &devname,   NULL },
@@ -191,7 +276,7 @@ unsigned phyio_init( struct DEV *dev ) {
         /*  Get some device information: device name, class, and mount status */
         devdsc.dsc$w_length  = strlen( dev->devnam );
         devdsc.dsc$a_pointer = dev->devnam;
-        sts = sys$getdviw( 0, 0, &devdsc, &dvi_itmlst, 0, 0, 0, 0 );
+        sts = sys$getdviw( EFN$C_ENF, 0, &devdsc, &dvi_itmlst, iosb, 0, 0, 0 );
         if ( !( sts & STS$M_SUCCESS ) ) {
             return sts;
         }
@@ -295,6 +380,9 @@ unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
             return SS$_PARITY;
         }
         if ( ( res = read( dev->handle, buffer, length ) ) != length ) {
+            if( res == 0 ) {
+                return SS$_ENDOFFILE;
+            }
             perror( "read " );
             printf( "read failed %d\n", res );
             return SS$_PARITY;

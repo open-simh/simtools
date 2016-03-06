@@ -20,11 +20,24 @@ FILE *openf( const char *filename, const char *mode );
 #endif
 
 #ifdef _WIN32
+#include <errno.h>
 #include <stdarg.h>
 #include <windows.h>
+#include <direct.h>
+#undef getcwd
+#define getcwd _getcwd
+#undef chdir
+#define chdir _chdir
+
+#undef strerror
+#define strerror(n) ods2_strerror(n)
+const char *ods2_strerror( errno_t errn );
 
 TCHAR *w32_errstr( DWORD eno, ... );
 char *driveFromLetter( const char *letter );
+
+#else /* Not WIN32 */
+#include <unistd.h>
 #endif
 
 #define UNUSED(x) (void)(x)

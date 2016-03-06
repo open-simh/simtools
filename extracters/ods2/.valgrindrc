@@ -1,0 +1,3 @@
+--memcheck:leak-check=yes
+--suppressions=valgrind_suppressions_readline
+--suppressions=valgrind_suppressions_ods2

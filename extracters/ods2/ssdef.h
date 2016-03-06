@@ -13,6 +13,8 @@
 #ifndef _SSDEF_H
 #define _SSDEF_H
 
+#define SYSTEM$_FACILITY 0
+
 #define SS$_NORMAL 1
 #define SS$_WASCLR 1
 #define SS$_WASSET 9
@@ -45,6 +47,7 @@
 #define SS$_NOSUCHFILE 2320
 #define SS$_NOMOREFILES 2352
 #define SS$_ITEMNOTFOUND 2640
+#define SS$_NOMOREDEV 2648
 #define SS$_NOSUCHVOL 3882
 #define SS$_NOTINSTALL 8212
 #define SS$_DEVNOTDISM 8628

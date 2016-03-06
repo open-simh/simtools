@@ -104,32 +104,38 @@
 #define _BSD_SOURCE
 #include <ctype.h>		/* isalpha(), isspace(), tolower()            */
 
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "version.h"
-#include "compat.h"
-#include "sysmsg.h"
-#include "phyio.h"
-#include "phyvirt.h"
 
-#ifdef _WIN32
-#include <Windows.h>
-#endif
+#include "version.h"
+
 #include "access.h"
+#include "compat.h"
 #include "descrip.h"
 #include "device.h"
 #include "direct.h"
 #include "ods2.h"
 #include "phyio.h"
+#include "phyvirt.h"
 #include "rms.h"
 #include "ssdef.h"
 #include "stsdef.h"
+#include "sysmsg.h"
+
+#if !defined( _WIN32 ) && !defined( VMS )
+#include <sys/types.h>
+#include <sys/wait.h>
+#else
+# ifdef _WIN32
+# include <process.h>
+# endif
+#endif
 
 #ifdef VMS
 #include <starlet.h>
-
 #else
 #include "vmstime.h"
 #endif
@@ -148,6 +154,14 @@
 #define FALSE ( 0 != 0 )
 #endif
 
+#if defined( _WIN32 ) && defined(_MSC_VER) && defined( DEBUG_BUILD ) && defined( USE_VLD )
+/* Normally done in the project file, but VLD is optional and I'd rather not provide
+ * instructions as they vary by IDE version.  See http://vld.codeplex.com/ if interested.
+ */
+#include "C:\\Program Files (x86)\\Visual Leak Detector\\include\\vld.h"
+#pragma comment (lib,"C:\\Program Files (x86)\\Visual Leak Detector\\lib\\Win32\\vld.lib")
+#endif
+
 #define MAXREC 32767
 #define PRINT_ATTR ( FAB$M_CR | FAB$M_PRN | FAB$M_FTN )
 
@@ -158,6 +172,7 @@
 #include <readline/history.h>
 #endif
 
+/******************************************************************* fgetline() */
 /* Read a line of input - unlimited length
  * Removes \n, returns NULL at EOF
  * Caller responsible for free()
@@ -170,7 +185,7 @@ static char *fgetline( FILE *stream, int keepnl ) {
     int c;
 
     while( (c = fgetc(stream)) != EOF && c != '\n' ) {
-        if( idx + (keepnl != 0) +1 > bufsize ) { /* Allow space for char + (optional \n) + \0 */
+        if( idx + (keepnl != 0) +2 > bufsize ) { /* In buf + char + (optional \n) + \0 */
             char *nbuf;
             bufsize += xpnsize;
             nbuf = (char *) realloc( buf, bufsize );
@@ -202,11 +217,12 @@ static char *fgetline( FILE *stream, int keepnl ) {
     return buf;
 }
 
+/******************************************************************* keycomp() */
 /* keycomp: routine to compare parameter to a keyword - case insensitive! */
 
 static int keycomp(const char *param, const char *keywrd) {
     while (*param != '\0') {
-        if (tolower(*param++) != *keywrd++) return 0;
+        if( tolower(*param++) != tolower(*keywrd++) ) return 0;
     }
     return 1;
 }
@@ -217,11 +233,12 @@ static int keycomp(const char *param, const char *keywrd) {
  */
 #define NV NOVAL, NULL
 #define KV(list) KEYVAL, list
+#define CV(list) KEYCOL, list
 struct qual {
     const char *name;
     int set;
     int clear;
-    enum qualtype { NOVAL, KEYVAL } qtype;
+    enum qualtype { NOVAL, KEYVAL, KEYCOL } qtype;
     void *arg;
     const char *helpstr;
 };
@@ -261,6 +278,7 @@ static void qualhelp( int par, struct qual *qtable );
 static int vms_qual = 1;
 static int verify_cmd = 1;
 
+/******************************************************************* checkquals() */
 /* checkquals: Given valid qualifier definitions, process qualifer
  * list from a command left to right.  Also handles parameters and
  * qualifier values (/Qual=value).
@@ -322,6 +340,7 @@ static int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
                     *nvp++ = '\0';
                 switch( qp->qtype ) {
                 case KEYVAL:
+                case KEYCOL:
                     result = checkquals( result, (struct qual *)qp->arg, -1, &qv );
                     if( result == -1 )
                         return result;
@@ -335,6 +354,9 @@ static int checkquals(int result, struct qual qualset[],int qualc,char *qualv[])
     }
     return result;
 }
+
+/******************************************************************* dodir() */
+/*********************************************************** prvmstime() */
 
 static int prvmstime(VMSTIME vtime, const char *sfx) {
     int sts = 0;
@@ -357,6 +379,8 @@ static int prvmstime(VMSTIME vtime, const char *sfx) {
         printf( "%s", sfx );
     return sts;
 }
+
+/*********************************************************** pwrap() */
 
 static void pwrap( int *pos, const char *fmt, ... ) {
     char pbuf[200], *p, *q;
@@ -392,6 +416,7 @@ static void pwrap( int *pos, const char *fmt, ... ) {
     }
 }
 
+/*********************************************************** dirtotal() */
 
 #define dir_extra (dir_date | dir_fileid | dir_owner | dir_prot | dir_size)
 #define  dir_date        (1 <<  0)
@@ -485,6 +510,8 @@ static void dirtotal( int options, int size, int alloc ) {
                             ((options & dir_allocated) && alloc == 1))? "" : "s");
     return;
 }
+
+/************************************************************ dodir() */
 
 static unsigned dodir(int argc,char *argv[],int qualc,char *qualv[]) {
     char res[NAM$C_MAXRSS + 1],rsa[NAM$C_MAXRSS + 1];
@@ -1412,7 +1439,7 @@ static unsigned dostats( void ) {
 
 /******************************************************************* doshow() */
 
-/* show: version */
+/*********************************************************** show_version() */
 
 #define MNAMEX(n) #n
 #define MNAME(n) MNAMEX(n)
@@ -1431,23 +1458,26 @@ static void show_version( void ) {
 # endif
     printf( " direct SCSI access support");
 #endif
-    printf( "\n\n" );
+    printf( "\n " );
+    phyio_show( SHOW_FILE64 );
+    putchar( '\n' );
     return;
 }
 
-/* show: the show command */
+/*********************************************************** doshow() */
 
-static struct qual showkwds[] = { {"default",         0, 0, NV, "Default directory"},
-                                  {"devices",         1, 0, NV, "Devices"},
-                                  {"qualifier_style", 2, 0, NV, "Qualifier style (Unix, VMS)" },
-                                  {"statistics",      3, 0, NV, "Debugging statistics", },
-                                  {"time",            4, 0, NV, "Time"},
-                                  {"verify",          5, 0, NV, "Command file echo" },
-                                  {"version",         6, 0, NV, "Version"},
-                                  {"volumes",         7, 0, NV, "Mounted volume information" },
+static struct qual showkwds[] = { {"cwd",             0, 0, NV, "Working directory on local system"},
+                                  {"default",         1, 0, NV, "Default directory on VMS volume"},
+                                  {"devices",         2, 0, NV, "Devices"},
+                                  {"qualifier_style", 3, 0, NV, "Qualifier style (Unix, VMS)" },
+                                  {"statistics",      4, 0, NV, "Debugging statistics"},
+                                  {"time",            5, 0, NV, "Time"},
+                                  {"verify",          6, 0, NV, "Command file echo" },
+                                  {"version",         7, 0, NV, "Version"},
+                                  {"volumes",         8, 0, NV, "Mounted volume information" },
                                   {NULL,              0, 0, NV, NULL }
 };
-static struct param showpars[] = { {"item_name", REQ, KEYWD, PA(showkwds), NULL },
+static struct param showpars[] = { {"item_name", REQ, KEYWD, PA(showkwds), "" },
                                    {NULL,        0,   0,     NOPA,         NULL }
 };
 
@@ -1463,6 +1493,29 @@ unsigned doshow(int argc,char *argv[],int qualc,char *qualv[]) {
     default:
         return SS$_BADPARAM;
     case 0: {
+        size_t size = 32;
+        char *buf = NULL;
+        while( 1 ) {
+            char *nbuf;
+            nbuf = (char *)realloc( buf, size );
+            if( nbuf == NULL ) {
+                free( buf );
+                return SS$_INSFMEM;
+            }
+            buf = nbuf;
+            if( getcwd( buf, size ) != NULL )
+                break;
+            if( errno != ERANGE ) {
+                perror( "getcwd" );
+                return SS$_BADPARAM;
+            }
+            size *= 2;
+        }
+        printf( " Current working directory is %s\n", buf );
+        free( buf );
+        return SS$_NORMAL;
+    }
+    case 1: {
         int sts;
         unsigned short curlen;
         char curdir[NAM$C_MAXRSS + 1];
@@ -1478,16 +1531,16 @@ unsigned doshow(int argc,char *argv[],int qualc,char *qualv[]) {
         }
         return sts;
     }
-    case 1:
+    case 2:
         phyio_show( SHOW_DEVICES );
         virt_show( NULL );
         return SS$_NORMAL;
-    case 2:
+    case 3:
         printf ( "  Qualifier style: %s\n", vms_qual? "/VMS": "-unix" );
         return SS$_NORMAL;
-    case 3:
+    case 4:
         return dostats();
-    case 4: {
+    case 5: {
         unsigned sts;
         char timstr[24];
         unsigned short timlen;
@@ -1504,56 +1557,66 @@ unsigned doshow(int argc,char *argv[],int qualc,char *qualv[]) {
         }
     }
         return SS$_NORMAL;
-    case 5:
+    case 6:
         printf( "Command file verification is %s\n", (verify_cmd? "on": "off") );
         return SS$_NORMAL;
-    case 6:
+    case 7:
         show_version();
         return SS$_NORMAL;
-    case 7:
+    case 8:
         show_volumes();
         return SS$_NORMAL;
     }
     return SS$_NORMAL;
 }
 
-/******************************************************************* setdef() */
+/******************************************************************* doset() */
+/*********************************************************** setdef() */
 
-static unsigned setdef_count = 0;
+static int default_set = FALSE;
 
-static unsigned setdef( char *newdef )
-{
+static unsigned setdef( char *newdef ) {
     register unsigned sts;
     struct dsc_descriptor defdsc;
 
     defdsc.dsc_a_pointer = (char *) newdef;
-    defdsc.dsc_w_length = strlen( defdsc.dsc_a_pointer );
+    defdsc.dsc_w_length = (unsigned short)strlen( defdsc.dsc_a_pointer );
     sts = sys_setddir( &defdsc, NULL, NULL );
     if ( sts & STS$M_SUCCESS ) {
-        setdef_count++;
+        default_set = TRUE;
     } else {
         printf( "%%ODS2-E-SETDEF, Error %s setting default to %s\n", getmsg(sts, MSG_TEXT), newdef );
     }
     return sts;
 }
 
-/******************************************************************** doset() */
+static unsigned setcwd( char *newdef ) {
+    if( chdir( newdef ) != 0 ) {
+        printf( "%%ODS2-W-SETDEF, Error %s setting cwd to %s\n",
+                strerror( errno ), newdef );
+        return SS$_BADPARAM;
+    }
+    return SS$_NORMAL;
+}
+
+/************************************************************ sethelp() */
 
 static hlpfunc_t sethelp;
 
-static struct qual setkwds[] = { {"default",              0, 0, NV, "Default directory"},
+static struct qual setkwds[] = { {"cwd",                  0, 0, NV, "Working directory on local system"},
                                  {"directory_qualifiers", 1, 0, NV, "Default qualifiers for DIRECTORY command" },
-                                 {"qualifier_style",      2, 0, NV, "Qualifier style (Unix, VMS)" },
-                                 {"verify",               3, 0, NV, "-Display commands in indirect files" },
-                                 {"noverify",             4, 0, NV, NULL },
+                                 {"default",              2, 0, NV, "Default directory on VMS volume"},
+                                 {"qualifier_style",      3, 0, NV, "Qualifier style (Unix, VMS)"},
+                                 {"verify",               4, 0, NV, "-Display commands in indirect files"},
+                                 {"noverify",             5, 0, NV, NULL },
                                  {NULL,                   0, 0, NV, NULL }
 };
 static struct qual setqskwds[] = {{"unix", 1, 0, NV, "Unix style options, '-option'"},
                                   {"vms",  2, 0, NV, "VMS style qualifiers, '/qualifier'"},
                                   {NULL,   0, 0, NV, NULL }
 };
-static struct param setpars[] = { {"item_name", REQ, KEYWD, PA(setkwds),         NULL },
-                                  {"value"    , CND, KEYWD, sethelp, setqskwds,  NULL },
+static struct param setpars[] = { {"item_name", REQ, KEYWD, PA(setkwds),         "" },
+                                  {"value"    , CND, KEYWD, sethelp, setqskwds,  "" },
                                   {NULL,        0,   0,      NOPA,               NULL },
 };
 
@@ -1575,21 +1638,25 @@ static const char * sethelp( struct CMDSET *cmd, struct param *p, int argc, char
         return NULL;
     switch( par ) {
     case 0:
-        p->helpstr = "default directory on volume - ";
-        p->ptype = VMSFS;
+        p->helpstr = "working directory for local files";
+        p->ptype = STRING;
         break;
     case 1:
+        p->helpstr = "default directory on volume";
+        p->ptype = VMSFS;
+        break;
+    case 2:
         p->helpstr = "directory qualifier name ";
         p->ptype = KEYWD;
         p->arg = dirquals;
         break;
-    case 2:
+    case 3:
         p->helpstr = "style ";
         p->ptype = KEYWD;
         p->arg = setqskwds;
         break;
-    case 3:
     case 4:
+    case 5:
         p->ptype = NONE;
         break;
 
@@ -1598,6 +1665,8 @@ static const char * sethelp( struct CMDSET *cmd, struct param *p, int argc, char
     }
     return NULL;
 }
+
+/*********************************************************** doset() */
 
 static unsigned doset(int argc,char *argv[],int qualc,char *qualv[]) {
     int parnum;
@@ -1611,11 +1680,12 @@ static unsigned doset(int argc,char *argv[],int qualc,char *qualv[]) {
     default:
         return SS$_BADPARAM;
     case 0: /* default */
+    case 2: /* current working directory */
         if( qualc ) {
             printf( "%%ODS2-E-NOQUAL, No qualifiers are permitted\n" );
             return 0;
         }
-        return setdef( argv[2] );
+        return (parnum == 0)? setdef( argv[2] ) : setcwd( argv[2] );
     case 1:{ /* directory_qualifiers */
         int options = checkquals(dir_default,dirquals,qualc,qualv);
         if( options == -1 )
@@ -1623,7 +1693,7 @@ static unsigned doset(int argc,char *argv[],int qualc,char *qualv[]) {
         dir_defopt = options;
         return 1;
     }
-    case 2: { /* qualifier_style */
+    case 3: { /* qualifier_style */
         int par = checkquals (0,setqskwds,1,argv+2);
         if( par == -1 )
             return SS$_BADPARAM;
@@ -1639,16 +1709,16 @@ static unsigned doset(int argc,char *argv[],int qualc,char *qualv[]) {
         }
         return 1;
     }
-    case 3:
+    case 4:
         verify_cmd = 1;
         return 1;
-    case 4:
+    case 5:
         verify_cmd = 0;
         return 1;
     }
 }
 
-/* The bits we need when we don't have real VMS routines underneath... */
+/******************************************************************* dodismount() */
 
 static struct param dmopars[] = { {"drive_letter", REQ, STRING, NOPA, "Drive containing volume to dismount", },
                                   {NULL,           0,   0,      NOPA, NULL }
@@ -1678,7 +1748,10 @@ unsigned dodismount(int argc,char *argv[],int qualc,char *qualv[]) {
 #error MOU_WRITE != 1
 #endif
 
-static struct qual mouquals[] = { {"image",    MOU_VIRTUAL, 0,         NV, "Mount a disk image file", },
+#define DT_NAME "drive_type"
+
+static struct qual mouquals[] = { {DT_NAME, 0, MOU_DEVTYPE, CV(NULL), "Drive type (DEC model name) "},
+                                  {"image",    MOU_VIRTUAL, 0,         NV, "Mount a disk image file", },
                                   {"readonly", 0,           MOU_WRITE, NV, "Only allow reading from volume"},
                                   {"virtual",  MOU_VIRTUAL, 0,         NV, NULL, },
                                   {"write",    MOU_WRITE,   0,         NV, "Allow writing to volume", },
@@ -1690,6 +1763,10 @@ static struct param moupars[] = { {"volumes", REQ, LIST, NOPA,
                                   {"labels", OPT, LIST, NOPA, "volume labels in RVN order separated by comma" },
                                   { NULL,    0,   0,    NOPA, NULL }
 };
+
+/******************************************************************* domount() */
+
+/*********************************************************** parselist() */
 
 static int parselist( char ***items, size_t min, char *arg, const char *label ) {
     size_t n = 0, i;
@@ -1737,7 +1814,9 @@ static int parselist( char ***items, size_t min, char *arg, const char *label ) 
     return (int)n;
 }
 
-static unsigned domount(int argc,char *argv[],int qualc,char *qualv[]) {
+/*********************************************************** domount() */
+
+static unsigned domount( int argc,char *argv[],int qualc,char *qualv[] ) {
     int sts = 1,devices = 0;
     char **devs = NULL, **labs = NULL;
 
@@ -1760,7 +1839,7 @@ static unsigned domount(int argc,char *argv[],int qualc,char *qualv[]) {
         struct VCB *vcb;
         sts = mount( options | MOU_LOG, devices, devs, labs, &vcb );
         if (sts & STS$M_SUCCESS) {
-            if (setdef_count == 0) {
+            if( !default_set ) {
                 char *colon, *buf;
                 size_t len;
 
@@ -1770,7 +1849,8 @@ static unsigned domount(int argc,char *argv[],int qualc,char *qualv[]) {
                     perror( "malloc" );
                 } else {
                     colon = strchr( vcb->vcbdev[0].dev->devnam, ':' );
-                    if( colon != NULL ) len = (size_t)(colon - vcb->vcbdev[0].dev->devnam);
+                    if( colon != NULL )
+                        len = (size_t)(colon - vcb->vcbdev[0].dev->devnam);
                     memcpy( buf, vcb->vcbdev[0].dev->devnam, len );
                     memcpy( buf+len, ":[000000]", sizeof( ":[000000]" ) );
                     setdef(buf);
@@ -1788,7 +1868,67 @@ static unsigned domount(int argc,char *argv[],int qualc,char *qualv[]) {
     return sts;
 }
 
+/******************************************************************* dospawn() */
+
+static unsigned dospawn( int argc,char *argv[],int qualc,char *qualv[] ) {
+#ifdef VMS
+    unsigned sts;
+
+    UNUSED( argc );
+    UNUSED( argv );
+    UNUSED( qualc );
+    UNUSED( qualv );
+
+    sts = lib$spawn( 0,0,0,0,0,0,0,0,0,0,0,0,0 );
+    return sts;
+#else
+# ifdef _WIN32
+    UNUSED( argc );
+    UNUSED( argv );
+    UNUSED( qualc );
+    UNUSED( qualv );
+
+    if( system( "cmd" ) == -1 ) {
+        perror( "cmd" );
+        return SS$_NOSUCHFILE;
+    }
+    return SS$_NORMAL;
+# else
+    char *shell, *p;
+    pid_t pid;
+
+    UNUSED( argc );
+    UNUSED( argv );
+    UNUSED( qualc );
+    UNUSED( qualv );
+
+    if( (shell = getenv( "SHELL" )) == NULL )
+        shell = "/bin/sh";
+    if( (p = strrchr( shell, '/')) == NULL )
+        p = shell;
+    else
+        p++;
+
+    if( (pid = fork()) == 0 ) {
+        execlp( shell, p, (char *)NULL );
+        perror( "%s" );
+        exit(EXIT_FAILURE);
+    }
+    if( pid == -1 ) {
+        perror( shell );
+        return SS$_NOSUCHFILE;
+    }
+    waitpid( pid, NULL, 0 );
+
+    return SS$_NORMAL;
+# endif
+#endif
+
+}
+
 /******************************************************************* dohelp() */
+
+/*********************************************************** cmdhelp() */
 
 static void cmdhelp( struct CMDSET *cmdset ) {
     struct CMDSET *cmd;
@@ -1809,10 +1949,12 @@ static void cmdhelp( struct CMDSET *cmdset ) {
     printf( "\n" );
 }
 
+/*********************************************************** cmdhelp() */
+
 static void qualhelp( int par, struct qual *qtable ) {
     struct qual *q;
     int n = 0;
-    size_t max = 0;
+    size_t max = 0, col = 4;
 
     if( par < 0 )
         max = -par;
@@ -1838,14 +1980,28 @@ static void qualhelp( int par, struct qual *qtable ) {
             if( *q->helpstr == '-' )
                 switch( q->qtype ) {
                 case NOVAL:
-                    printf( NOSTR "%-*s - %s\n",
-                            (int) (max-NOSTR_LEN), q->name, q->helpstr+1 );
+                    if( *q->helpstr ) {
+                        printf( NOSTR "%-*s - %s\n",
+                                (int) (max-NOSTR_LEN), q->name, q->helpstr+1 );
+                        break;
+                    }
+                    if( col + max > 50 ) {
+                        printf( "\n        " );
+                        col = 8;
+                    } else {
+                        while( col < 8 ) {
+                            putchar( ' ' ); col++;
+                        }
+                    }
+                    printf( "%-*s", (int) max, q->name );
+                    col += max;
                     break;
                 case KEYVAL:
+                case KEYCOL:
                     printf( NOSTR "%s=%-*s - %s\n",
                             q->name, (int) (max-(NOSTR_LEN+strlen(q->name)+1)), "",
                             q->helpstr+1 );
-                    qualhelp( -(int)max, (struct qual *)q->arg );
+                    qualhelp( q->qtype == KEYCOL? 1 : -(int)max, (struct qual *)q->arg );
                     break;
                 default:
                     abort();
@@ -1853,12 +2009,26 @@ static void qualhelp( int par, struct qual *qtable ) {
             else
                 switch( q->qtype ) {
                 case NOVAL:
-                    printf("%-*s - %s\n", (int) max, q->name, q->helpstr );
+                    if( *q->helpstr ) {
+                        printf("%-*s - %s\n", (int) max, q->name, q->helpstr );
+                        break;
+                    }
+                    if( col + max > 50 ) {
+                        printf( "\n        " );
+                        col = 8;
+                    } else {
+                        while( col < 8 ) {
+                            putchar( ' ' ); col++;
+                        }
+                    }
+                    printf( "%-*s", (int) max, q->name );
+                    col += max;
                     break;
                 case KEYVAL:
+                case KEYCOL:
                     printf( "%s=%-*s - %s\n", q->name, (int)(max-strlen(q->name)+1), "",
                             q->helpstr );
-                    qualhelp( -(int)max, (struct qual *)q->arg );
+                    qualhelp( q->qtype == KEYCOL? 1 : -(int)max, (struct qual *)q->arg );
                     break;
                 default:
                     abort();
@@ -1870,6 +2040,8 @@ static void qualhelp( int par, struct qual *qtable ) {
 }
 #undef NOSTR
 #undef NOSTR_LEN
+
+/*********************************************************** parhelp() */
 
 static void parhelp( struct CMDSET *cmd, int argc, char **argv) {
     struct param *p;
@@ -1888,14 +2060,14 @@ static void parhelp( struct CMDSET *cmd, int argc, char **argv) {
         size_t max = 0;
 
         for( p = ptable; p->name != NULL; p++ ) {
-            if( 1||p->helpstr ) {
+            if( p->helpstr ) {
                 size_t len = strlen(p->name);
                 if( len > max )
                     max = len;
             }
         }
         for( p = ptable; p->name != NULL; p++ ) {
-            if(1|| p->helpstr ) {
+            if( p->helpstr ) {
                 size_t len = strlen(p->name);
                 if( !col ) {
                     printf( "  Parameters:\n    " );
@@ -1913,7 +2085,8 @@ static void parhelp( struct CMDSET *cmd, int argc, char **argv) {
                 col += len;
             }
         }
-        printf( "\n\n  Type help PARAMETER for more about each parameter.\n" );
+        printf( "\n\n  Type help %s PARAMETER for more about each parameter.\n",
+                cmd->name );
         return;
     }
 
@@ -1968,13 +2141,15 @@ static void parhelp( struct CMDSET *cmd, int argc, char **argv) {
     return;
 }
 
+/*********************************************************** dohelp() */
 /* help: Display help guided by command table. */
-#define NCMD 16
+
+#define NCMD 17
 static struct CMDSET cmdset[NCMD+1];
 
-static struct param helppars[] = { {"command",   OPT, CMDNAM, PA(cmdset),         NULL },
-                                   {"parameter", OPT, STRING, NOPA,               NULL },
-                                   {"value",     OPT, STRING, NOPA,               NULL },
+static struct param helppars[] = { {"command",   OPT, CMDNAM, PA(cmdset),         "" },
+                                   {"parameter", OPT, STRING, NOPA,               "" },
+                                   {"value",     OPT, STRING, NOPA,               "" },
                                    {NULL,        0,   0,      NOPA,               NULL },
 };
 
@@ -1983,19 +2158,20 @@ static unsigned dohelp(int argc,char *argv[],int qualc,char *qualv[]);
 
 static struct CMDSET cmdset[NCMD+1] = {
     { "copy",      docopy,    0,copyquals,copypars,   "Copy a file from VMS to host file", },
-    { "import",    doimport,  0,NULL,     importpars, "Copy a file from host to VMS", },
     { "delete",    dodelete,  0,delquals, delpars,    "Delete a VMS file", },
     { "difference",dodiff,    0,NULL,     diffpars,   "Compare VMS file to host file", },
     { "directory", dodir,     0,dirquals,dirpars,     "List directory of VMS files", },
+    { "dismount",  dodismount,0,NULL,     dmopars,    "Dismount a VMS volume", },
     { "exit",      NULL,      2,NULL,     NULL,       "Exit ODS2", },
     { "extend",    doextend,  0,NULL,     extendpars, NULL },
     { "help",      dohelp,    0,NULL,     helppars,   "Obtain help on a command", },
-    { "quit",      NULL,      2,NULL,     NULL,       "Exit ODS-2", },
-    { "show",      doshow,    0,NULL,     showpars,   "Display state", },
-    { "search",    dosearch,  0,NULL,     searchpars, "Search VMS file for a string", },
-    { "set",       doset,     0,NULL,    setpars,     "Set PARAMETER - set HELP for list", },
-    { "dismount",  dodismount,0,NULL,     dmopars,    "Dismount a VMS volume", },
+    { "import",    doimport,  0,NULL,     importpars, "Copy a file from host to VMS", },
     { "mount",     domount,   0,mouquals, moupars,    "Mount a VMS volume", },
+    { "quit",      NULL,      2,NULL,     NULL,       "Exit ODS-2", },
+    { "search",    dosearch,  0,NULL,     searchpars, "Search VMS file for a string", },
+    { "set",       doset,     0,NULL,     setpars,     "Set PARAMETER - set HELP for list", },
+    { "show",      doshow,    0,NULL,     showpars,   "Display state", },
+    { "spawn",     dospawn,   0,NULL,     NULL,       "Open a command subprocess", },
     { "test",      dotest,    0,NULL,     testpars,   NULL },
     { "type",      dotype,    0,NULL,     typepars,   "Display a VMS file on the terminal", },
     { NULL,        NULL,      0,NULL,     NULL, NULL } /* ** END MARKER ** */
@@ -2064,15 +2240,6 @@ static unsigned dohelp(int argc,char *argv[],int qualc,char *qualv[]) {
     }
     printf( "%s: command not found\n", argv[1] );
     return 0;
-
-    printf("  set_default type\n");
-    printf(" Example:-\n    $ mount e:\n");
-    printf("    $ search e:[vms_common.decc*...]*.h rms$_wld\n");
-    printf("    $ set default e:[sys0.sysmgr]\n");
-    printf("    $ copy *.com;-1 c:\\*.*\n");
-    printf("    $ directory/file/size/date [-.sys*...].%%\n");
-    printf("    $ exit\n");
-    return 1;
 }
 
 /*************************************************************** cmdexecute() */
@@ -2142,7 +2309,7 @@ static int cmdexecute( int argc, char *argv[], int qualc, char *qualv[] ) {
 /* cmdsplit: break a command line into its components */
 
 /*
- * New feature for Unix: '//' or '--' stops qualifier parsing.
+ * Feature for Unix: '//' or '--' stops qualifier parsing.
  * This enables us to copy to Unix directories with VMS style /qualifiers.
  *     copy /bin // *.com /tmp/ *
  * is split into argv[0] -> "*.com" argv[1] -> "/tmp/ *" qualv[0]-> "/bin"
@@ -2156,59 +2323,70 @@ static int cmdsplit(char *str) {
     char *sp = str;
     int i;
     char q = vms_qual? '/': '-';
-    for (i = 0; i < MAXITEMS; i++) argv[i] = qualv[i] = "";
-    while (*sp != '\0') {
-        while (*sp == ' ') sp++;
-        if (*sp != '\0') {
-            if (*sp == q) {
-                *sp++ = '\0';
-                if (*sp == q) {
-                      sp++;
-                      q = '\0';
-                      continue;
-              }
-                if( qualc >= MAXITEMS ) {
-                    printf( "%%ODS2-E-CMDERR, Too many qualifiers specified\n" );
-                    return 0;
+
+    for( i = 0; i < MAXITEMS; i++ ) argv[i] = qualv[i] = "";
+
+    while( *sp != '\0' ) {
+        while( *sp == ' ' ) sp++;
+        if( *sp == '\0' )
+            break;
+
+        if( *sp == q ) {                             /* Start of qualifier */
+            *sp++ = '\0';                            /* Terminate previous word */
+            if (*sp == q) {                          /* qq = end of qualifiers */
+                sp++;
+                q = '\0';
+                continue;
+            }
+            if( qualc >= MAXITEMS ) {
+                printf( "%%ODS2-E-CMDERR, Too many qualifiers specified\n" );
+                return 0;
+            }
+            qualv[qualc++] = sp;
+        } else {                                     /* New argument */
+            if( argc >= MAXITEMS ) {
+                printf( "%%ODS2-E-CMDERR, Too many arguments specified\n" );
+                return 0;
+            }
+            argv[argc++] = sp;
+            if( *sp == '"' ) {
+                ++argv[argc-1];
+                for( ++sp; *sp && (*sp != '"' || sp[1] == '"'); sp++ ) {
+                    if( *sp == '"' )                 /* Interior "" => " */
+                        memmove( sp, sp+1, strlen(sp+1)+1 );
                 }
-                qualv[qualc++] = sp;
-            } else {
-                if( argc >= MAXITEMS ) {
-                    printf( "%%ODS2-E-CMDERR, Too many arguments specified\n" );
-                    return 0;
-                }
-                argv[argc++] = sp;
-                if( *sp == '"' ) {
-                    ++argv[argc-1];
-                    for( ++sp; *sp && (*sp != '"' || sp[1] == '"'); sp++ ) {
-                        if( *sp == '"' )
-                            memmove( sp, sp+1, strlen(sp+1)+1 );
-                    }
-                    if( *sp == '"' ) {
-                        *sp++ = '\0';
-                        if( *sp && *sp != ' ' ) {
-                            printf( "%%ODS2-E-CMDERR, Unterminated string\n" );
-                            return 0;
-                        }
-                    } else {
+                if( *sp == '"' ) {                   /* Ending " of string */
+                    *sp++ = '\0';
+                    if( *sp && *sp != ' ' ) {        /* Something following */
                         printf( "%%ODS2-E-CMDERR, Unterminated string\n" );
                         return 0;
                     }
-                    continue;
+                } else {
+                    printf( "%%ODS2-E-CMDERR, Unterminated string\n" );
+                    return 0;
                 }
-            }
-            while (*sp != ' ' && *sp != q && *sp != '\0') sp++;
-            if (*sp == '\0') {
-                break;
-            } else {
-                if (*sp != q) *sp++ = '\0';
-            }
+                continue;
+            } /* Quoted string */
         }
+
+        /* Find end of atom */
+
+        while( !(*sp == '\0' || *sp == ' ' || *sp == q) ) sp++;
+        if (*sp == '\0')
+            break;
+        if( *sp == ' ' )
+            *sp++ = '\0';
     }
 
-    if (argc > 0) return cmdexecute(argc,argv,qualc,qualv);
+    if( argc > 0 )
+        return cmdexecute( argc, argv, qualc, qualv );
+
     return 1;
 }
+
+/******************************************************************* main() */
+
+/*********************************************************** getcmd() */
 
 #ifdef VMS
 static char *getcmd( char *inp, size_t max, char *prompt ) {
@@ -2242,6 +2420,7 @@ static char *getcmd( char *inp, size_t max, char *prompt ) {
 }
 #endif /* VMS */
 
+/*********************************************************** main() */
 /* main: the simple mainline of this puppy... */
 
 /*
@@ -2285,10 +2464,43 @@ int main( int argc,char *argv[] ) {
         history_truncate_file( hfname, 200 );
         stifle_history( 200 );
         read_history( hfname );
-    } else {
-        hfname = NULL;
     }
 #endif
+    sts = sys_initialize();
+    if( !(sts & STS$M_SUCCESS) ) {
+        printf( "Unable to initialize library: %s\n", getmsg( sts, MSG_TEXT ) );
+        exit(EXIT_FAILURE);
+    }
+    { /* Build parser keyword list from disk table entries */
+        struct qual *qp, *kp = NULL;
+        struct disktype * dp;
+        size_t n = 0;
+
+        for( dp = disktype; dp->name != NULL; dp++ )
+            ;
+        n = (size_t) (dp - disktype);
+        kp = (struct qual *)calloc( n+1,  sizeof( struct qual ) );
+        if( kp == NULL ) {
+            perror( "malloc" );
+            exit( EXIT_FAILURE );
+        }
+        for( qp = mouquals; qp->name != NULL; qp++ )
+            if( !strcmp( qp->name, DT_NAME ) )
+                break;
+        qp->arg = kp;
+
+        for( dp = disktype; dp->name != NULL; dp++ ) {
+            kp->name = dp->name;
+            kp->set = (int)((dp-disktype) << MOU_V_DEVTYPE);
+            kp->clear = MOU_DEVTYPE;
+            kp->qtype = NOVAL;
+            if( dp != disktype )
+                kp->helpstr = "";
+            kp++;
+        }
+        if( (((unsigned)(dp-disktype)) << MOU_V_DEVTYPE) & ~MOU_DEVTYPE )
+            abort(); /* MOU_DEVTYPE isn't wide enough for the max index */
+    }
 
     if( argc > 1 ) {
         int i, l = 0;
@@ -2327,6 +2539,10 @@ int main( int argc,char *argv[] ) {
                 *p = '\0';
                 i += strlen( ptr ) +1;
             }
+#ifdef USE_READLINE
+            if( ptr != NULL && *ptr )
+                add_history( ptr );
+#endif
         }
         if( ptr == NULL ) {
             if (atfile != NULL) {
@@ -2404,18 +2620,30 @@ int main( int argc,char *argv[] ) {
         }
     } /* while 1 */
 
+    free( command_line );
+
     if( rl != NULL ) {
         free( rl );
     }
 #ifdef USE_READLINE
     if( hfname != NULL ) {
         write_history( hfname );
+        clear_history();
     }
+    wordfree( &wex );  /* hfname points into wex and should not be free()d */
 #endif
-    if (atfile != NULL) fclose(atfile);
-#ifdef VMS
-    return 1;
-#else
-    return 0;
-#endif
+    if (atfile != NULL)
+        fclose(atfile);
+
+    {
+        struct qual *qp;
+
+        for( qp = mouquals; qp->name != NULL; qp++ )
+            if( !strcmp( qp->name, DT_NAME ) ) {
+                free( qp-> arg );
+                qp->arg = NULL;
+                break;
+            }
+    }
+    exit( EXIT_SUCCESS );
 }

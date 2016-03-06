@@ -37,6 +37,7 @@
 #include "ssdef.h"
 #include "stsdef.h"
 #include "compat.h"
+#include "sysmsg.h"
 
 #ifndef TRUE
 #define TRUE ( 0 == 0 )
@@ -455,6 +456,7 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                                        wcc->wcd_reslen - 6,".DIR;1",6);
                         } else {
                             sts = RMS$_NMF;
+                            cleanup_wcf(&wccfile);
                             break;      /* giveup */
                         }
                     }
@@ -753,7 +755,13 @@ unsigned do_parse(struct FAB *fab,struct WCCFILE **wccret)
     }
     if (wccret != NULL) *wccret = wccfile;
     if (nam != NULL) {
-        nam->nam$l_wcc = wccfile;
+        if( (nam->nam$b_nop & NAM$M_SYNCHK) &&
+            !fab->fab$b_dns && !nam->nam$l_rlf ) {
+            cleanup_wcf(&wccfile);
+            if( wccret ) *wccret = NULL;
+        } else {
+            nam->nam$l_wcc = wccfile;
+        }
     }
     return SS$_NORMAL;
 }
@@ -795,14 +803,21 @@ unsigned sys_setddir(struct dsc_descriptor *newdir,unsigned short *oldlen,
         sts = sys_parse(&fab);
         if (sts & STS$M_SUCCESS) {
             if (nam.nam$b_name + nam.nam$b_type + nam.nam$b_ver > 2) {
-                return RMS$_DIR;
+                sts = RMS$_DIR;
+            } else {
+                if (nam.nam$l_fnb & NAM$M_WILDCARD)
+                    sts = RMS$_WLD;
+                else {
+                    default_name = default_buffer;
+                    default_size[0] = nam.nam$b_dev;
+                    default_size[1] = nam.nam$b_dir;
+                    memcpy(default_name + nam.nam$b_dev + nam.nam$b_dir,".;",3);
+                }
             }
-            if (nam.nam$l_fnb & NAM$M_WILDCARD) return RMS$_WLD;
-            default_name = default_buffer;
-            default_size[0] = nam.nam$b_dev;
-            default_size[1] = nam.nam$b_dir;
-            memcpy(default_name + nam.nam$b_dev + nam.nam$b_dir,".;",3);
         }
+        fab.fab$b_dns = 0;
+        nam.nam$l_rlf = 0;
+        sys$parse( &fab );
     }
     return sts;
 }
@@ -1472,4 +1487,19 @@ unsigned sys_extend(struct FAB *fab)
     sts = update_extend(ifi_table[ifi_no]->wcf_fcb,
                         fab->fab$l_alq - ifi_table[ifi_no]->wcf_fcb->hiblock,0);
     return sts;
+}
+
+/*************************************************************** sys_initialize() */
+static void sys_rundown( void ) {
+    access_rundown();
+
+    sysmsg_rundown();
+}
+
+/*************************************************************** sys_initialize() */
+unsigned sys_initialize( void ) {
+    if( atexit( sys_rundown ) != 0 )
+        return SS$_INSFMEM;
+
+    return SS$_NORMAL;
 }

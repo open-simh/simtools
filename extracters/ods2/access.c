@@ -51,6 +51,15 @@ struct WCBKEY {
     struct WCB *prevwcb;
 };
 
+#if 0
+static unsigned int delta_from_name( const char *diskname );
+#endif
+static unsigned int delta_from_index( size_t index );
+static unsigned int compute_delta( unsigned long sectorsize,
+                                   unsigned long sectors,
+                                   unsigned long tracks,
+                                   unsigned long cylinders );
+
 unsigned deallocfile(struct FCB *fcb);  /* Update.c */
 #define DEBUGx
 
@@ -287,6 +296,7 @@ static void *wcb_create( unsigned hashval, void *keyval, unsigned *retsts ) {
             curvbn = wcbkey->prevwcb->hd_basevbn;
             wcb->hd_seg_num = wcbkey->prevwcb->hd_seg_num;
             memcpy(&wcb->hd_fid,&wcbkey->prevwcb->hd_fid,sizeof(struct fiddef));
+            head = wcbkey->fcb->head;
         }
         while (TRUE) {
             register unsigned short *mp;
@@ -825,15 +835,28 @@ unsigned dismount(struct VCB * vcb)
 /******************************************************************** mount() */
 
 #ifdef DEBUG
-#define HOME_LIMIT 5
+#ifndef HOME_SKIP
+#define HOME_SKIP 1
+#endif
+#ifndef HOME_LIMIT
+#define HOME_LIMIT 3
+#endif
 #else
-#define HOME_LIMIT 100
+#ifndef HOME_SKIP
+#define HOME_SKIP 0
+#endif
+#ifndef HOME_LIMIT
+#define HOME_LIMIT 1000
+#endif
 #endif
 
 /* mount() make disk volume available for processing... */
 
-unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
-               struct VCB **retvcb) {
+unsigned mount( unsigned flags,
+                unsigned devices,
+                char *devnam[],
+                char *label[],
+                struct VCB **retvcb ) {
     register unsigned device,sts = 0;
     struct VCB *vcb;
     struct VCBDEV *vcbdev;
@@ -842,13 +865,21 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
 #ifdef DEBUG
     if (sizeof(struct HOME) != 512 || sizeof(struct HEAD) != 512) return SS$_NOTINSTALL;
 #endif
-    vcb = (struct VCB *) calloc(1, sizeof(struct VCB) + (devices - 1) * sizeof(struct VCBDEV));
-    if (vcb == NULL) return SS$_INSFMEM;
+    if( retvcb )
+        *retvcb = NULL;
+
+    vcb = (struct VCB *) calloc( 1, sizeof(struct VCB) +
+                                ((devices - 1) * sizeof(struct VCBDEV)) );
+    if( vcb == NULL )
+        return SS$_INSFMEM;
+
     vcb->status = 0;
-    if (flags & MOU_WRITE)   vcb->status |= VCB_WRITE;
+    if( flags & MOU_WRITE )
+        vcb->status |= VCB_WRITE;
     vcb->fcb = NULL;
     vcb->dircache = NULL;
     vcb->devices = 0;
+
     vcbdev = vcb->vcbdev;
     for( device = 0; device < devices; device++, vcbdev++ ) {
         char *dname;
@@ -857,9 +888,12 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
         sts = SS$_NOSUCHVOL;
         vcbdev->dev = NULL;
         if (strlen(dname)) { /* Really want to allow skipping volumes? */
-            unsigned int hba;
+            unsigned int hba, delta, homtry;
 
-            if( label[device] != NULL && strlen(label[device]) > sizeof( volsetSYS[0].vsr$t_label ) ) {
+            if( label[device] != NULL && strlen(label[device]) >
+                sizeof( volsetSYS[0].vsr$t_label ) ) {
+                printf( "%%ODS2-E-BADPARAM, Label %s is too long\n",
+                        label[device] );
                 sts = SS$_BADPARAM;
                 break;
             }
@@ -876,35 +910,44 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
                     break;
                 }
             }
+            vcb->devices++;
             sts = device_lookup( strlen( dname ), dname, TRUE,
                                  &vcbdev->dev );
-            if ( !( sts & STS$M_SUCCESS ) ) break;
+            if( !(sts & STS$M_SUCCESS) )
+                break;
             vcbdev->dev->access = flags;        /* Requested mount options */
                                                 /*    (e.g., /Write)       */
             sts = phyio_init( vcbdev->dev );
-            if ( !( sts & STS$M_SUCCESS ) ) break;
-            vcb->devices++;
+            if( !(sts & STS$M_SUCCESS) )
+                break;
             if (vcbdev->dev->vcb != NULL) {
                 sts = SS$_DEVMOUNT;
                 break;
             }
-            for (hba = 1; hba <= HOME_LIMIT; hba++) {
+            delta = delta_from_index( (vcbdev->dev->access & MOU_DEVTYPE) >> MOU_V_DEVTYPE );
+
+            for( hba = 1, homtry = 0; homtry < HOME_LIMIT; homtry++, hba += delta ) {
                 struct HOME *hom;
 
+#if HOME_SKIP > 100
+                if( homtry < HOME_SKIP )
+                    continue;
+#endif
                 sts = phyio_read( vcbdev->dev, hba, sizeof( struct HOME ),
                                  (char *) &vcbdev->home );
                 if (!(sts & STS$M_SUCCESS)) break;
                 hom = &vcbdev->home;
-#ifdef DEBUG
-                printf( "--->mount(): LBA=%u, HM2$L_HOMELBN=%u, "
+#if defined( DEBUG ) || defined( HOME_LOG )
+                printf( "--->mount(%u): LBA=%u, HM2$L_HOMELBN=%u, "
+                        "HM2$L_ALHOMELBN=%u, "
                         "HM2$T_FORMAT=\"%12.12s\", memcmp()=%u\n",
-                        hba, VMSLONG( hom->hm2$l_homelbn ),
+                        homtry+1,hba, VMSLONG( hom->hm2$l_homelbn ),
+                        VMSLONG( hom->hm2$l_alhomelbn ),
                         hom->hm2$t_format,
                         memcmp( hom->hm2$t_format, "DECFILE11B  ", 12 )
                       );
 #endif
-                if( (hba == VMSLONG(hom->hm2$l_homelbn) ||
-                     hba == VMSLONG(hom->hm2$l_alhomelbn)) &&
+                if( (hba == VMSLONG(hom->hm2$l_homelbn)) &&
                     (VMSLONG(hom->hm2$l_alhomelbn) != 0) &&
                     (VMSLONG(hom->hm2$l_altidxlbn) != 0) &&
                     (VMSWORD(hom->hm2$w_homevbn)   != 0) &&
@@ -919,7 +962,7 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
                     (memcmp(hom->hm2$t_format,"DECFILE11B  ",12) == 0) ) {
                     break;
                 }
-#ifdef DEBUG
+#if defined( DEBUG ) || defined( HOME_LOG )
                 printf( "--->mount(): Home block validation failure\n" );
                 printf( "(VMSLONG(hom->hm2$l_alhomelbn) != 0) %u\n", (VMSLONG(hom->hm2$l_alhomelbn) != 0) );
                 printf( "(VMSLONG(hom->hm2$l_altidxlbn) != 0) %u\n", (VMSLONG(hom->hm2$l_altidxlbn) != 0) );
@@ -1102,7 +1145,11 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
         if( !(sts & 1) ) {
             vcbdev = vcb->vcbdev;
             for( device = 0; device < devices; device++, vcbdev++ ) {
-                if (vcbdev->dev == NULL) continue;
+                if (vcbdev->dev == NULL) {
+                    if( flags & MOU_VIRTUAL )
+                         virt_device( devnam[device], NULL );
+                    continue;
+                }
 
                 if( vcb->status & VCB_WRITE && vcbdev->mapfcb != NULL ) {
                     /* sts = */
@@ -1127,6 +1174,11 @@ unsigned mount(unsigned flags,unsigned devices,char *devnam[],char *label[],
     } else { /* *** DECREF *** */
         vcbdev = vcb->vcbdev;
         for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
+            if (vcbdev->dev == NULL) {
+                if( flags & MOU_VIRTUAL )
+                    virt_device( devnam[device], NULL );
+                continue;
+            }
             phyio_done( vcbdev->dev );
         }
         free(vcb);
@@ -1313,4 +1365,199 @@ void show_volumes( void ) {
     }
 
     return;
+}
+
+/*************************************************************** acccess_rundown() */
+void access_rundown( void ) {
+    struct VCB *vcb, *next;
+    unsigned sts;
+
+    for( vcb = vcb_list; vcb != NULL; vcb = next ) {
+        next = vcb->next;
+
+        sts = dismount( vcb );
+        if( !(sts & STS$M_SUCCESS) ) {
+            printf( "Dismount failed in rundown: %s", getmsg(sts, MSG_TEXT) );
+        }
+    }
+}
+
+/*************************************************************** compute_delta() */
+/*
+ * The search delta is computed from the
+ * volume  geometry,  expressed  in  sectors,  tracks   (surfaces),   and
+ * cylinders, according to the following rules, to handle the cases where
+ * one or two dimensions of the volume have a size of 1.
+ *
+ *           Geometry:     Delta
+ *
+ *           s x 1 x 1:    1          Rule 1
+ *           1 x t x 1:    1          Rule 2
+ *           1 x 1 x c:    1          Rule 3
+ *
+ *           s x t x 1:    s+1        Rule 4
+ *           s x 1 x c:    s+1        Rule 5
+ *           1 x t x c:    t+1        Rule 6
+ *
+ *           s x t x c:    (t+1)*s+1  Rule 7
+ */
+
+
+#define DISK( name, sectors, tracks, cylinders ) \
+    {#name,       512  ## ul, sectors ## ul, tracks ## ul, cylinders ## ul},
+#define DISKS( name, sectorsize, sectors, tracks, cylinders ) \
+    {#name, sectorsize ## ul, sectors ## ul, tracks ## ul, cylinders ## ul},
+struct disktype disktype[] = {
+    DISK(UNKNOWN,  1,  1,    1)    /* First = short sequence delta = 1 */
+    DISK(RK05, 12,  2,  203)
+    DISK(RK06, 22,  3,  411)
+    DISK(RK07, 22,  3,  815)
+    DISK(RK11, 12,  2,  203)
+
+    DISK(RL01, 40,  2,  256)
+    DISK(RL02, 40,  2,  512)
+
+    DISK(RM02, 32,  5,  823)
+    DISK(RM03, 32,  5,  823)
+    DISK(RP04, 22, 19,  411)
+    DISK(RP05, 22, 19,  411)
+    DISK(RM80, 31, 14,  559)
+    DISK(RP06, 22, 19,  815)
+    DISK(RM05, 32, 19,  823)
+    DISK(RP07, 50, 32,  630)
+
+#if 0 /* Not useful now as RSX20-F used ODS-1 */
+   DISKS(RM02-T, 576, 30,  5,  823)
+    DISKS(RM03-T, 576, 30,  5,  823)
+    DISKS(RP04-T, 576, 20, 19,  411)
+    DISKS(RP05-T, 576, 20, 19,  411)
+    DISKS(RM80-T, 576, 30, 14,  559)
+    DISKS(RP06-T, 576, 20, 19,  815)
+    DISKS(RM05-T, 576, 30, 19,  823)
+    DISKS(RP07-T, 576, 43, 32,  630)
+#endif
+
+    DISK(RX50, 10, 1, 80)
+    DISK(RX33, 15, 2, 80)
+
+#if 0
+    DISK(RD50, 99, 99, 9999)
+#endif
+    DISK(RD51, 18, 4, 306)
+    DISK(RD31, 17, 4, 615)
+    DISK(RD52, 17, 8, 512)
+    DISK(RD53, 17, 7, 1024)
+    DISK(RD54, 17, 15, 1225)
+
+    DISK(RA72, 51, 20, 1921)
+
+#if 0
+    DISK(RA80, 99, 99, 9999)
+
+#endif
+    DISK(RA81, 51, 14, 1258)
+    DISK(RA82, 57, 15, 1435)
+
+    DISK(RA90, 69, 13, 2649)
+    DISK(RA92, 73, 13, 3099)
+
+    DISK(RRD40,128, 1, 10400)
+    DISK(RRD50,128, 1, 10400)
+    DISKS(RX01, 128, 26, 1, 77)
+    DISKS(RX02, 256, 26, 1, 77)
+
+#if 0
+    DISK(RX23-SD, 99, 99, 9999)
+    DISK(RX23-DD, 99, 99, 9999)
+
+    DISK(RX33-SD, 10, 1, 80)
+    DISK(RX33-DD, 99, 99, 9999)
+#endif
+
+    DISK(RX50, 10, 1, 80)
+#if 0
+    DISK(RC25, 99, 99, 9999 )
+
+    DISK(RF30, 99, 99, 9999 )
+    DISK(RF31, 99, 99, 9999 )
+    DISK(RF35, 99, 99, 9999 )
+    DISK(RF36, 99, 99, 9999 )
+    DISK(RF71, 99, 99, 9999 )
+    DISK(RF72, 99, 99, 9999 )
+    DISK(RF73, 99, 99, 9999 )
+    DISK(RF74, 99, 99, 9999 )
+
+    DISK(RZ22, 99, 99, 9999 )
+    DISK(RZ23, 99, 99, 9999 )
+    DISK(RZ24, 99, 99, 9999 )
+    DISK(RZ25, 99, 99, 9999 )
+    DISK(RZ26, 99, 99, 9999 )
+    DISK(RZ27, 99, 99, 9999 )
+    DISK(RZ28, 99, 99, 9999 )
+    DISK(RZ29, 99, 99, 9999 )
+    DISK(RZ31, 99, 99, 9999 )
+    DISK(RZ33, 99, 99, 9999 )
+    DISK(RZ35, 99, 99, 9999 )
+    DISK(RZ55, 99, 99, 9999 )
+    DISK(RZ56, 99, 99, 9999 )
+    DISK(RZ57, 99, 99, 9999 )
+    DISK(RZ58, 99, 99, 9999 )
+    DISK(RZ59, 99, 99, 9999 )
+
+    DISK(RZ72, 99, 99, 9999 )
+    DISK(RZ73, 99, 99, 9999 )
+    DISK(RZ74, 99, 99, 9999 )
+#endif
+
+    { NULL, 0, 0, 0, 0 }
+};
+
+
+static unsigned int compute_delta( unsigned long sectorsize,
+                                   unsigned long sectors,
+                                   unsigned long tracks,
+                                   unsigned long cylinders ) {
+
+    if( sectorsize < 512 )
+        sectors = (sectorsize * sectors) / 512;
+
+    if( sectors > 1 && tracks > 1 && cylinders > 1 )        /* Rule 7 */
+        return  (tracks + 1) * sectors +1;
+
+    if( (sectors > 1 && tracks > 1 && cylinders == 1 ) ||   /* Rule 4 */
+        (sectors > 1 && tracks == 1 && cylinders > 1 ) )    /* Rule 5 */
+        return sectors + 1;
+
+    if( sectors == 1 && tracks > 1 && cylinders > 1 )       /* Rule 6 */
+        return tracks + 1;
+
+    return 1;                                               /* Rules 1-3 */
+}
+
+#if 0
+static unsigned int delta_from_name( const char *diskname ) {
+    struct disktype *dp;
+
+    for( dp = disktype; dp->name != NULL; dp++ ) {
+        if( !strcmp( dp->name, diskname ) )
+            return compute_delta( dp->sectorsize, dp->sectors, dp->tracks, dp->cylinders );
+    }
+
+    return ~0u;
+}
+#endif
+static unsigned int delta_from_index( size_t index ) {
+    struct disktype *dp;
+    unsigned int delta;
+
+    if( index >= sizeof(disktype)/sizeof(disktype[0]) )
+        abort();
+    dp = disktype + index;
+    delta = compute_delta( dp->sectorsize, dp->sectors, dp->tracks, dp->cylinders );
+
+#if defined( DEBUG )  || HOME_SKIP > 0
+    printf( "HOM search index for %s is %u\n", dp->name, delta );
+#endif
+
+    return delta;
 }

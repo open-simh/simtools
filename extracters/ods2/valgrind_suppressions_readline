@@ -1,0 +1,46 @@
+# Suppression rules for users of readline
+# This attempts to suppress the stuff that
+# readline creates from termcap, etc, while
+# still tracking the data returned to the caller.
+#
+# Most history memory can be released with the
+# clear_history() call - after write_history
+# if desired.  However, the master history
+# structure remains.  Don't know how to
+# distinguish the two, so the history calls
+# that add lines are suppressed.  Note
+# that read_history calls add_history internally.
+
+{
+   history
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:add_history
+}
+{
+   readline
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:rl_initialize
+   ...
+   fun:readline
+}
+{
+   readline
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:init_line_structures
+   ...
+   fun:readline
+}
+{
+   readline
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:rl_set_prompt
+   fun:readline
+}

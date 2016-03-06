@@ -40,6 +40,7 @@
 #include "stsdef.h"
 #include "compat.h"
 #include "phyvirt.h"
+#include "sysmsg.h"
 
 #ifdef USE_ASPI
 #include "scsidefs.h"
@@ -558,9 +559,11 @@ static void getsysversion( void ) {
     OSVERSIONINFO sysver;
 
     memset( &sysver, 0, sizeof( sysver ) );
+#pragma warning (disable : 4996)
     sysver.dwOSVersionInfoSize = sizeof( sysver );
     GetVersionEx( &sysver                                    /* lpVersionInfo */
                 );
+#pragma warning (default : 4996)
     is_NT = ( sysver.dwPlatformId == VER_PLATFORM_WIN32_NT ) ? 1 : 0 ;
 }
 
@@ -580,21 +583,21 @@ static unsigned phy_getsect( struct DEV *dev, unsigned sector ) {
                              sector, dev->bytespersector, dev->IoBuffer );
         } else
 #endif
-               {
+            {
             if ( dev->access & MOU_VIRTUAL || is_NT ) {
-                DWORD DistanceLow, DistanceHigh, BytesRead;
-                DistanceLow  = ( sector * dev->blockspersector ) <<  9;
-                DistanceHigh = ( sector * dev->blockspersector ) >> 23;
-                SetLastError( 0 );
-                SetFilePointer( dev->API.Win32.handle,/* hFile                */
-                                DistanceLow,          /* lDistanceToMove      */
-                                &DistanceHigh,        /* lpDistanceToMoveHigh */
-                                FILE_BEGIN            /* dwMoveMethod         */
-                              );
-                if ( GetLastError() != NO_ERROR ) {
-                    TCHAR *msg = w32_errstr(0);
-                    printf( "PHYIO_READ: SetFilePointer() failed: %s\n",
-                            msg );
+                DWORD BytesRead;
+                __int64 distance;
+                LARGE_INTEGER li;
+                distance = (((__int64)sector) * dev->blockspersector) << 9;
+                li.QuadPart = distance;
+                if( SetFilePointer( dev->API.Win32.handle,/* hFile                */
+                                    li.LowPart,           /* lDistanceToMove      */
+                                    &li.HighPart,         /* lpDistanceToMoveHigh */
+                                    FILE_BEGIN            /* dwMoveMethod         */
+                                    ) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR ) {
+                    TCHAR *msg = w32_errstr(NO_ERROR);
+                    printf( "PHYIO_READ: SetFilePointer() failed at sector %lu: %s\n",
+                            sector, msg );
                     LocalFree(msg);
                     sts = SS$_PARITY;
                 }
@@ -607,9 +610,14 @@ static unsigned phy_getsect( struct DEV *dev, unsigned sector ) {
                                     &BytesRead,       /* lpNumberOfBytesRead  */
                                     NULL              /* lpOverlapped         */
                                   ) || BytesRead != dev->bytespersector ) {
-                        TCHAR *msg = w32_errstr(0);
-                        printf( "PHYIO_READ: ReadFile() failed: %s\n",
-                                msg );
+                        TCHAR *msg;
+
+                        if( BytesRead == 0 )
+                            return SS$_ENDOFFILE;
+
+                        msg = w32_errstr(NO_ERROR);
+                        printf( "PHYIO_READ: ReadFile() failed at sector %lu: %s\n",
+                                sector, msg );
                         LocalFree(msg);
                         sts = SS$_PARITY;
                     }
@@ -641,7 +649,7 @@ static unsigned phy_getsect( struct DEV *dev, unsigned sector ) {
                                      NULL                  /* lpOverlapped    */
                                    ) && !( reg.reg_Flags & 0x0001 );
                 if ( !result ) {
-                    TCHAR *msg = w32_errstr(0);
+                    TCHAR *msg = w32_errstr(NO_ERROR);
                     printf( "PHYIO_READ: Read sector %d failed: %s\n",
                             sector, msg );
                     LocalFree(msg);
@@ -672,34 +680,33 @@ static unsigned phy_putsect( struct DEV *dev, unsigned sector ) {
 #endif
           {
         if ( dev->access & MOU_VIRTUAL || is_NT ) {
-            DWORD DistanceLow, DistanceHigh, BytesWritten;
-            DistanceLow  = ( sector * dev->blockspersector ) <<  9;
-            DistanceHigh = ( sector * dev->blockspersector ) >> 23;
-            SetLastError( 0 );
-            SetFilePointer( dev->API.Win32.handle,    /* hFile                */
-                            DistanceLow,              /* lDistanceToMove      */
-                            &DistanceHigh,            /* lpDistanceToMoveHigh */
-                            FILE_BEGIN                /* dwMoveMethod         */
-                          );
-            if ( GetLastError() != NO_ERROR ) {
-                TCHAR *msg = w32_errstr(0);
-                printf( "PHYIO_WRITE: SetFilePointer() failed: %s\n",
-                        msg );
+            DWORD BytesWritten;
+            __int64 distance;
+            LARGE_INTEGER li;
+            distance = (((__int64)sector) * dev->blockspersector) << 9;
+            li.QuadPart = distance;
+            if( SetFilePointer( dev->API.Win32.handle,/* hFile                */
+                                li.LowPart,           /* lDistanceToMove      */
+                                &li.HighPart,         /* lpDistanceToMoveHigh */
+                                FILE_BEGIN            /* dwMoveMethod         */
+                                ) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR ) {
+                TCHAR *msg = w32_errstr(NO_ERROR);
+                printf( "PHYIO_WRITE: SetFilePointer() failed at sector %lu: %s\n",
+                        sector, msg );
                 LocalFree(msg);
                 sts = SS$_PARITY;
             }
             if ( sts & STS$M_SUCCESS ) {
-                                                    /* hFile                  */
-                if ( !WriteFile( dev->API.Win32.handle,
-                                 dev->IoBuffer,     /* lpBuffer               */
-                                                    /* nNumberOfBytesToWrite  */
+                if ( !WriteFile( dev->API.Win32.handle, /* hFile                  */
+                                 dev->IoBuffer,         /* lpBuffer               */
+                                                        /* nNumberOfBytesToWrite  */
                                  dev->bytespersector,
-                                 &BytesWritten,     /* lpNumberOfBytesWritten */
-                                 NULL               /* lpOverlapped           */
+                                 &BytesWritten,         /* lpNumberOfBytesWritten */
+                                 NULL                   /* lpOverlapped           */
                                ) || BytesWritten != dev->bytespersector ) {
-                    TCHAR *msg = w32_errstr(0);
-                    printf( "PHYIO_WRITE: WriteFile() failed: %s\n",
-                            msg );
+                    TCHAR *msg = w32_errstr(NO_ERROR);
+                    printf( "PHYIO_WRITE: WriteFile() failed at sector %lu: %s\n",
+                            sector, msg );
                     LocalFree(msg);
                     sts = SS$_PARITY;
                 }
@@ -730,7 +737,7 @@ static unsigned phy_putsect( struct DEV *dev, unsigned sector ) {
                                  NULL                      /* lpOverlapped    */
                                ) && !( reg.reg_Flags & 0x0001 );
             if ( !result ) {
-                TCHAR *msg = w32_errstr(0);
+                TCHAR *msg = w32_errstr(NO_ERROR);
                 printf( "PHYIO_WRITE: Write sector %d failed: %s\n",
                         sector, msg );
                 LocalFree(msg);
@@ -751,7 +758,7 @@ void phyio_show( showtype_t type ) {
                 init_count, read_count, write_count );
         return;
     case SHOW_FILE64:
-        printf( "\nLarge ODS-2 image files (>2GB) are supported.\n" );
+        printf( "Large ODS-2 image files (>2GB) are %ssupported.\n", "" );
         return;
     case SHOW_DEVICES: {
         TCHAR *namep = NULL, *dname = NULL;
@@ -793,8 +800,8 @@ void phyio_show( showtype_t type ) {
                 free(namep);
             }
         }
-    }
         return;
+    }
     default:
         abort();
     }
@@ -934,15 +941,15 @@ unsigned phyio_init( struct DEV *dev ) {
                               );
             }
             if ( dev->API.Win32.handle == INVALID_HANDLE_VALUE ) {
-                TCHAR *msg = w32_errstr(0);
+                TCHAR *msg = w32_errstr(NO_ERROR);
                 printf( "PHYIO_INIT: Open( \"%s\" ) failed: %s\n",
                         dev->devnam, msg );
                 LocalFree(msg);
                 return SS$_NOSUCHDEV;
             }
             if ( !LockVolume( dev ) ) {
-                TCHAR *msg = w32_errstr(0);
-                printf( "PHYIO_INIT: LockVolume( \"%s\" ) failed: %a\n",
+                TCHAR *msg = w32_errstr(NO_ERROR);
+                printf( "PHYIO_INIT: LockVolume( \"%s\" ) failed: %s\n",
                         dev->devnam, msg );
                 LocalFree(msg);
                 phyio_done( dev );
@@ -950,7 +957,7 @@ unsigned phyio_init( struct DEV *dev ) {
             }
         }
         if ( !GetDiskGeometry( dev, &dev->sectors, &dev->bytespersector ) ) {
-            TCHAR *msg = w32_errstr(0);
+            TCHAR *msg = w32_errstr(NO_ERROR);
             printf( "PHYIO_INIT: GetDiskGeometry( \"%s\" ) failed: %s\n",
                     dev->devnam, msg );
             LocalFree(msg);
@@ -989,6 +996,10 @@ unsigned phyio_init( struct DEV *dev ) {
                           );
         }
         if ( dev->API.Win32.handle == INVALID_HANDLE_VALUE ) {
+            TCHAR *msg = w32_errstr(NO_ERROR);
+            printf( "PHYIO_INIT: CreateFile() failed for %s: %s\n",
+                    virtual, msg );
+            LocalFree(msg);
             return SS$_NOSUCHFILE;
         }
         SetLastError( 0 );
@@ -1078,8 +1089,8 @@ unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
         offset = 0;
     }
     if ( !( sts & STS$M_SUCCESS ) ) {
-        printf( "PHYIO_READ Error %d Block %d Length %d",
-                sts, block, length );
+        printf( "PHYIO_READ Error %s Block %d Length %d",
+                getmsg(sts, MSG_TEXT), block, length );
 #ifdef USE_ASPI
         printf( " (ASPI: %x %x %x)",
                 ASPI_status, ASPI_HaStat, ASPI_TargStat );
