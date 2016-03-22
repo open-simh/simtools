@@ -24,20 +24,26 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+/* Modified March 2016 Timothe Litt to work under windows.
+* Copyright (C) 2016 Timothe Litt
+* Modifications subject to the same license terms as above,
+* substituting "Timothe Litt" for "XenSource Inc."
+*/
+
 #ifndef _RELATIVE_PATH_H_
 #define _RELATIVE_PATH_H_
 
-#include <syslog.h>
-
-#define DELIMITER    '/'
 #define MAX_NAME_LEN 1000
-
-#define EPRINTF(_f, _a...) syslog(LOG_ERR, "tap-err:%s: " _f, __func__, ##_a)
 
 /*
  * returns a relative path from @src to @dest
  * result should be freed
  */
 char *relative_path_to(char *src, char *dest, int *err);
+
+#ifdef _WIN32
+char *realpath( const char *path, char *resolved );
+int asprintf( char **result, const char *fmt, ... );
+#endif
 
 #endif

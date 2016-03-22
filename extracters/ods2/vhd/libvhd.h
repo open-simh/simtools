@@ -24,8 +24,16 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+/* Modified March 2016 Timothe Litt to work under windows.
+* Copyright (C) 2016 Timothe Litt
+* Modifications subject to the same license terms as above,
+* substituting "Timothe Litt" for "XenSource Inc."
+*/
+
 #ifndef _VHD_LIB_H_
 #define _VHD_LIB_H_
+
+#define _CRT_SECURE_NO_WARNINGS 1
 
 #include <string.h>
 #if defined(__linux__)
@@ -34,6 +42,14 @@
 #elif defined(__NetBSD__)
 #include <sys/endian.h>
 #include <sys/bswap.h>
+#elif defined(_WIN32)
+#undef BYTE_ORDER
+#undef LITTLE_ENDIAN
+#define BYTE_ORDER 1234
+#define LITTLE_ENDIAN 1234
+#define bswap_16(val) _byteswap_ushort(val)
+#define bswap_32(val) _byteswap_ulong(val)
+#define bswap_64(val) _byteswap_uint64(val)
 #endif
 
 #include "blk_uuid.h"
@@ -44,7 +60,7 @@
 #endif
 
 #if BYTE_ORDER == LITTLE_ENDIAN
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
   #define BE16_IN(foo)             (*(foo)) = bswap_16(*(foo))
   #define BE32_IN(foo)             (*(foo)) = bswap_32(*(foo))
   #define BE64_IN(foo)             (*(foo)) = bswap_64(*(foo))
@@ -113,7 +129,7 @@
 #else
 #define TEST_FAIL_AT(point)
 #define TEST_FAIL_EXTERN_VARS
-#endif // ENABLE_FAILURE_TESTING
+#endif /* ENABLE_FAILURE_TESTING */
 
 
 static const char                  VHD_POISON_COOKIE[] = "v_poison";
@@ -156,13 +172,16 @@ struct vhd_context {
 static inline uint32_t
 secs_round_up(uint64_t bytes)
 {
-	return ((bytes + (VHD_SECTOR_SIZE - 1)) >> VHD_SECTOR_SHIFT);
+	return (uint32_t)((bytes + (VHD_SECTOR_SIZE - 1)) >> VHD_SECTOR_SHIFT);
 }
 
 static inline uint32_t
 secs_round_up_no_zero(uint64_t bytes)
 {
-	return (secs_round_up(bytes) ? : 1);
+	uint32_t result;
+
+	result = secs_round_up(bytes);
+	return ( result? result : 1);
 }
 
 static inline uint64_t
@@ -206,7 +225,7 @@ vhd_parent_locator_size(vhd_parent_locator_t *loc)
 	 * but sometimes we find it in bytes
 	 */
 	if (loc->data_space < 512)
-		return vhd_sectors_to_bytes(loc->data_space);
+		return (size_t)vhd_sectors_to_bytes(loc->data_space);
 	else if (loc->data_space % 512 == 0)
 		return loc->data_space;
 	else

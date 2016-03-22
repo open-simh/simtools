@@ -24,6 +24,12 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+/* Modified March 2016 Timothe Litt to work under windows.
+* Copyright (C) 2016 Timothe Litt
+* Modifications subject to the same license terms as above,
+* substituting "Timothe Litt" for "XenSource Inc."
+*/
+
 #ifndef __BLKTAP2_UUID_H__
 #define __BLKTAP2_UUID_H__
 
@@ -47,6 +53,7 @@ static inline void blk_uuid_generate(blk_uuid_t *uuid)
 
 static inline void blk_uuid_to_string(blk_uuid_t *uuid, char *out, size_t size)
 {
+	(void) size;
 	uuid_unparse(uuid->uuid, out);
 }
 
@@ -121,6 +128,69 @@ static inline int blk_uuid_compare(blk_uuid_t *uuid1, blk_uuid_t *uuid2)
 	return uuid_compare((uuid_t *)uuid1, (uuid_t *)uuid2, &status);
 }
 
+#elif defined(_WIN32)
+#include <Rpc.h>
+typedef UUID blk_uuid_t;
+
+static size_t strlcpy( char *dst, const char *src,  size_t size ) {
+    size_t srclen;
+
+    size--;
+    srclen = strlen( src );
+
+    if( srclen > size )
+        srclen = size;
+
+    memcpy( dst, src, srclen );
+    dst[srclen] = '\0';
+
+    return (srclen);
+}
+static inline int blk_uuid_is_nil( blk_uuid_t *uuid )
+{
+   RPC_STATUS status;
+    return UuidIsNil( (uuid_t *)uuid, &status );
+}
+
+static inline void blk_uuid_generate( blk_uuid_t *uuid )
+{
+    RPC_STATUS status;
+    status = UuidCreate( (uuid_t *)uuid );
+    if( status == RPC_S_OK || status == RPC_S_UUID_LOCAL_ONLY )
+        return;
+    abort();
+}
+
+static inline void blk_uuid_to_string( blk_uuid_t *uuid, char *out, size_t size )
+{
+    RPC_CSTR _out = NULL;
+    if( UuidToString( (uuid_t *)uuid, &_out ) != RPC_S_OK )
+        return;
+    strlcpy( out, (const char *)_out, size );
+    RpcStringFree( &_out );
+    return;
+}
+
+static inline void blk_uuid_from_string( blk_uuid_t *uuid, const char *in )
+{
+    UuidFromString( (RPC_CSTR)in, (uuid_t *)uuid );
+}
+
+static inline void blk_uuid_copy( blk_uuid_t *dst, blk_uuid_t *src )
+{
+    memcpy( (uuid_t *)dst, (uuid_t *)src, sizeof( uuid_t ) );
+}
+
+static inline void blk_uuid_clear( blk_uuid_t *uuid )
+{
+    memset( (uuid_t *)uuid, 0, sizeof( uuid_t ) );
+}
+
+static inline int blk_uuid_compare( blk_uuid_t *uuid1, blk_uuid_t *uuid2 )
+{
+    RPC_STATUS status;
+    return UuidCompare( (uuid_t *)uuid1, (uuid_t *)uuid2, &status );
+}
 #else
 
 #error "Please update blk_uuid.h for your OS"

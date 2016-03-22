@@ -24,6 +24,11 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+/* Modified March 2016 Timothe Litt to work under windows.
+* Copyright (C) 2016 Timothe Litt
+* Modifications subject to the same license terms as above,
+* substituting "Timothe Litt" for "XenSource Inc."
+*/
 #ifndef __VHD_H__
 #define __VHD_H__
 
@@ -32,7 +37,7 @@
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-#define DEBUG 1
+/* #define DEBUG 1 */
 
 /* ---------------------------------------------------------------------- */
 /* General definitions.                                                   */
@@ -79,7 +84,8 @@ static const char HD_COOKIE[9]  =  "conectix";
 /* Known creator OS type fields in hd_ftr.crtr_os */
 #define HD_CR_OS_WINDOWS   0x5769326B /* (Wi2k) */
 #define HD_CR_OS_MACINTOSH 0x4D616320 /* (Mac ) */
-
+#define HD_CR_OS_UNIX      0x556E6978 /* (Unix) */
+#define HD_CR_OS_VMS       0x4F564D53 /* (OVMS) */
 /*
  * version 0.1:  little endian bitmaps
  * version 1.1:  big endian bitmaps; batmap
@@ -106,6 +112,9 @@ static const char HD_COOKIE[9]  =  "conectix";
 #define HD_TYPE_DIFF       4  /* differencing disk */
 
 /* String table for hd.type */
+#ifdef __GNUC__
+__attribute__((unused))
+#endif
 static const char *HD_TYPE_STR[7] = {
         "None",                    /* 0 */
         "Reserved (deprecated)",   /* 1 */

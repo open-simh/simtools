@@ -24,38 +24,558 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+/* Modified March 2016 Timothe Litt to work under windows.
+* Copyright (C) 2016 Timothe Litt
+* Modifications subject to the same license terms as above,
+* substituting "Timothe Litt" for "XenSource Inc."
+*/
+
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+
+#include <stdarg.h>
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <inttypes.h>
+#ifdef _WIN32
+#include <Windows.h>
+#include <io.h>
+#define strdup _strdup
+#define open _open
+#ifndef O_BINARY
+#define O_BINARY _O_BINARY
+#endif
+#define close _close
+#define unlink _unlink
+#define lseek _lseeki64
+#define read _read
+#define write _write
+#else
+#include <syslog.h>
 #include <unistd.h>
-#include <string.h>
+#define _aligned_free free
 #include <libgen.h>
 #include <iconv.h>
 #include <sys/mman.h>
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
+#endif
+#include <string.h>
+#include <sys/types.h>
 #include <sys/stat.h>
-
+#include <time.h>
 #include "libvhd.h"
 #include "relative-path.h"
 
+#ifndef O_DIRECT
+#define O_DIRECT 0
+#endif
+
 static int libvhd_dbg = 0;
+
+/* Extension to Xen.  Interactive utilities really shouldn't send
+ * errors to syslog.  Set log_level to -1 for them to go to stderr.
+ * Existing callers will still go to syslog, as they all seem to use (1).
+ *
+ * On systems without syslog, stderr is the only choice.
+ */
 
 void
 libvhd_set_log_level(int level)
 {
 	if (level)
-		libvhd_dbg = 1;
+		libvhd_dbg = level;
 }
 
-#define VHDLOG(_f, _a...)						\
-	do {								\
-		if (libvhd_dbg)						\
-			syslog(LOG_INFO, "libvhd::%s: "_f,		\
-			       __func__, ##_a);				\
-	} while (0)
+#define FN __func__
+
+#define VHDLOG(a) vhd_log_error a
+
+static void vhd_log_error( const char *func, const char *fmt, ... )
+#ifdef __GNUC__
+    __attribute__((format(printf,2,3)));
+#else
+    ;
+#endif
+
+#ifndef LIBVHD_HAS_SYSLOG
+#ifdef _WIN32
+#define LIBVHD_HAS_SYSLOG 0
+#else
+#define LIBVHD_HAS_SYSLOG 1
+#endif
+#endif
+
+static void vhd_log_error( const char *func, const char *fmt, ... )
+{
+    char *buf, nilbuf;
+    size_t ilen, len;
+    va_list ap;
+
+    if( !libvhd_dbg )
+        return;
+
+    ilen = sizeof( "libvhd::%s: " ) + strlen( func ) -2;
+    va_start(ap, fmt );
+    len = vsnprintf( &nilbuf, 1, fmt, ap );
+    va_end( ap );
+
+    if( (buf = malloc( ilen + len + 1 )) == NULL ) {
+        if( !LIBVHD_HAS_SYSLOG || libvhd_dbg < 0 )
+            fprintf( stderr, "libvhd::%s: Out of memory for %s\n", func, fmt );
+#if LIBVHD_HAS_SYSLOG
+        if( libvhd_dbg > 0 )
+            syslog( LOG_INFO, "libvhd::%s:: Out of memory", func );
+#endif
+        return;
+    }
+    va_start(ap, fmt);
+    (void) snprintf( buf, ilen, "libvhd::%s: ", func );
+    (void) vsnprintf( buf + ilen -1, len+1, fmt, ap );
+    va_end( ap );
+    len += ilen -1;
+    if( buf[ len -1 ] != '\n' )
+        buf[len++] = '\n';
+    buf[len] = '\0';
+    if( !LIBVHD_HAS_SYSLOG || libvhd_dbg < 0 )
+        fputs( buf, stderr );
+#if LIBVHD_HAS_SYSLOG
+    if( libvhd_dbg > 0 )
+        syslog(LOG_INFO, buf);
+#endif
+    free( buf );
+
+    return;
+ }
+
+#ifdef _WIN32
+char *dirname( char *path ) {
+    static char buf[MAX_PATH + 1];
+    char *p, *d;
+    if( path == NULL || !*path )
+        return ".";
+    strlcpy( buf, path, sizeof( buf ) );
+    for( d = buf; *d && *d != ':' && *d != '/'; d++ )
+        ;
+    if( !*d )
+        return ".";
+    if( *d == ':' ) {
+        d++;
+        if( !strcmp( d, "." ) )
+            return buf;
+    }
+    for( p = d + strlen( d ) - 1; p > d; p-- )
+        if( *p != '/' )
+            break;
+    if( p <= d ) {
+        *d++ = '/';
+        *d = '\0';
+        return buf;
+    }
+    *p = '\0';
+    if( (p = strrchr( d, '/' )) == NULL ) {
+        *d++ = '.';
+        *d = '\0';
+        return buf;
+}
+    if( p == d ) {
+        *p++ = '/';
+        *p = '\0';
+    } else
+        *p = '\0';
+    return buf;
+}
+char *basename( char *path ) {
+    static char buf[MAX_PATH + 1];
+    char *p, *d;
+    if( path == NULL || !*path )
+        return ".";
+    strlcpy( buf, path, sizeof( buf ) );
+    for( d = buf; *d && *d != ':' && *d != '/'; d++ )
+        ;
+    if( !*d )
+        return buf;
+    if( *d == ':' ) {
+        d++;
+        if( !strcmp( d, "." ) )
+            return buf;
+    }
+    for( p = d + strlen( d ) - 1; p > d; p-- )
+        if( *p == '/' )
+            *p = '\0';
+        else
+            break;
+    if( p <= d ) {
+        if( !*++d )
+            return "/";
+        return d;
+    }
+    if( (p = strrchr( d, '/' )) == NULL ) {
+        return d;
+    }
+    return ++p;
+}
+
+/* Partial simulation of iconv
+ * The usage here is restricted, always is just
+ * one string, so we don't have to worry about
+ * state.  We do handle conversions among ASCII,
+ * UTF-8 and UTF-16.  ASCII is defined as Latin-1.
+ */
+
+typedef void *iconv_t;
+
+enum iconvcs {
+    icc_ascii,
+    icc_utf16,
+    icc_utf16be,
+    icc_utf16le,
+    icc_utf8
+};
+typedef struct iconvin {
+    enum iconvcs toset;
+    enum iconvcs fromset;
+} iconvin_t;
+
+static int iconv_close( iconv_t cd ) {
+    if( cd != (iconv_t)-1 )
+        free( cd );
+    return 0;
+}
+
+static enum iconvcs iconvcs( const char *setname ) {
+    if( !strcmp( setname, "ASCII" ) )
+        return icc_ascii;
+    if( !strcmp( setname, "UTF-16" ) )
+        return icc_utf16;
+    if( !strcmp( setname, "UTF-16BE" ))
+        return icc_utf16be;
+    if( !strcmp( setname, "UTF-16LE" ))
+        return icc_utf16le;
+    if( !strcmp( setname, "UTF-8" ))
+        return icc_utf8;
+    abort();
+}
+
+static iconv_t iconv_open( const char *toset, const char *fromset ) {
+    iconvin_t *ict;
+
+    if( (ict = (iconvin_t *)malloc( sizeof( iconvin_t ) )) == NULL )
+        return (iconv_t)-1;
+
+    ict->toset   = iconvcs( toset );
+    ict->fromset = iconvcs( fromset );
+
+    return (iconv_t)ict;
+}
+
+static size_t iconv( iconv_t cd,
+                     const char **inbuf, size_t *inbytesleft,
+                     char **outbuf, size_t *outbytesleft ) {
+    iconvin_t *ict;
+    size_t nonrev = 0;
+    const char *ip;
+    char *op;
+    enum iconvcs ics;
+
+    ict = (iconvin_t *)cd;
+
+    if( (inbuf == NULL || *inbuf == NULL) && (outbuf == NULL || *outbuf == NULL) )
+        return 0; /* reset */
+
+    if( (inbuf == NULL || *inbuf == NULL) && (outbuf == NULL && *outbuf == NULL) )
+            abort(); /* output shift */
+
+    if( inbuf == NULL || *inbuf == NULL || outbuf == NULL || *outbuf == NULL )
+        abort(); /* undefined */
+
+    ip = *inbuf;
+    op = *outbuf;
+
+    ics = ict->fromset;
+
+    while( *inbytesleft && *outbytesleft ) {
+        size_t c, c2;
+
+        switch( ics ) {
+        case icc_ascii:
+            c = *ip++;
+            --*inbytesleft;
+            break;
+        case icc_utf8:
+            c = *ip++;
+            --*inbytesleft;
+            if( !(c & 0x80) )
+                break;
+            if( !*inbytesleft ) {
+                *inbuf = ip - 1;
+                *inbytesleft = 1;
+                *outbuf = op;
+                errno = EINVAL;
+                return (size_t)-1;
+            }
+            c2 = *ip++;
+            --*inbytesleft;
+            if( (c & 0xe0) == 0xc0 ) {
+                c = ((c & 0x1f) << 6) | (c2 & 0x3f);
+                break;
+            }
+            if( !*inbytesleft ) {
+                *inbuf = ip - 2;
+                *inbytesleft = 2;
+                *outbuf = op;
+                errno = EINVAL;
+                return (size_t)-1;
+            }
+            if( (c & 0xf0) == 0xe0 ) {
+                c = ((c & 0xf) << 12) | ((c2 & 0x3f) << 6) | (*ip++ & 0x3f);
+                --*inbytesleft;
+                break;
+            }
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip - 2;
+                *inbytesleft += 2;
+                *outbuf = op;
+                errno = EINVAL;
+                return (size_t)-1;
+            }
+            if( (c & 0xf8) == 0xf0 ) {
+                c = ((c & 0x7) << 18) | ((c2 & 0x3f) << 12) | ((*ip++ & 0x3f) << 6);
+                c |= *ip++ & 0x3f;
+                *inbytesleft -= 2;
+                break;
+            }
+            *inbuf = ip-2;
+            *inbytesleft += 2;
+            *outbuf = op;
+            errno = EINVAL;
+            return (size_t)-1;
+        case icc_utf16:
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip;
+                *outbuf = op;
+                errno = EINVAL;
+                return (size_t)-1;
+            }
+            *inbytesleft -= 2;
+            ip += 2;
+            if( ip[-2] == 0xfe && ip[-1] == 0xff ) {
+                ics = icc_utf16be;
+                continue;
+            }
+            if( ip[-2] == 0xff && ip[-1] == 0xfe ) {
+                ics = icc_utf16le;
+                continue;
+            }
+            c = (ip[-2] << 8) | ip[-1];
+            if( c < 0xd800 || c >= 0xe000 )
+                break;
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip - 2;
+                *outbuf = op;
+                *inbytesleft += 2;
+                errno = EILSEQ;
+                return (size_t)-1;
+            }
+            *inbytesleft -= 2;
+            ip += 2;
+            c2 = (ip[-2] << 8) | ip[-1];
+            if( c2 < 0xd800 || c2 >= 0xe000 ) {
+                *inbuf = ip - 4;
+                *outbuf = op;
+                *inbytesleft += 4;
+                errno = EILSEQ;
+                return (size_t)-1;
+            }
+            c = (c << 10) + c2 + (0x10000 - (0xD800 << 10) - 0xDC00);
+            break;
+        case icc_utf16be:
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip;
+                *outbuf = op;
+                errno = EINVAL;
+                return (size_t)-1;
+            }
+            *inbytesleft -= 2;
+            ip += 2;
+            c = (ip[-2] << 8) | ip[-1];
+            if( c < 0xd800 || c >= 0xe000 )
+                break;
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip - 2;
+                *outbuf = op;
+                *inbytesleft += 2;
+                errno = EILSEQ;
+                return (size_t)-1;
+            }
+            *inbytesleft -= 2;
+            ip += 2;
+            c2 = (ip[-2] << 8) | ip[-1];
+            if( c2 < 0xd800 || c2 >= 0xe000 ) {
+                *inbuf = ip - 4;
+                *outbuf = op;
+                *inbytesleft += 4;
+                errno = EILSEQ;
+                return (size_t)-1;
+            }
+            c = (c << 10) + c2 + (0x10000 - (0xD800 << 10) - 0xDC00);
+            break;
+        case icc_utf16le:
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip;
+                *outbuf = op;
+                errno = EINVAL;
+                return (size_t)-1;
+            }
+            *inbytesleft -= 2;
+            ip += 2;
+            c = (ip[-1] << 8) | ip[-2];
+            if( c < 0xd800 || c >= 0xe000 )
+                break;
+            if( *inbytesleft < 2 ) {
+                *inbuf = ip - 2;
+                *outbuf = op;
+                *inbytesleft += 2;
+                errno = EILSEQ;
+                return (size_t)-1;
+            }
+            *inbytesleft -= 2;
+            ip += 2;
+            c2 = (ip[-1] << 8) | ip[-2];
+            if( c2 < 0xd800 || c2 >= 0xe000 ) {
+                *inbuf = ip - 4;
+                *outbuf = op;
+                *inbytesleft += 4;
+                errno = EILSEQ;
+                return (size_t)-1;
+            }
+            c = (c << 10) + c2 + (0x10000 - (0xD800 << 10) - 0xDC00);
+            break;
+        default:
+            abort();
+        }
+
+        switch( ict->toset ) {
+        case icc_ascii:
+            *op++ = c & 0xff;
+            --*outbytesleft;
+            if( c > 0xff )
+                nonrev++;
+            continue;
+        case icc_utf8:
+            if( c <= 0x7F ) {
+                *op++ = c & 0x7f;
+                --*outbytesleft;
+                continue;
+            }
+            if( c <= 0x7ff ) {
+                if( *outbytesleft < 2 )
+                    break;
+                *op++ = (((c >> 6) & 0x1f) | 0xc0) & 0xff;
+                *op++ = ((c & 0x3f) | 0xc0) & 0xff;
+                *outbytesleft -= 2;
+                continue;
+            }
+            if( c <= 0xffff ) {
+                if( *outbytesleft < 3 )
+                    break;
+                *op++ = (((c >> 12) & 0xf) | 0xe0) & 0xff;
+                *op++ = (((c >> 6) & 0x3f) | 0xc0) & 0xff;
+                *op++ = ((c & 0x3f) | 0xc0) & 0xff;
+                *outbytesleft -= 3;
+                continue;
+            }
+            if( c <= 0x1fffff ) {
+                if( *outbytesleft < 4 )
+                    break;
+                *op++ = (((c >> 18) & 0x7) | 0xf0) & 0xff;
+                *op++ = (((c >> 12) & 0x3f) | 0xc0) & 0xff;
+                *op++ = (((c >> 6) & 0x3f) | 0xc0) & 0xff;
+                *op++ = ((c & 0x3f) | 0xc0) & 0xff;
+                *outbytesleft -= 4;
+                continue;
+            }
+            break;
+        case icc_utf16:
+            if( *outbytesleft < 2 )
+                break;
+            if( c < 0x10000 ) {
+                *op++ = ( c >> 8 ) & 0xff;
+                *op++ = c & 0xff;
+                *outbytesleft -= 2;
+                continue;
+            }
+            if( *outbytesleft < 4 )
+                break;
+            c2 = 0xDC00 + (c & 0x3FF);
+            c = (0xD800 - (0x10000 >> 10)) + (c >> 10);
+            op[0] = (c >> 8) & 0xff;
+            op[1] = c & 0xff;
+            op[2] = (c2 >> 8) & 0xff;
+            op[3] = c2 & 0xff;
+            op += 4;
+            *outbytesleft -=4;
+            continue;
+        case icc_utf16be:
+            if( *outbytesleft < 2 )
+                break;
+            if( c < 0x10000 ) {
+                *op++ = ( c >> 8 ) & 0xff;
+                *op++ = c & 0xff;
+                *outbytesleft -= 2;
+                continue;
+            }
+            if( *outbytesleft < 4 )
+                break;
+            c2 = 0xDC00 + (c & 0x3FF);
+            c = (0xD800 - (0x10000 >> 10)) + (c >> 10);
+            op[0] = (c >> 8) & 0xff;
+            op[1] = c & 0xff;
+            op[2] = (c2 >> 8) & 0xff;
+            op[3] = c2 & 0xff;
+            op += 4;
+            *outbytesleft -=4;
+            continue;
+        case icc_utf16le:
+            if( *outbytesleft < 2 )
+                break;
+            if( c < 0x10000 ) {
+                *op++ = c & 0xff;
+                *op++ = (c >> 8) & 0xff;
+                *outbytesleft -= 2;
+                continue;
+            }
+            if( *outbytesleft < 4 )
+                break;
+            c2 = 0xDC00 + (c & 0x3FF);
+            c = (0xD800 - (0x10000 >> 10)) + (c >> 10);
+            op[1] = (c >> 8) & 0xff;
+            op[0] = c & 0xff;
+            op[3] = (c2 >> 8) & 0xff;
+            op[2] = c2 & 0xff;
+            op += 4;
+            *outbytesleft -=4;
+            continue;
+        default:
+            abort();
+        }
+        errno = E2BIG;
+        return (size_t)-1;
+    }
+    *inbuf = ip;
+    *outbuf = op;
+
+    return nonrev;
+}
+#endif
 
 #define BIT_MASK 0x80
 
@@ -70,7 +590,7 @@ const char* ENV_VAR_FAIL[NUM_FAIL_TESTS] = {
 	"VHD_UTIL_TEST_FAIL_RESIZE_END"
 };
 int TEST_FAIL[NUM_FAIL_TESTS];
-#endif // ENABLE_FAILURE_TESTING
+#endif /* ENABLE_FAILURE_TESTING */
 
 static inline int
 test_bit (volatile char *addr, int nr)
@@ -207,7 +727,7 @@ vhd_batmap_header_out(vhd_batmap_t *batmap)
 void
 vhd_bat_in(vhd_bat_t *bat)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < bat->entries; i++)
 		BE32_IN(&bat->bat[i]);
@@ -216,7 +736,7 @@ vhd_bat_in(vhd_bat_t *bat)
 void
 vhd_bat_out(vhd_bat_t *bat)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < bat->entries; i++)
 		BE32_OUT(&bat->bat[i]);
@@ -225,7 +745,7 @@ vhd_bat_out(vhd_bat_t *bat)
 uint32_t
 vhd_checksum_footer(vhd_footer_t *footer)
 {
-	int i;
+	size_t i;
 	unsigned char *blob;
 	uint32_t checksum, tmp;
 
@@ -253,7 +773,7 @@ vhd_validate_footer(vhd_footer_t *footer)
 		char buf[9];
 		strncpy(buf, footer->cookie, sizeof(buf));
 		buf[sizeof(buf)-1]= '\0';
-		VHDLOG("invalid footer cookie: %s\n", buf);
+		VHDLOG((FN,"invalid footer cookie: %s\n", buf));
 		return -EINVAL;
 	}
 
@@ -276,9 +796,9 @@ vhd_validate_footer(vhd_footer_t *footer)
 				return 0;
 		}
 
-		VHDLOG("invalid footer checksum: "
+		VHDLOG((FN,"invalid footer checksum: "
 		       "footer = 0x%08x, calculated = 0x%08x\n",
-		       footer->checksum, checksum);
+		       footer->checksum, checksum));
 		return -EINVAL;
 	}
 
@@ -288,7 +808,7 @@ vhd_validate_footer(vhd_footer_t *footer)
 uint32_t
 vhd_checksum_header(vhd_header_t *header)
 {
-	int i;
+	size_t i;
 	unsigned char *blob;
 	uint32_t checksum, tmp;
 
@@ -314,18 +834,18 @@ vhd_validate_header(vhd_header_t *header)
 		char buf[9];
 		strncpy(buf, header->cookie, sizeof(buf));
 		buf[sizeof(buf)-1]= '\0';
-		VHDLOG("invalid header cookie: %s\n", buf);
+		VHDLOG((FN,"invalid header cookie: %s\n", buf));
 		return -EINVAL;
 	}
 
 	if (header->hdr_ver != 0x00010000) {
-		VHDLOG("invalid header version 0x%08x\n", header->hdr_ver);
+		VHDLOG((FN,"invalid header version 0x%08x\n", header->hdr_ver));
 		return -EINVAL;
 	}
 
 	if (header->data_offset != 0xFFFFFFFFFFFFFFFF) {
-		VHDLOG("invalid header data_offset 0x%016"PRIx64"\n",
-		       header->data_offset);
+		VHDLOG((FN,"invalid header data_offset 0x%016"PRIx64"\n",
+		       header->data_offset));
 		return -EINVAL;
 	}
 
@@ -336,9 +856,9 @@ vhd_validate_header(vhd_header_t *header)
 
 	checksum = vhd_checksum_header(header);
 	if (checksum != header->checksum) {
-		VHDLOG("invalid header checksum: "
+		VHDLOG((FN,"invalid header checksum: "
 		       "header = 0x%08x, calculated = 0x%08x\n",
-		       header->checksum, checksum);
+		       header->checksum, checksum));
 		return -EINVAL;
 	}
 
@@ -357,14 +877,14 @@ vhd_validate_bat(vhd_bat_t *bat)
 uint32_t
 vhd_checksum_batmap(vhd_batmap_t *batmap)
 {
-	int i, n;
+	u32 i, n;
 	char *blob;
 	uint32_t checksum;
 
 	blob     = batmap->map;
 	checksum = 0;
 
-	n = vhd_sectors_to_bytes(batmap->header.batmap_size);
+	n = (u32) vhd_sectors_to_bytes(batmap->header.batmap_size);
 
 	for (i = 0; i < n; i++) {
 		if (batmap->header.batmap_version == VHD_BATMAP_VERSION(1, 1))
@@ -411,9 +931,9 @@ vhd_batmap_header_offset(vhd_context_t *ctx, off_t *_off)
 
 	*_off = 0;
 
-	off  = ctx->header.table_offset;
+	off  = (off_t)ctx->header.table_offset;
 	bat  = ctx->header.max_bat_size * sizeof(uint32_t);
-	off += vhd_bytes_padded(bat);
+	off += (off_t)vhd_bytes_padded(bat);
 
 	*_off = off;
 	return 0;
@@ -432,7 +952,7 @@ vhd_validate_platform_code(uint32_t code)
 	case PLAT_CODE_MACX:
 		return 0;
 	default:
-		VHDLOG("invalid parent locator code %u\n", code);
+		VHDLOG((FN,"invalid parent locator code %u\n", code));
 		return -EINVAL;
 	}
 }
@@ -457,8 +977,8 @@ vhd_hidden(vhd_context_t *ctx, int *hidden)
 
 		err = vhd_read_footer_at(ctx, &copy, 0);
 		if (err) {
-			VHDLOG("error reading backup footer of %s: %d\n",
-			       ctx->file, err);
+			VHDLOG((FN,"error reading backup footer of %s: %d\n",
+			       ctx->file, err));
 			return err;
 		}
 		*hidden = copy.hidden;
@@ -571,21 +1091,27 @@ vhd_bitmap_test(vhd_context_t *ctx, char *map, uint32_t block)
 void
 vhd_bitmap_set(vhd_context_t *ctx, char *map, uint32_t block)
 {
-	if (vhd_creator_tapdisk(ctx) &&
-	    ctx->footer.crtr_ver == 0x00000001)
-		return old_set_bit(map, block);
+    if( vhd_creator_tapdisk( ctx ) &&
+        ctx->footer.crtr_ver == 0x00000001 ) {
+        old_set_bit( map, block );
+        return;
+    }
 
-	return set_bit(map, block);
+	set_bit(map, block);
+    return;
 }
 
 void
 vhd_bitmap_clear(vhd_context_t *ctx, char *map, uint32_t block)
 {
-	if (vhd_creator_tapdisk(ctx) &&
-	    ctx->footer.crtr_ver == 0x00000001)
-		return old_clear_bit(map, block);
+    if( vhd_creator_tapdisk( ctx ) &&
+        ctx->footer.crtr_ver == 0x00000001 ) {
+        old_clear_bit( map, block );
+        return;
+    }
 
-	return clear_bit(map, block);
+	clear_bit(map, block);
+    return;
 }
 
 /*
@@ -605,10 +1131,10 @@ vhd_end_of_headers(vhd_context_t *ctx, off_t *end)
 	if (!vhd_type_dynamic(ctx))
 		return 0;
 
-	eom       = ctx->footer.data_offset + sizeof(vhd_header_t);
+	eom       = (off_t)(ctx->footer.data_offset + sizeof(vhd_header_t));
 
-	bat_bytes = vhd_bytes_padded(ctx->header.max_bat_size * sizeof(uint32_t));
-	bat_end   = ctx->header.table_offset + bat_bytes;
+	bat_bytes = (uint32_t)vhd_bytes_padded(ctx->header.max_bat_size * sizeof(uint32_t));
+	bat_end   = (off_t)(ctx->header.table_offset + bat_bytes);
 
 	eom       = MAX(eom, bat_end);
 
@@ -624,11 +1150,11 @@ vhd_end_of_headers(vhd_context_t *ctx, off_t *end)
 		if (err)
 			return err;
 
-		hdr_end += vhd_sectors_to_bytes(hdr_secs);
+		hdr_end += (off_t)vhd_sectors_to_bytes(hdr_secs);
 		eom      = MAX(eom, hdr_end);
 
 		map_secs = ctx->batmap.header.batmap_size;
-		map_end  = (ctx->batmap.header.batmap_offset +
+		map_end  = (off_t)(ctx->batmap.header.batmap_offset +
 			    vhd_sectors_to_bytes(map_secs));
 		eom      = MAX(eom, map_end);
 	}
@@ -643,7 +1169,7 @@ vhd_end_of_headers(vhd_context_t *ctx, off_t *end)
 		if (loc->code == PLAT_CODE_NONE)
 			continue;
 
-		loc_end = loc->data_offset + vhd_parent_locator_size(loc);
+		loc_end = (off_t)(loc->data_offset + vhd_parent_locator_size(loc));
 		eom     = MAX(eom, loc_end);
 	}
 
@@ -654,7 +1180,8 @@ vhd_end_of_headers(vhd_context_t *ctx, off_t *end)
 int
 vhd_end_of_data(vhd_context_t *ctx, off_t *end)
 {
-	int i, err;
+	unsigned int i;
+	int err;
 	off_t max;
 	uint64_t blk;
 
@@ -686,11 +1213,11 @@ vhd_end_of_data(vhd_context_t *ctx, off_t *end)
 
 		if (blk != DD_BLK_UNUSED) {
 			blk += ctx->spb + ctx->bm_secs;
-			max  = MAX(blk, max);
+			max  = MAX((off_t)blk, max);
 		}
 	}
 
-	*end = vhd_sectors_to_bytes(max);
+	*end = (off_t)vhd_sectors_to_bytes(max);
 	return 0;
 }
 
@@ -719,7 +1246,9 @@ vhd_time_to_string(uint32_t timestamp, char *target)
 	char *cr;
 	struct tm tm;
 	time_t t1, t2;
-
+#ifdef _WIN32
+    __time32_t t3;
+#endif
 	memset(&tm, 0, sizeof(struct tm));
 
 	/* VHD uses an epoch of 12:00AM, Jan 1, 2000.         */
@@ -730,8 +1259,12 @@ vhd_time_to_string(uint32_t timestamp, char *target)
 
 	t1 = mktime(&tm);
 	t2 = t1 + (time_t)timestamp;
-	ctime_r(&t2, target);
-
+#ifdef _WIN32
+    t3 = (__time32_t)t2;
+    _ctime32_s( target, 27, &t3 );
+#else
+    ctime_r(&t2, target);
+#endif
 	/* handle mad ctime_r newline appending. */
 	if ((cr = strchr(target, '\n')) != NULL)
 		*cr = '\0';
@@ -847,7 +1380,7 @@ vhd_put_bat(vhd_context_t *ctx)
 	if (!vhd_type_dynamic(ctx))
 		return;
 
-	free(ctx->bat.bat);
+	_aligned_free(ctx->bat.bat);
 	memset(&ctx->bat, 0, sizeof(vhd_bat_t));
 }
 
@@ -860,7 +1393,7 @@ vhd_put_batmap(vhd_context_t *ctx)
 	if (!vhd_has_batmap(ctx))
 		return;
 
-	free(ctx->batmap.map);
+	_aligned_free(ctx->batmap.map);
 	memset(&ctx->batmap, 0, sizeof(vhd_batmap_t));
 }
 
@@ -890,6 +1423,13 @@ vhd_read_short_footer(vhd_context_t *ctx, vhd_footer_t *footer)
 	if (err)
 		goto out;
 
+#ifdef _WIN32
+	buf = _aligned_malloc( sizeof(vhd_footer_t), VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err = posix_memalign((void **)&buf,
 			     VHD_SECTOR_SIZE, sizeof(vhd_footer_t));
 	if (err) {
@@ -897,6 +1437,7 @@ vhd_read_short_footer(vhd_context_t *ctx, vhd_footer_t *footer)
 		err = -err;
 		goto out;
 	}
+#endif
 
 	memset(buf, 0, sizeof(vhd_footer_t));
 
@@ -912,9 +1453,9 @@ vhd_read_short_footer(vhd_context_t *ctx, vhd_footer_t *footer)
 
 out:
 	if (err)
-		VHDLOG("%s: failed reading short footer: %d\n",
-		       ctx->file, err);
-	free(buf);
+		VHDLOG((FN,"%s: failed reading short footer: %d\n",
+		       ctx->file, err));
+	_aligned_free(buf);
 	return err;
 }
 
@@ -930,6 +1471,13 @@ vhd_read_footer_at(vhd_context_t *ctx, vhd_footer_t *footer, off_t off)
 	if (err)
 		goto out;
 
+#ifdef _WIN32
+	buf = _aligned_malloc( sizeof(vhd_footer_t), VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err = posix_memalign((void **)&buf,
 			     VHD_SECTOR_SIZE, sizeof(vhd_footer_t));
 	if (err) {
@@ -937,6 +1485,7 @@ vhd_read_footer_at(vhd_context_t *ctx, vhd_footer_t *footer, off_t off)
 		err = -err;
 		goto out;
 	}
+#endif
 
 	err = vhd_read(ctx, buf, sizeof(vhd_footer_t));
 	if (err)
@@ -949,9 +1498,9 @@ vhd_read_footer_at(vhd_context_t *ctx, vhd_footer_t *footer, off_t off)
 
 out:
 	if (err)
-		VHDLOG("%s: reading footer at 0x%08"PRIx64" failed: %d\n",
-		       ctx->file, off, err);
-	free(buf);
+		VHDLOG((FN,"%s: reading footer at 0x%08"PRIx64" failed: %d\n",
+		       ctx->file, off, err));
+	_aligned_free(buf);
 	return err;
 }
 
@@ -1000,6 +1549,13 @@ vhd_read_header_at(vhd_context_t *ctx, vhd_header_t *header, off_t off)
 	if (err)
 		goto out;
 
+#ifdef _WIN32
+	buf = _aligned_malloc( sizeof(vhd_header_t), VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err = posix_memalign((void **)&buf,
 			     VHD_SECTOR_SIZE, sizeof(vhd_header_t));
 	if (err) {
@@ -1007,6 +1563,7 @@ vhd_read_header_at(vhd_context_t *ctx, vhd_header_t *header, off_t off)
 		err = -err;
 		goto out;
 	}
+#endif
 
 	err = vhd_read(ctx, buf, sizeof(vhd_header_t));
 	if (err)
@@ -1019,24 +1576,23 @@ vhd_read_header_at(vhd_context_t *ctx, vhd_header_t *header, off_t off)
 
 out:
 	if (err)
-		VHDLOG("%s: reading header at 0x%08"PRIx64" failed: %d\n",
-		       ctx->file, off, err);
-	free(buf);
+		VHDLOG((FN,"%s: reading header at 0x%08"PRIx64" failed: %d\n",
+		       ctx->file, off, err));
+	_aligned_free(buf);
 	return err;
 }
 
 int
 vhd_read_header(vhd_context_t *ctx, vhd_header_t *header)
 {
-	int err;
 	off_t off;
 
 	if (!vhd_type_dynamic(ctx)) {
-		VHDLOG("%s is not dynamic!\n", ctx->file);
+		VHDLOG((FN,"%s is not dynamic!\n", ctx->file));
 		return -EINVAL;
 	}
 
-	off = ctx->footer.data_offset;
+	off = (off_t)ctx->footer.data_offset;
 	return vhd_read_header_at(ctx, header, off);
 }
 
@@ -1055,15 +1611,23 @@ vhd_read_bat(vhd_context_t *ctx, vhd_bat_t *bat)
 		goto fail;
 	}
 
-	off  = ctx->header.table_offset;
-	size = vhd_bytes_padded(ctx->header.max_bat_size * sizeof(uint32_t));
+	off  = (off_t)ctx->header.table_offset;
+	size = (size_t)vhd_bytes_padded(ctx->header.max_bat_size * sizeof(uint32_t));
 
+#ifdef _WIN32
+	buf = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto fail;
+        }
+#else
 	err  = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, size);
 	if (err) {
 		buf = NULL;
 		err = -err;
 		goto fail;
 	}
+#endif
 
 	err = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
@@ -1082,9 +1646,9 @@ vhd_read_bat(vhd_context_t *ctx, vhd_bat_t *bat)
 	return 0;
 
 fail:
-	free(buf);
+	_aligned_free(buf);
 	memset(bat, 0, sizeof(vhd_bat_t));
-	VHDLOG("%s: failed to read bat: %d\n", ctx->file, err);
+	VHDLOG((FN,"%s: failed to read bat: %d\n", ctx->file, err));
 	return err;
 }
 
@@ -1106,20 +1670,28 @@ vhd_read_batmap_header(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	if (err)
 		goto fail;
 
-	size = vhd_bytes_padded(sizeof(vhd_batmap_header_t));
+	size = (size_t)vhd_bytes_padded(sizeof(vhd_batmap_header_t));
+#ifdef _WIN32
+	buf = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto fail;
+        }
+#else
 	err  = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, size);
 	if (err) {
 		buf = NULL;
 		err = -err;
 		goto fail;
 	}
+#endif
 
 	err = vhd_read(ctx, buf, size);
 	if (err)
 		goto fail;
 
 	memcpy(&batmap->header, buf, sizeof(vhd_batmap_header_t));
-	free(buf);
+	_aligned_free(buf);
 	buf = NULL;
 
 	vhd_batmap_header_in(batmap);
@@ -1127,9 +1699,9 @@ vhd_read_batmap_header(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	return 0;
 
 fail:
-	free(buf);
+	_aligned_free(buf);
 	memset(&batmap->header, 0, sizeof(vhd_batmap_header_t));
-	VHDLOG("%s: failed to read batmap header: %d\n", ctx->file, err);
+	VHDLOG((FN,"%s: failed to read batmap header: %d\n", ctx->file, err));
 	return err;
 }
 
@@ -1141,16 +1713,24 @@ vhd_read_batmap_map(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	off_t off;
 	size_t map_size;
 
-	map_size = vhd_sectors_to_bytes(batmap->header.batmap_size);
+	map_size = (size_t)vhd_sectors_to_bytes(batmap->header.batmap_size);
 
+#ifdef _WIN32
+	buf = _aligned_malloc( map_size, VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto fail;
+        }
+#else
 	err = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, map_size);
 	if (err) {
 		buf = NULL;
 		err = -err;
 		goto fail;
 	}
+#endif
 
-	off  = batmap->header.batmap_offset;
+	off  = (off_t)batmap->header.batmap_offset;
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
 		goto fail;
@@ -1163,9 +1743,9 @@ vhd_read_batmap_map(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	return 0;
 
 fail:
-	free(buf);
+	_aligned_free(buf);
 	batmap->map = NULL;
-	VHDLOG("%s: failed to read batmap: %d\n", ctx->file, err);
+	VHDLOG((FN,"%s: failed to read batmap: %d\n", ctx->file, err));
 	return err;
 }
 
@@ -1198,7 +1778,7 @@ vhd_read_batmap(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	return 0;
 
 fail:
-	free(batmap->map);
+	_aligned_free(batmap->map);
 	memset(batmap, 0, sizeof(vhd_batmap_t));
 	return err;
 }
@@ -1244,8 +1824,11 @@ vhd_test_file_fixed(const char *file, int *is_block)
 	err = stat(file, &stats);
 	if (err == -1)
 		return -errno;
-
+#ifdef _WIN32
+        *is_block = 0; /* Look at filename for initial \\?? */
+#else
 	*is_block = !!(S_ISBLK(stats.st_mode));
+#endif
 	return err;
 }
 
@@ -1265,13 +1848,25 @@ vhd_find_parent(vhd_context_t *ctx, const char *parent, char **_location)
 		return -EINVAL;
 
 	if (parent[0] == '/') {
-		if (!access(parent, R_OK)) {
-			path = strdup(parent);
-			if (!path)
-				return -ENOMEM;
-			*_location = path;
-			return 0;
-		}
+        int ok;
+#ifdef _WIN32
+        int fd;
+
+        if( (fd = _open( parent, _O_RDONLY | _O_BINARY )) != -1 ) {
+            _close( fd );
+            ok = 1;
+        } else
+            ok = 0;
+#else
+        ok = !access( parent, R_OK );
+#endif
+        if( ok) {
+            path = strdup( parent );
+            if( !path )
+                return -ENOMEM;
+            *_location = path;
+            return 0;
+        }
 	}
 
 	/* check parent path relative to child's directory */
@@ -1280,21 +1875,44 @@ vhd_find_parent(vhd_context_t *ctx, const char *parent, char **_location)
 		err = -errno;
 		goto out;
 	}
-
-	cdir = dirname(cpath);
+#ifdef _WIN32
+    cdir = dirname( cpath + 1 );
+#else
+    cdir = dirname( cpath );
+#endif
 	if (asprintf(&location, "%s/%s", cdir, parent) == -1) {
 		err = -errno;
 		location = NULL;
 		goto out;
 	}
+    {
+        int ok;
+#ifdef _WIN32
+        int fd;
 
-	if (!access(location, R_OK)) {
-		path = realpath(location, NULL);
-		if (path) {
-			*_location = path;
-			return 0;
-		}
-	}
+        if( (fd = _open( location, _O_RDONLY | _O_BINARY )) != -1 ) {
+            _close( fd );
+            ok = 1;
+        } else
+            ok = 0;
+#else
+        ok = !access( location, R_OK );
+#endif
+        if( ok ) {
+            path = realpath( location, NULL );
+            if( path ) {
+#ifdef _WIN32
+                *_location = strdup( path + 1 );
+                free( path );
+#else
+                *_location = path;
+#endif
+                free(cpath);
+                free(location);
+                return 0;
+            }
+        }
+    }
 	err = -errno;
 
 out:
@@ -1304,10 +1922,11 @@ out:
 }
 
 static int 
-vhd_macx_encode_location(char *name, char **out, int *outlen)
+vhd_macx_encode_location(char *name, char **out, size_t *outlen)
 {
 	iconv_t cd;
-	int len, err;
+	int err;
+        size_t len;
 	size_t ibl, obl;
 	char *uri, *uri_utf8, *uri_utf8p, *ret;
 	const char *urip;
@@ -1365,19 +1984,20 @@ vhd_macx_encode_location(char *name, char **out, int *outlen)
 }
 
 static int
-vhd_w2u_encode_location(char *name, char **out, int *outlen)
+vhd_w2u_encode_location(char *name, char **out, size_t *outlen)
 {
-	iconv_t cd;
 	int len, err;
 	size_t ibl, obl;
 	char *uri, *uri_utf16, *uri_utf16p, *tmp, *ret;
 	const char *urip;
+	iconv_t cd;
+
+	cd = (iconv_t)-1;
 
 	err     = 0;
 	ret     = NULL;
 	*out    = NULL;
 	*outlen = 0;
-	cd      = (iconv_t) -1;
 
 	/* 
 	 * MICROSOFT_COMPAT
@@ -1391,8 +2011,12 @@ vhd_w2u_encode_location(char *name, char **out, int *outlen)
 			tmp = name;
 
 		err = asprintf(&uri, ".\\%s", tmp);
-	} else
-		err = asprintf(&uri, "%s", name);
+    } else
+#ifdef _WIN32
+        err = asprintf( &uri, "%s", name + 1 );
+#else
+        err = asprintf( &uri, "%s", name );
+#endif
 
 	if (err == -1)
 		return -ENOMEM;
@@ -1567,7 +2191,7 @@ vhd_parent_locator_read(vhd_context_t *ctx,
 		goto out;
 	}
 
-	err = vhd_seek(ctx, loc->data_offset, SEEK_SET);
+	err = vhd_seek(ctx, (off_t)loc->data_offset, SEEK_SET);
 	if (err)
 		goto out;
 
@@ -1577,12 +2201,20 @@ vhd_parent_locator_read(vhd_context_t *ctx,
 		goto out;
 	}
 
+#ifdef _WIN32
+	raw = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( raw == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err = posix_memalign((void **)&raw, VHD_SECTOR_SIZE, size);
 	if (err) {
 		raw = NULL;
 		err = -err;
 		goto out;
 	}
+#endif
 
 	err = vhd_read(ctx, raw, size);
 	if (err)
@@ -1614,15 +2246,15 @@ vhd_parent_locator_read(vhd_context_t *ctx,
 	*parent = name;
 
 out:
-	free(raw);
+	_aligned_free(raw);
 	free(out);
 
 	if (err) {
-		VHDLOG("%s: error reading parent locator: %d\n",
-		       ctx->file, err);
-		VHDLOG("%s: locator: code %u, space 0x%x, len 0x%x, "
+		VHDLOG((FN,"%s: error reading parent locator: %d\n",
+		       ctx->file, err));
+		VHDLOG((FN,"%s: locator: code %u, space 0x%x, len 0x%x, "
 		       "off 0x%"PRIx64"\n", ctx->file, loc->code, loc->data_space,
-		       loc->data_len, loc->data_offset);
+		       loc->data_len, loc->data_offset));
 	}
 
 	return err;
@@ -1650,8 +2282,8 @@ vhd_parent_locator_get(vhd_context_t *ctx, char **parent)
 
 		err = vhd_find_parent(ctx, name, &location);
 		if (err)
-			VHDLOG("%s: couldn't find parent %s (%d)\n",
-			       ctx->file, name, err);
+			VHDLOG((FN,"%s: couldn't find parent %s (%d)\n",
+			       ctx->file, name, err));
 		free(name);
 
 		if (!err) {
@@ -1669,7 +2301,8 @@ vhd_parent_locator_write_at(vhd_context_t *ctx,
 			    size_t max_bytes, vhd_parent_locator_t *loc)
 {
 	struct stat stats;
-	int err, len, size;
+    int err;
+    size_t size, len;
 	char *absolute_path, *relative_path, *encoded, *block;
 
 	memset(loc, 0, sizeof(vhd_parent_locator_t));
@@ -1699,16 +2332,28 @@ vhd_parent_locator_write_at(vhd_context_t *ctx,
 		goto out;
 	}
 
-	err = stat(absolute_path, &stats);
-	if (err) {
+    #ifdef _WIN32
+    err = stat( absolute_path+1, &stats );
+#else
+    err = stat( absolute_path, &stats );
+#endif
+    if (err) {
 		err = -errno;
 		goto out;
 	}
 
+#ifdef _WIN32
+        /* Look at filename for initial \\ to replace _S_IFBLK?? */
+	if (!(stats.st_mode & _S_IFREG) || (stats.st_mode & _S_IFDIR)) {
+		err = -EINVAL;
+		goto out;
+	}
+#else
 	if (!S_ISREG(stats.st_mode) && !S_ISBLK(stats.st_mode)) {
 		err = -EINVAL;
 		goto out;
 	}
+#endif
 
 	relative_path = relative_path_to(ctx->file, absolute_path, &err);
 	if (!relative_path || err) {
@@ -1721,6 +2366,8 @@ vhd_parent_locator_write_at(vhd_context_t *ctx,
 		err = vhd_macx_encode_location(relative_path, &encoded, &len);
 		break;
 	case PLAT_CODE_W2KU:
+        err = vhd_w2u_encode_location( absolute_path, &encoded, &len );
+        break;
 	case PLAT_CODE_W2RU:
 		err = vhd_w2u_encode_location(relative_path, &encoded, &len);
 		break;
@@ -1735,19 +2382,27 @@ vhd_parent_locator_write_at(vhd_context_t *ctx,
 	if (err)
 		goto out;
 
-	size = vhd_bytes_padded(len);
+	size = (size_t)vhd_bytes_padded(len);
 
 	if (max_bytes && size > max_bytes) {
 		err = -ENAMETOOLONG;
 		goto out;
 	}
 
+#ifdef _WIN32
+	block = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( block == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err  = posix_memalign((void **)&block, VHD_SECTOR_SIZE, size);
 	if (err) {
 		block = NULL;
 		err   = -err;
 		goto out;
 	}
+#endif
 
 	memset(block, 0, size);
 	memcpy(block, encoded, len);
@@ -1762,7 +2417,7 @@ out:
 	free(absolute_path);
 	free(relative_path);
 	free(encoded);
-	free(block);
+	_aligned_free(block);
 
 	if (!err) {
 		loc->res         = 0;
@@ -1816,16 +2471,22 @@ vhd_read_bitmap(vhd_context_t *ctx, uint32_t block, char **bufp)
 	if (blk == DD_BLK_UNUSED)
 		return -EINVAL;
 
-	off  = vhd_sectors_to_bytes(blk);
-	size = vhd_bytes_padded(ctx->spb >> 3);
+	off  = (off_t)vhd_sectors_to_bytes(blk);
+	size = (size_t)vhd_bytes_padded(ctx->spb >> 3);
 
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
 		return err;
 
+#ifdef _WIN32
+	buf = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( buf == NULL )
+            return -errno;
+#else
 	err  = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, size);
 	if (err)
 		return -err;
+#endif
 
 	err  = vhd_read(ctx, buf, size);
 	if (err)
@@ -1835,7 +2496,7 @@ vhd_read_bitmap(vhd_context_t *ctx, uint32_t block, char **bufp)
 	return 0;
 
 fail:
-	free(buf);
+	_aligned_free(buf);
 	return err;
 }
 
@@ -1865,20 +2526,28 @@ vhd_read_block(vhd_context_t *ctx, uint32_t block, char **bufp)
 	if (blk == DD_BLK_UNUSED)
 		return -EINVAL;
 
-	off  = vhd_sectors_to_bytes(blk + ctx->bm_secs);
-	size = vhd_sectors_to_bytes(ctx->spb);
+	off  = (off_t)vhd_sectors_to_bytes(blk + ctx->bm_secs);
+	size = (size_t)vhd_sectors_to_bytes(ctx->spb);
 
 	err  = vhd_footer_offset_at_eof(ctx, &end);
 	if (err)
 		return err;
 
+#ifdef _WIN32
+	buf = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto fail;
+        }
+#else
 	err  = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, size);
 	if (err) {
 		err = -err;
 		goto fail;
 	}
+#endif
 
-	if (end < off + ctx->header.block_size) {
+	if (end < off + (off_t)ctx->header.block_size) {
 		size = end - off;
 		memset(buf + size, 0, ctx->header.block_size - size);
 	}
@@ -1895,7 +2564,7 @@ vhd_read_block(vhd_context_t *ctx, uint32_t block, char **bufp)
 	return 0;
 
 fail:
-	free(buf);
+	_aligned_free(buf);
 	return err;
 }
 
@@ -1907,6 +2576,13 @@ vhd_write_footer_at(vhd_context_t *ctx, vhd_footer_t *footer, off_t off)
 
 	f = NULL;
 
+#ifdef _WIN32
+	f = _aligned_malloc( sizeof(vhd_footer_t), VHD_SECTOR_SIZE );
+        if( f == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err = posix_memalign((void **)&f,
 			     VHD_SECTOR_SIZE, sizeof(vhd_footer_t));
 	if (err) {
@@ -1914,6 +2590,7 @@ vhd_write_footer_at(vhd_context_t *ctx, vhd_footer_t *footer, off_t off)
 		err = -err;
 		goto out;
 	}
+#endif
 
 	memcpy(f, footer, sizeof(vhd_footer_t));
 	f->checksum = vhd_checksum_footer(f);
@@ -1932,9 +2609,9 @@ vhd_write_footer_at(vhd_context_t *ctx, vhd_footer_t *footer, off_t off)
 
 out:
 	if (err)
-		VHDLOG("%s: failed writing footer at 0x%08"PRIx64": %d\n",
-		       ctx->file, off, err);
-	free(f);
+		VHDLOG((FN,"%s: failed writing footer at 0x%08"PRIx64": %d\n",
+		       ctx->file, off, err));
+	_aligned_free(f);
 	return err;
 }
 
@@ -1974,6 +2651,13 @@ vhd_write_header_at(vhd_context_t *ctx, vhd_header_t *header, off_t off)
 		goto out;
 	}
 
+#ifdef _WIN32
+	h = _aligned_malloc( sizeof(vhd_header_t), VHD_SECTOR_SIZE );
+        if( h == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err = posix_memalign((void **)&h,
 			     VHD_SECTOR_SIZE, sizeof(vhd_header_t));
 	if (err) {
@@ -1981,6 +2665,7 @@ vhd_write_header_at(vhd_context_t *ctx, vhd_header_t *header, off_t off)
 		err = -err;
 		goto out;
 	}
+#endif
 
 	memcpy(h, header, sizeof(vhd_header_t));
 
@@ -1999,22 +2684,21 @@ vhd_write_header_at(vhd_context_t *ctx, vhd_header_t *header, off_t off)
 
 out:
 	if (err)
-		VHDLOG("%s: failed writing header at 0x%08"PRIx64": %d\n",
-		       ctx->file, off, err);
-	free(h);
+		VHDLOG((FN,"%s: failed writing header at 0x%08"PRIx64": %d\n",
+		       ctx->file, off, err));
+	_aligned_free(h);
 	return err;
 }
 
 int
 vhd_write_header(vhd_context_t *ctx, vhd_header_t *header)
 {
-	int err;
 	off_t off;
 
 	if (!vhd_type_dynamic(ctx))
 		return -EINVAL;
 
-	off = ctx->footer.data_offset;
+	off = (off_t)ctx->footer.data_offset;
 	return vhd_write_header_at(ctx, header, off);
 }
 
@@ -2039,16 +2723,22 @@ vhd_write_bat(vhd_context_t *ctx, vhd_bat_t *bat)
 
 	memset(&b, 0, sizeof(vhd_bat_t));
 
-	off  = ctx->header.table_offset;
-	size = vhd_bytes_padded(bat->entries * sizeof(uint32_t));
+	off  = (off_t)ctx->header.table_offset;
+	size = (uint32_t)vhd_bytes_padded(bat->entries * sizeof(uint32_t));
 
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
 		return err;
 
-	err  = posix_memalign((void **)&b.bat, VHD_SECTOR_SIZE, size);
+#ifdef _WIN32
+	b.bat = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( b.bat == NULL )
+            return -errno;
+#else
+	err = posix_memalign((void **)&b.bat, VHD_SECTOR_SIZE, size);
 	if (err)
 		return -err;
+#endif
 
 	memcpy(b.bat, bat->bat, size);
 	b.spb     = bat->spb;
@@ -2056,7 +2746,7 @@ vhd_write_bat(vhd_context_t *ctx, vhd_bat_t *bat)
 	vhd_bat_out(&b);
 
 	err = vhd_write(ctx, b.bat, size);
-	free(b.bat);
+	_aligned_free(b.bat);
 
 	return err;
 }
@@ -2086,19 +2776,27 @@ vhd_write_batmap(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	if (err)
 		goto out;
 
-	off      = b.header.batmap_offset;
-	map_size = vhd_sectors_to_bytes(b.header.batmap_size);
+	off      = (off_t)b.header.batmap_offset;
+	map_size = (size_t)vhd_sectors_to_bytes(b.header.batmap_size);
 
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
 		goto out;
 
+#ifdef _WIN32
+	map = _aligned_malloc( map_size, VHD_SECTOR_SIZE );
+        if( map == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err  = posix_memalign((void **)&map, VHD_SECTOR_SIZE, map_size);
 	if (err) {
 		map = NULL;
 		err = -err;
 		goto out;
 	}
+#endif
 
 	memcpy(map, b.map, map_size);
 
@@ -2110,18 +2808,26 @@ vhd_write_batmap(vhd_context_t *ctx, vhd_batmap_t *batmap)
 	if (err)
 		goto out;
 
-	size = vhd_bytes_padded(sizeof(vhd_batmap_header_t));
+	size = (size_t)vhd_bytes_padded(sizeof(vhd_batmap_header_t));
 
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
 		goto out;
 
+#ifdef _WIN32
+	buf = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            err = -errno;
+            goto out;
+        }
+#else
 	err  = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, size);
 	if (err) {
 		err = -err;
 		buf = NULL;
 		goto out;
 	}
+#endif
 
 	vhd_batmap_header_out(&b);
 	memset(buf, 0, size);
@@ -2131,9 +2837,9 @@ vhd_write_batmap(vhd_context_t *ctx, vhd_batmap_t *batmap)
 
 out:
 	if (err)
-		VHDLOG("%s: failed writing batmap: %d\n", ctx->file, err);
-	free(buf);
-	free(map);
+		VHDLOG((FN,"%s: failed writing batmap: %d\n", ctx->file, err));
+	_aligned_free(buf);
+	_aligned_free(map);
 	return 0;
 }
 
@@ -2143,7 +2849,7 @@ vhd_write_bitmap(vhd_context_t *ctx, uint32_t block, char *bitmap)
 	int err;
 	off_t off;
 	uint64_t blk;
-	size_t secs, size;
+	size_t size;
 
 	if (!vhd_type_dynamic(ctx))
 		return -EINVAL;
@@ -2162,8 +2868,8 @@ vhd_write_bitmap(vhd_context_t *ctx, uint32_t block, char *bitmap)
 	if (blk == DD_BLK_UNUSED)
 		return -EINVAL;
 
-	off  = vhd_sectors_to_bytes(blk);
-	size = vhd_sectors_to_bytes(ctx->bm_secs);
+	off  = (off_t)vhd_sectors_to_bytes(blk);
+	size = (size_t)vhd_sectors_to_bytes(ctx->bm_secs);
 
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
@@ -2201,8 +2907,8 @@ vhd_write_block(vhd_context_t *ctx, uint32_t block, char *data)
 	if (blk == DD_BLK_UNUSED)
 		return -EINVAL;
 
-	off  = vhd_sectors_to_bytes(blk + ctx->bm_secs);
-	size = vhd_sectors_to_bytes(ctx->spb);
+	off  = (off_t)vhd_sectors_to_bytes(blk + ctx->bm_secs);
+	size = (size_t)vhd_sectors_to_bytes(ctx->spb);
 
 	err  = vhd_seek(ctx, off, SEEK_SET);
 	if (err)
@@ -2222,7 +2928,7 @@ namedup(char **dup, const char *name)
 
 	if (strnlen(name, MAX_NAME_LEN) >= MAX_NAME_LEN)
 		return -ENAMETOOLONG;
-	
+
 	*dup = strdup(name);
 	if (*dup == NULL)
 		return -ENOMEM;
@@ -2235,10 +2941,10 @@ vhd_seek(vhd_context_t *ctx, off_t offset, int whence)
 {
 	off_t off;
 
-	off = lseek(ctx->fd, offset, whence);
+	off = (off_t)lseek(ctx->fd, offset, whence);
 	if (off == (off_t)-1) {
-		VHDLOG("%s: seek(0x%08"PRIx64", %d) failed: %d\n",
-		       ctx->file, offset, whence, -errno);
+		VHDLOG((FN,"%s: seek(0x%08"PRIx64", %d) failed: %d\n",
+		       ctx->file, offset, whence, -errno));
 		return -errno;
 	}
 
@@ -2248,7 +2954,7 @@ vhd_seek(vhd_context_t *ctx, off_t offset, int whence)
 off_t
 vhd_position(vhd_context_t *ctx)
 {
-	return lseek(ctx->fd, 0, SEEK_CUR);
+    return (off_t)lseek(ctx->fd, 0, SEEK_CUR);
 }
 
 int
@@ -2262,8 +2968,8 @@ vhd_read(vhd_context_t *ctx, void *buf, size_t size)
 	if (ret == size)
 		return 0;
 
-	VHDLOG("%s: read of %zu returned %zd, errno: %d\n",
-	       ctx->file, size, ret, -errno);
+	VHDLOG((FN,"%s: read of %" PRIuMAX " returned %" PRIdMAX ", errno: %d\n",
+	       ctx->file, (uintmax_t)size, (intmax_t)ret, -errno));
 
 	return (errno ? -errno : -EIO);
 }
@@ -2279,8 +2985,8 @@ vhd_write(vhd_context_t *ctx, void *buf, size_t size)
 	if (ret == size)
 		return 0;
 
-	VHDLOG("%s: write of %zu returned %zd, errno: %d\n",
-	       ctx->file, size, ret, -errno);
+	VHDLOG((FN,"%s: write of %" PRIuMAX " returned %" PRIdMAX ", errno: %d\n",
+	       ctx->file, (uintmax_t)size, (intmax_t)ret, -errno));
 
 	return (errno ? -errno : -EIO);
 }
@@ -2316,15 +3022,23 @@ vhd_open_fast(vhd_context_t *ctx)
 	size_t size;
 
 	size = sizeof(vhd_footer_t) + sizeof(vhd_header_t);
+#ifdef _WIN32
+	buf = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( buf == NULL ) {
+            VHDLOG((FN,"failed allocating %s: %d\n", ctx->file, -errno));
+            return -errno;
+        }
+#else
 	err  = posix_memalign((void **)&buf, VHD_SECTOR_SIZE, size);
 	if (err) {
-		VHDLOG("failed allocating %s: %d\n", ctx->file, -err);
+		VHDLOG((FN,"failed allocating %s: %d\n", ctx->file, -err));
 		return -err;
 	}
+#endif
 
 	err = vhd_read(ctx, buf, size);
 	if (err) {
-		VHDLOG("failed reading %s: %d\n", ctx->file, err);
+		VHDLOG((FN,"failed reading %s: %d\n", ctx->file, err));
 		goto out;
 	}
 
@@ -2353,7 +3067,7 @@ vhd_open_fast(vhd_context_t *ctx)
 	}
 
 out:
-	free(buf);
+	_aligned_free(buf);
 	return err;
 }
 
@@ -2373,7 +3087,7 @@ vhd_open(vhd_context_t *ctx, const char *file, int flags)
 	if (err)
 		return err;
 
-	oflags = O_DIRECT | O_LARGEFILE;
+	oflags = O_DIRECT | O_LARGEFILE | O_BINARY;
 	if (flags & VHD_OPEN_RDONLY)
 		oflags |= O_RDONLY;
 	if (flags & VHD_OPEN_RDWR)
@@ -2382,7 +3096,7 @@ vhd_open(vhd_context_t *ctx, const char *file, int flags)
 	ctx->fd = open(ctx->file, oflags, 0644);
 	if (ctx->fd == -1) {
 		err = -errno;
-		VHDLOG("failed to open %s: %d\n", ctx->file, err);
+		VHDLOG((FN,"failed to open %s: %d\n", ctx->file, err));
 		goto fail;
 	}
 
@@ -2432,8 +3146,8 @@ vhd_close(vhd_context_t *ctx)
 	if (ctx->file)
 		close(ctx->fd);
 	free(ctx->file);
-	free(ctx->bat.bat);
-	free(ctx->batmap.map);
+	_aligned_free(ctx->bat.bat);
+	_aligned_free(ctx->batmap.map);
 	memset(ctx, 0, sizeof(vhd_context_t));
 }
 
@@ -2446,7 +3160,15 @@ vhd_initialize_footer(vhd_context_t *ctx, int type, uint64_t size)
 	ctx->footer.ff_version   = HD_FF_VERSION;
 	ctx->footer.timestamp    = vhd_time(time(NULL));
 	ctx->footer.crtr_ver     = VHD_CURRENT_VERSION;
-	ctx->footer.crtr_os      = 0x00000000;
+    #ifdef _WIN32
+    ctx->footer.crtr_os      = HD_CR_OS_WINDOWS;
+#elif __APPLE__
+    ctx->footer.crtr_os      = HD_CR_OS_MACINTOSH;
+#elif VMS
+    ctx->footer.crtr_os      = HD_CR_OS_VMS;
+#else
+    ctx->footer.crtr_os      = HD_CR_OS_UNIX;
+#endif
 	ctx->footer.orig_size    = size;
 	ctx->footer.curr_size    = size;
 	ctx->footer.geometry     = vhd_chs(size);
@@ -2517,12 +3239,12 @@ get_file_size(const char *name)
 	int fd;
 	off_t end;
 
-	fd = open(name, O_LARGEFILE | O_RDONLY);
+	fd = open(name, O_LARGEFILE | O_RDONLY | O_BINARY);
 	if (fd == -1) {
-		VHDLOG("unable to open '%s': %d\n", name, errno);
+		VHDLOG((FN,"unable to open '%s': %d\n", name, errno));
 		return -errno;
 	}
-	end = lseek(fd, 0, SEEK_END);
+	end = (off_t)lseek(fd, 0, SEEK_END);
 	close(fd); 
 	return end;
 }
@@ -2546,8 +3268,8 @@ vhd_initialize_header(vhd_context_t *ctx, const char *parent_path,
 	ctx->header.block_size   = VHD_BLOCK_SIZE;
 	ctx->header.prt_ts       = 0;
 	ctx->header.res1         = 0;
-	ctx->header.max_bat_size = (ctx->footer.curr_size +
-				    VHD_BLOCK_SIZE - 1) >> VHD_BLOCK_SHIFT;
+	ctx->header.max_bat_size = (u32)((ctx->footer.curr_size +
+				    VHD_BLOCK_SIZE - 1) >> VHD_BLOCK_SHIFT);
 
 	ctx->footer.data_offset  = VHD_SECTOR_SIZE;
 
@@ -2567,7 +3289,7 @@ vhd_initialize_header(vhd_context_t *ctx, const char *parent_path,
 		err = vhd_open(&parent, parent_path, VHD_OPEN_RDONLY);
 		if (err)
 			return err;
-
+
 		ctx->header.prt_ts = vhd_time(stats.st_mtime);
 		blk_uuid_copy(&ctx->header.prt_uuid, &parent.footer.uuid);
 		if (!size)
@@ -2577,8 +3299,8 @@ vhd_initialize_header(vhd_context_t *ctx, const char *parent_path,
 	ctx->footer.orig_size    = size;
 	ctx->footer.curr_size    = size;
 	ctx->footer.geometry     = vhd_chs(size);
-	ctx->header.max_bat_size = 
-		(size + VHD_BLOCK_SIZE - 1) >> VHD_BLOCK_SHIFT;
+	ctx->header.max_bat_size = (u32)(
+        (size + VHD_BLOCK_SIZE - 1) >> VHD_BLOCK_SHIFT);
 
 	return vhd_initialize_header_parent_name(ctx, parent_path);
 }
@@ -2595,10 +3317,10 @@ vhd_write_parent_locators(vhd_context_t *ctx, const char *parent)
 	if (ctx->footer.type != HD_TYPE_DIFF)
 		return -EINVAL;
 
-	off = ctx->batmap.header.batmap_offset + 
-		vhd_sectors_to_bytes(ctx->batmap.header.batmap_size);
+	off = (off_t)(ctx->batmap.header.batmap_offset + 
+		vhd_sectors_to_bytes(ctx->batmap.header.batmap_size));
 	if (off & (VHD_SECTOR_SIZE - 1))
-		off = vhd_bytes_padded(off);
+		off = (off_t)vhd_bytes_padded(off);
 
 	for (i = 0; i < 3; i++) {
 		switch (i) {
@@ -2634,8 +3356,8 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 
 	ppath = realpath(parent_path, NULL);
 	if (!ppath) {
-		VHDLOG("error resolving parent path %s for %s: %d\n",
-		       parent_path, child->file, errno);
+		VHDLOG((FN,"error resolving parent path %s for %s: %d\n",
+		       parent_path, child->file, errno));
 		return -errno;
 	}
 
@@ -2645,18 +3367,26 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 		goto out;
 	}
 
+#ifdef _WIN32
+        /* Look at filename for initial \\ to replace _S_IFBLK?? */
+	if (!(stats.st_mode & _S_IFREG) || (stats.st_mode & _S_IFDIR)) {
+		err = -EINVAL;
+		goto out;
+	}
+#else
 	if (!S_ISREG(stats.st_mode) && !S_ISBLK(stats.st_mode)) {
 		err = -EINVAL;
 		goto out;
 	}
+#endif
 
 	if (raw) {
 		blk_uuid_clear(&child->header.prt_uuid);
 	} else {
 		err = vhd_open(&parent, ppath, VHD_OPEN_RDONLY);
 		if (err) {
-			VHDLOG("error opening parent %s for %s: %d\n",
-			       ppath, child->file, err);
+			VHDLOG((FN,"error opening parent %s for %s: %d\n",
+			       ppath, child->file, err));
 			goto out;
 		}
 		blk_uuid_copy(&child->header.prt_uuid, &parent.footer.uuid);
@@ -2680,11 +3410,11 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 		}
 
 		err = vhd_parent_locator_write_at(child, ppath,
-						  loc->data_offset,
+						  ((off_t)loc->data_offset),
 						  loc->code, max, loc);
 		if (err) {
-			VHDLOG("error writing parent locator %d for %s: %d\n",
-			       i, child->file, err);
+			VHDLOG((FN,"error writing parent locator %d for %s: %d\n",
+			       i, child->file, err));
 			goto out;
 		}
 	}
@@ -2693,7 +3423,7 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 
 	err = vhd_write_header(child, &child->header);
 	if (err) {
-		VHDLOG("error writing header for %s: %d\n", child->file, err);
+		VHDLOG((FN,"error writing header for %s: %d\n", child->file, err));
 		goto out;
 	}
 
@@ -2708,7 +3438,8 @@ static int
 vhd_create_batmap(vhd_context_t *ctx)
 {
 	off_t off;
-	int err, map_bytes;
+    int err;
+    size_t map_bytes;
 	vhd_batmap_header_t *header;
 
 	if (!vhd_type_dynamic(ctx))
@@ -2729,14 +3460,21 @@ vhd_create_batmap(vhd_context_t *ctx)
 	header->batmap_size    = secs_round_up_no_zero(map_bytes);
 	header->batmap_version = VHD_BATMAP_CURRENT_VERSION;
 
-	map_bytes = vhd_sectors_to_bytes(header->batmap_size);
+	map_bytes = (size_t)vhd_sectors_to_bytes(header->batmap_size);
 
+#ifdef _WIN32
+	ctx->batmap.map = _aligned_malloc( map_bytes, VHD_SECTOR_SIZE );
+        if( ctx->batmap.map == NULL ) {
+            return -errno;
+        }
+#else
 	err = posix_memalign((void **)&ctx->batmap.map,
 			     VHD_SECTOR_SIZE, map_bytes);
 	if (err) {
 		ctx->batmap.map = NULL;
 		return -err;
 	}
+#endif
 
 	memset(ctx->batmap.map, 0, map_bytes);
 
@@ -2746,24 +3484,31 @@ vhd_create_batmap(vhd_context_t *ctx)
 static int
 vhd_create_bat(vhd_context_t *ctx)
 {
-	int i, err;
-	size_t size;
+	int err;
+	size_t i, size;
 
 	if (!vhd_type_dynamic(ctx))
 		return -EINVAL;
 
-	size = vhd_bytes_padded(ctx->header.max_bat_size * sizeof(uint32_t));
+	size = (size_t)vhd_bytes_padded(ctx->header.max_bat_size * sizeof(uint32_t));
+#ifdef _WIN32
+	ctx->bat.bat = _aligned_malloc( size, VHD_SECTOR_SIZE );
+        if( ctx->bat.bat == NULL ) {
+            return -errno;
+        }
+#else
 	err  = posix_memalign((void **)&ctx->bat.bat, VHD_SECTOR_SIZE, size);
 	if (err) {
 		ctx->bat.bat = NULL;
-		return err;
+		return -err;
 	}
+#endif
 
 	memset(ctx->bat.bat, 0, size);
 	for (i = 0; i < ctx->header.max_bat_size; i++)
 		ctx->bat.bat[i] = DD_BLK_UNUSED;
 
-	err = vhd_seek(ctx, ctx->header.table_offset, SEEK_SET);
+	err = vhd_seek(ctx, (off_t)ctx->header.table_offset, SEEK_SET);
 	if (err)
 		return err;
 
@@ -2777,7 +3522,8 @@ static int
 vhd_initialize_fixed_disk(vhd_context_t *ctx)
 {
 	char *buf;
-	int i, err;
+	size_t i;
+        int err;
 
 	if (ctx->footer.type != HD_TYPE_FIXED)
 		return -EINVAL;
@@ -2786,11 +3532,16 @@ vhd_initialize_fixed_disk(vhd_context_t *ctx)
 	if (err)
 		return err;
 
+#ifdef _WIN32
+        buf = VirtualAlloc( NULL, VHD_BLOCK_SIZE, MEM_COMMIT, PAGE_READONLY );
+        if( buf == NULL )
+            return -ENOMEM;
+#else
 	buf = mmap(0, VHD_BLOCK_SIZE, PROT_READ,
 		   MAP_SHARED | MAP_ANON, -1, 0);
 	if (buf == MAP_FAILED)
 		return -errno;
-
+#endif
 	for (i = 0; i < ctx->footer.curr_size >> VHD_BLOCK_SHIFT; i++) {
 		err = vhd_write(ctx, buf, VHD_BLOCK_SIZE);
 		if (err)
@@ -2800,7 +3551,11 @@ vhd_initialize_fixed_disk(vhd_context_t *ctx)
 	err = 0;
 
 out:
-	munmap(buf, VHD_BLOCK_SIZE);
+#ifdef _WIN32
+	VirtualFree( buf, 0, MEM_RELEASE );
+#else
+        munmap(buf, VHD_BLOCK_SIZE);
+#endif
 	return err;
 }
 
@@ -2825,9 +3580,9 @@ vhd_set_phys_size(vhd_context_t *ctx, off_t size)
 	if (err)
 		return err;
 	if (size < phys_size) {
-		// would result in data loss
-		VHDLOG("ERROR: new size (%"PRIu64") < phys size (%"PRIu64")\n",
-				size, phys_size);
+            /* would result in data loss */
+		VHDLOG((FN,"ERROR: new size (%"PRIu64") < phys size (%"PRIu64")\n",
+				size, phys_size));
 		return -EINVAL;
 	}
 	return vhd_write_footer_at(ctx, &ctx->footer, 
@@ -2841,8 +3596,6 @@ __vhd_create(const char *name, const char *parent, uint64_t bytes, int type,
 	int err;
 	off_t off;
 	vhd_context_t ctx;
-	vhd_footer_t *footer;
-	vhd_header_t *header;
 	uint64_t size, blks;
 
 	switch (type) {
@@ -2860,12 +3613,10 @@ __vhd_create(const char *name, const char *parent, uint64_t bytes, int type,
 		return -ENAMETOOLONG;
 
 	memset(&ctx, 0, sizeof(vhd_context_t));
-	footer = &ctx.footer;
-	header = &ctx.header;
 	blks   = (bytes + VHD_BLOCK_SIZE - 1) >> VHD_BLOCK_SHIFT;
 	size   = blks << VHD_BLOCK_SHIFT;
 
-	ctx.fd = open(name, O_WRONLY | O_CREAT |
+	ctx.fd = open(name, O_WRONLY | O_CREAT | O_BINARY |
 		      O_TRUNC | O_LARGEFILE | O_DIRECT, 0644);
 	if (ctx.fd == -1)
 		return -errno;
@@ -2965,11 +3716,11 @@ __vhd_io_fixed_read(vhd_context_t *ctx,
 {
 	int err;
 
-	err = vhd_seek(ctx, vhd_sectors_to_bytes(sec), SEEK_SET);
+	err = vhd_seek(ctx, (off_t)vhd_sectors_to_bytes(sec), SEEK_SET);
 	if (err)
 		return err;
 
-	return vhd_read(ctx, buf, vhd_sectors_to_bytes(secs));
+	return vhd_read(ctx, buf, (off_t)vhd_sectors_to_bytes(secs));
 }
 
 static void
@@ -3008,7 +3759,7 @@ __vhd_io_dynamic_read_link(vhd_context_t *ctx, char *map,
 	map_off = 0;
 
 	do {
-		blk    = sector / ctx->spb;
+            blk    = (uint32_t)(sector / ctx->spb);
 		sec    = sector % ctx->spb;
 		off    = ctx->bat.bat[blk];
 		data   = NULL;
@@ -3025,7 +3776,7 @@ __vhd_io_dynamic_read_link(vhd_context_t *ctx, char *map,
 
 		err = vhd_read_block(ctx, blk, &data);
 		if (err) {
-			free(bitmap);
+			_aligned_free(bitmap);
 			return err;
 		}
 
@@ -3038,8 +3789,8 @@ __vhd_io_dynamic_read_link(vhd_context_t *ctx, char *map,
 					   buf, src, cnt);
 
 	next:
-		free(data);
-		free(bitmap);
+		_aligned_free(data);
+		_aligned_free(bitmap);
 
 		secs    -= cnt;
 		sector  += cnt;
@@ -3062,35 +3813,72 @@ __raw_read_link(char *filename,
 
 	err = 0;
 	errno = 0;
-	fd = open(filename, O_RDONLY | O_DIRECT | O_LARGEFILE);
+	fd = open(filename, O_RDONLY | O_DIRECT | O_LARGEFILE | O_BINARY);
 	if (fd == -1) {
-		VHDLOG("%s: failed to open: %d\n", filename, -errno);
+		VHDLOG((FN,"%s: failed to open: %d\n", filename, -errno));
 		return -errno;
 	}
 
-	off = lseek(fd, vhd_sectors_to_bytes(sec), SEEK_SET);
+	off = (off_t)lseek(fd, (off_t)vhd_sectors_to_bytes(sec), SEEK_SET);
 	if (off == (off_t)-1) {
-		VHDLOG("%s: seek(0x%08"PRIx64") failed: %d\n",
-		       filename, vhd_sectors_to_bytes(sec), -errno);
+		VHDLOG((FN,"%s: seek(0x%08"PRIx64") failed: %d\n",
+		       filename, vhd_sectors_to_bytes(sec), -errno));
 		err = -errno;
 		goto close;
 	}
 
 	size = vhd_sectors_to_bytes(secs);
+#ifdef _WIN32
+	data = _aligned_malloc( (size_t)size, VHD_SECTOR_SIZE );
+        if( data == NULL ) {
+            err = -errno;
+            goto close;
+        }
+#else
 	err = posix_memalign((void **)&data, VHD_SECTOR_SIZE, size);
-	if (err)
+	if (err) {
+		err = -err;
 		goto close;
+        }
+#endif
 
-	err = read(fd, data, size);
-	if (err != size) {
-		VHDLOG("%s: reading of %"PRIu64" returned %d, errno: %d\n",
-				filename, size, err, -errno);
-		free(data);
-		err = errno ? -errno : -EIO;
-		goto close;
-	}
-	__vhd_io_dynamic_copy_data(NULL, map, 0, NULL, 0, buf, data, secs);
-	free(data);
+#ifdef _WIN32
+    {
+        char *dp;
+        dp = data;
+
+        while( size != 0 ) {
+            uint32_t n;
+
+            if( size > UINT32_MAX )
+                n = (uint32_t)((((UINT64)UINT32_MAX) + 1) / 2);
+            else
+                n = (uint32_t)size;
+
+            err = read( fd, dp, n );
+            if( err != n ) {
+                VHDLOG((FN, "%s: reading of %"PRIu64" returned %d, errno: %d\n",
+                    filename, n, err, -errno ));
+                _aligned_free( data );
+                err = errno ? -errno : -EIO;
+                goto close;
+            }
+            size -= n;
+            dp += n;
+        }
+    }
+#else
+        err = read( fd, data, size );
+        if( (size_t)err != size ) {
+            VHDLOG((FN, "%s: reading of %"PRIu64" returned %d, errno: %d\n",
+                filename, size, err, -errno ));
+            _aligned_free( data );
+            err = errno ? -errno : -EIO;
+            goto close;
+        }
+#endif
+        __vhd_io_dynamic_copy_data(NULL, map, 0, NULL, 0, buf, data, secs);
+	_aligned_free(data);
 	err = 0;
 
 close:
@@ -3117,7 +3905,7 @@ __vhd_io_dynamic_read(vhd_context_t *ctx,
 	if (!map)
 		return -ENOMEM;
 
-	memset(buf, 0, vhd_sectors_to_bytes(secs));
+	memset(buf, 0, (size_t)vhd_sectors_to_bytes(secs));
 
 	for (;;) {
 		err = __vhd_io_dynamic_read_link(vhd, map, buf, sec, secs);
@@ -3190,11 +3978,11 @@ __vhd_io_fixed_write(vhd_context_t *ctx,
 {
 	int err;
 
-	err = vhd_seek(ctx, vhd_sectors_to_bytes(sec), SEEK_SET);
+	err = vhd_seek(ctx, (off_t)vhd_sectors_to_bytes(sec), SEEK_SET);
 	if (err)
 		return err;
 
-	return vhd_write(ctx, buf, vhd_sectors_to_bytes(secs));
+	return vhd_write(ctx, buf, (size_t)vhd_sectors_to_bytes(secs));
 }
 
 static int
@@ -3203,9 +3991,20 @@ __vhd_io_allocate_block(vhd_context_t *ctx, uint32_t block)
 	char *buf;
 	size_t size;
 	off_t off, max;
-	int i, err, gap, spp;
+	int err, gap;
+        long spp;
+#ifdef _WIN32
+        SYSTEM_INFO inf;
 
+        GetSystemInfo( &inf );
+        spp = inf.dwPageSize >> VHD_SECTOR_SHIFT;
+#elif defined( _SC_PAGESIZE)
+        spp = sysconf( _SC_PAGESIZE ) >> VHD_SECTOR_SHIFT;
+#else
 	spp = getpagesize() >> VHD_SECTOR_SHIFT;
+#endif
+        if( spp == 0 )
+            abort();
 
 	err = vhd_end_of_data(ctx, &max);
 	if (err)
@@ -3225,10 +4024,16 @@ __vhd_io_allocate_block(vhd_context_t *ctx, uint32_t block)
 	if (err)
 		return err;
 
-	size = vhd_sectors_to_bytes(ctx->spb + ctx->bm_secs + gap);
+	size = (size_t)vhd_sectors_to_bytes(ctx->spb + ctx->bm_secs + gap);
+#ifdef _WIN32
+        buf = VirtualAlloc( NULL, size, MEM_COMMIT, PAGE_READONLY );
+        if( buf == NULL )
+            return -ENOMEM;
+#else
 	buf  = mmap(0, size, PROT_READ, MAP_SHARED | MAP_ANON, -1, 0);
 	if (buf == MAP_FAILED)
 		return -errno;
+#endif
 
 	err = vhd_write(ctx, buf, size);
 	if (err)
@@ -3242,7 +4047,11 @@ __vhd_io_allocate_block(vhd_context_t *ctx, uint32_t block)
 	err = 0;
 
 out:
+#ifdef _WIN32
+	VirtualFree( buf, 0, MEM_RELEASE );
+#else
 	munmap(buf, size);
+#endif
 	return err;
 }
 
@@ -3253,7 +4062,8 @@ __vhd_io_dynamic_write(vhd_context_t *ctx,
 	char *map;
 	off_t off;
 	uint32_t blk, sec;
-	int i, err, cnt, ret;
+	int err, ret;
+    size_t i, cnt;
 
 	if (vhd_sectors_to_bytes(sector + secs) > ctx->footer.curr_size)
 		return -ERANGE;
@@ -3269,7 +4079,7 @@ __vhd_io_dynamic_write(vhd_context_t *ctx,
 	}
 
 	do {
-		blk = sector / ctx->spb;
+		blk = (uint32_t)(sector / ctx->spb);
 		sec = sector % ctx->spb;
 
 		off = ctx->bat.bat[blk];
@@ -3282,12 +4092,12 @@ __vhd_io_dynamic_write(vhd_context_t *ctx,
 		}
 
 		off += ctx->bm_secs + sec;
-		err  = vhd_seek(ctx, vhd_sectors_to_bytes(off), SEEK_SET);
+		err  = vhd_seek(ctx, (off_t)vhd_sectors_to_bytes(off), SEEK_SET);
 		if (err)
 			return err;
 
 		cnt = MIN(secs, ctx->spb - sec);
-		err = vhd_write(ctx, buf, vhd_sectors_to_bytes(cnt));
+		err = vhd_write(ctx, buf, (size_t)vhd_sectors_to_bytes(cnt));
 		if (err)
 			return err;
 
@@ -3309,7 +4119,7 @@ __vhd_io_dynamic_write(vhd_context_t *ctx,
 		if (vhd_has_batmap(ctx)) {
 			for (i = 0; i < ctx->spb; i++)
 				if (!vhd_bitmap_test(ctx, map, i)) {
-					free(map);
+					_aligned_free(map);
 					goto next;
 				}
 
@@ -3319,7 +4129,7 @@ __vhd_io_dynamic_write(vhd_context_t *ctx,
 				goto fail;
 		}
 
-		free(map);
+		_aligned_free(map);
 		map = NULL;
 
 	next:
@@ -3335,7 +4145,7 @@ out:
 	return (err ? err : ret);
 
 fail:
-	free(map);
+	_aligned_free(map);
 	goto out;
 }
 

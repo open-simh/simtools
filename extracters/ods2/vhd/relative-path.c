@@ -24,6 +24,17 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+/* Modified March 2016 Timothe Litt to work under windows.
+ * Copyright (C) 2016 Timothe Litt
+ * Modifications subject to the same license terms as above,
+ * substituting "Timothe Litt" for "XenSource Inc."
+ */
+
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
+#include <stdarg.h>
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -31,17 +42,112 @@
 
 #include "relative-path.h"
 
+#ifdef _WIN32
+#include <stdio.h>
+#include <windows.h>
+#include <Shlwapi.h>
+#define strdup _strdup
+#else
+#include <syslog.h>
+#endif
+
+#define DELIMITER    '/'
+
+#define FN __func__
+
+#define EPRINTF(a) rpath_log_error a
+
+static void rpath_log_error( const char *func, const char *fmt, ... )
+#ifdef __GNUC__
+    __attribute__((format(printf,2,3)));
+#else
+    ;
+#endif
+
+#ifndef LIBVHD_HAS_SYSLOG
+#ifdef _WIN32
+#define LIBVHD_HAS_SYSLOG 0
+#else
+#define LIBVHD_HAS_SYSLOG 1
+#endif
+#endif
+
 #define sfree(ptr)         \
 do {                       \
 	free(ptr);         \
 	ptr = NULL;        \
 } while (0)
 
+#ifdef _WIN32
+char *realpath( const char *path, char *resolved ) {
+    char *p;
+    DWORD len;
+
+    p = resolved;
+    if( resolved == NULL ) {
+        resolved = malloc( 1+ MAX_PATH + 1 );
+        if( resolved == NULL ) {
+            return NULL;
+        }
+    }
+    if( (len = GetFullPathName( path[0] == '/'? path+1:path, MAX_PATH + 1, resolved, NULL )) == 0 ) {
+        if( p == NULL )
+            free( resolved );
+        return NULL;
+    }
+    if( len > MAX_PATH ) {
+        if( p != NULL )
+            return NULL;
+        if( (p = realloc( resolved, len )) == NULL ) {
+            free( resolved );
+            return NULL;
+        }
+        resolved = p;
+        len = GetFullPathName( path, MAX_PATH + 1, resolved, NULL );
+        if( len > MAX_PATH || len == 0 ) {
+            free( resolved );
+            return NULL;
+        }
+    }
+
+    for( p = resolved; *p; p++ ) {
+        if( *p == '\\')
+            *p = '/';
+    }
+    for( p = resolved; isalpha( *p ); p++ )
+        ;
+    if( *p == ':' ) { /* Hide drive under '/' for callers. */
+        memmove( resolved + 1, resolved, strlen( resolved ) +1 );
+        resolved[0] = '/'; /* Callers must skip '/' when touching filesystem. */
+    }
+    return resolved;
+}
+int asprintf( char **result, const char *fmt, ... ) {
+    int len;
+    va_list ap;
+    char *np;
+
+    /* It would be better to va_copy() the list and do a prescan,
+     * but va_copy apparently has issues with versions of MS C
+     * still in the field.  This approach is ugly and wasteful, but
+     * should work.  (A KB just isn't what it used to be...)
+     */
+    if( (*result = malloc( 1 * 100 * 1000 + 1 )) == NULL )
+        return -1;
+    va_start( ap, fmt );
+    len = vsprintf( *result, fmt, ap );
+    np = realloc( *result, len + 1 );
+    if( np != NULL )
+        *result = np;
+    return len;
+}
+#endif
+
 /*
- * count number of tokens between DELIMETER characters
+ * count number of tokens between DELIMITER characters
  */
-static int
-count_nodes(char *path)
+
+int count_nodes(char *path)
 {
 	int i;
 	char *tmp;
@@ -223,30 +329,30 @@ relative_path_to(char *from, char *to, int *err)
 
 	if (strnlen(to, MAX_NAME_LEN)   == MAX_NAME_LEN ||
 	    strnlen(from, MAX_NAME_LEN) == MAX_NAME_LEN) {
-		EPRINTF("invalid input; max path length is %d\n",
-			MAX_NAME_LEN);
+		EPRINTF((FN,"invalid input; max path length is %d\n",
+			MAX_NAME_LEN));
 		*err = -ENAMETOOLONG;
 		return NULL;
 	}
 
 	to_absolute = realpath(to, NULL);
 	if (!to_absolute) {
-		EPRINTF("failed to get absolute path of %s\n", to);
+		EPRINTF((FN,"failed to get absolute path of %s\n", to));
 		*err = -errno;
 		goto out;
 	}
 
 	from_absolute = realpath(from, NULL);
 	if (!from_absolute) {
-		EPRINTF("failed to get absolute path of %s\n", from);
+		EPRINTF((FN,"failed to get absolute path of %s\n", from));
 		*err = -errno;
 		goto out;
 	}
 
 	if (strnlen(to_absolute, MAX_NAME_LEN)   == MAX_NAME_LEN ||
 	    strnlen(from_absolute, MAX_NAME_LEN) == MAX_NAME_LEN) {
-		EPRINTF("invalid input; max path length is %d\n",
-			MAX_NAME_LEN);
+		EPRINTF((FN,"invalid input; max path length is %d\n",
+			MAX_NAME_LEN));
 		*err = -ENAMETOOLONG;
 		goto out;
 	}
@@ -257,8 +363,8 @@ relative_path_to(char *from, char *to, int *err)
 	/* count nodes in common */
 	common = count_common_nodes(to_absolute + 1, from_absolute + 1);
 	if (common < 0) {
-		EPRINTF("failed to count common nodes of %s and %s: %d\n",
-			to_absolute, from_absolute, common);
+		EPRINTF((FN,"failed to count common nodes of %s and %s: %d\n",
+			to_absolute, from_absolute, common));
 		*err = common;
 		goto out;
 	}
@@ -266,8 +372,8 @@ relative_path_to(char *from, char *to, int *err)
 	/* move up to common node */
 	up = up_nodes(from_nodes - common - 1);
 	if (!up) {
-		EPRINTF("failed to allocate relative path for %s: %d\n",
-			from_absolute, -ENOMEM);
+		EPRINTF((FN,"failed to allocate relative path for %s: %d\n",
+			from_absolute, -ENOMEM));
 		*err = -ENOMEM;
 		goto out;
 	}
@@ -275,16 +381,16 @@ relative_path_to(char *from, char *to, int *err)
 	/* get path from common node to target */
 	common_target_path = node_offset(to_absolute, common + 1);
 	if (!common_target_path) {
-		EPRINTF("failed to find common target path to %s: %d\n",
-			to_absolute, -EINVAL);
+		EPRINTF((FN,"failed to find common target path to %s: %d\n",
+			to_absolute, -EINVAL));
 		*err = -EINVAL;
 		goto out;
 	}
 
 	/* get relative path */
 	if (asprintf(&relative_path, "%s%s", up, common_target_path) == -1) {
-		EPRINTF("failed to construct final path %s%s: %d\n",
-			up, common_target_path, -ENOMEM);
+		EPRINTF((FN,"failed to construct final path %s%s: %d\n",
+			up, common_target_path, -ENOMEM));
 		relative_path = NULL;
 		*err = -ENOMEM;
 		goto out;
@@ -297,3 +403,39 @@ out:
 
 	return relative_path;
 }
+static void rpath_log_error( const char *func, const char *fmt, ... )
+{
+    char *buf, nilbuf;
+    size_t ilen, len;
+    va_list ap;
+
+    ilen = sizeof( "tap-err:%s: " ) + strlen( func ) -2;
+    va_start(ap, fmt );
+    len = vsnprintf( &nilbuf, 1, fmt, ap );
+    va_end( ap );
+
+    if( (buf = malloc( ilen + len + 1 )) == NULL ) {
+#if LIBVHD_HAS_SYSLOG
+        syslog( LOG_INFO, "tap-err:%s: Out of memory", func );
+#else
+        fprintf( stderr, "tap-err%s: Out of memory for %s\n", func, fmt );
+#endif
+        return;
+    }
+    va_start(ap, fmt);
+    (void) snprintf( buf, ilen, "tap-err:%s: ", func );
+    (void) vsnprintf( buf + ilen -1, len+1, fmt, ap );
+    va_end( ap );
+    len += ilen -1;
+    if( buf[ len -1 ] != '\n' )
+        buf[len++] = '\n';
+    buf[len] = '\0';
+#if LIBVHD_HAS_SYSLOG
+    syslog(LOG_INFO, buf);
+#else
+    fputs( buf, stderr );
+#endif
+    free( buf );
+
+    return;
+ }
