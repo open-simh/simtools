@@ -1,4 +1,4 @@
-/* Access.c V2.1 */
+/* Access.c */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -17,6 +17,14 @@
         'RMS' routines.
 */
 
+#if !defined( DEBUG ) && defined( DEBUG_ACCESS )
+#define DEBUG DEBUG_ACCCESS
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
+
 #include <ctype.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -26,20 +34,15 @@
 #include "ssdef.h"
 #include "access.h"
 #include "device.h"
+#include "initvol.h"
 #include "ods2.h"
-#include "phyio.h"
 #include "phyvirt.h"
 #include "stsdef.h"
 #include "compat.h"
 #include "sysmsg.h"
 #include "vmstime.h"
 
-#ifndef TRUE
-#define TRUE ( 0 == 0 )
-#endif
-#ifndef FALSE
-#define FALSE ( 0 != 0 )
-#endif
+extern int mountdef( const char *devnam );
 
 struct VCB *vcb_list = NULL;
 
@@ -51,15 +54,6 @@ struct WCBKEY {
     struct WCB *prevwcb;
 };
 
-#if 0
-static unsigned int delta_from_name( const char *diskname );
-#endif
-static unsigned int delta_from_index( size_t index );
-static unsigned int compute_delta( unsigned long sectorsize,
-                                   unsigned long sectors,
-                                   unsigned long tracks,
-                                   unsigned long cylinders );
-
 unsigned deallocfile(struct FCB *fcb);  /* Update.c */
 #define DEBUGx
 
@@ -67,7 +61,7 @@ unsigned deallocfile(struct FCB *fcb);  /* Update.c */
 
 /* checksum() to produce header checksum values... */
 
-vmsword checksumn( vmsword *block, int count ) {
+f11word checksumn( f11word *block, int count ) {
     register unsigned result;
     register unsigned short *ptr;
     register unsigned data;
@@ -76,12 +70,12 @@ vmsword checksumn( vmsword *block, int count ) {
     result = 0;
     for ( ; count > 0; --count ) {
         data = *ptr++;
-        result += VMSWORD(data);
+        result += F11WORD(data);
     }
-    return (vmsword)(result & 0xFFFF);
+    return (f11word)(result & 0xFFFF);
 }
 
-vmsword checksum( vmsword *block ) {
+f11word checksum( f11word *block ) {
     return checksumn( block, 255 );
 }
 
@@ -91,8 +85,8 @@ vmsword checksum( vmsword *block ) {
 
 void fid_copy(struct fiddef *dst,struct fiddef *src,unsigned rvn)
 {
-    dst->fid$w_num = VMSWORD(src->fid$w_num);
-    dst->fid$w_seq = VMSWORD(src->fid$w_seq);
+    dst->fid$w_num = F11WORD(src->fid$w_num);
+    dst->fid$w_seq = F11WORD(src->fid$w_seq);
     dst->fid$b_rvn = src->fid$b_rvn == 0 ? rvn : src->fid$b_rvn;
     dst->fid$b_nmx = src->fid$b_nmx;
 }
@@ -103,11 +97,11 @@ void fid_copy(struct fiddef *dst,struct fiddef *src,unsigned rvn)
 
 unsigned deaccesshead( struct VIOC *vioc, struct HEAD *head, unsigned idxblk ) {
 
-    vmsword check;
+    f11word check;
 
     if ( head && idxblk ) {
-        check = checksum( (vmsword *) head );
-        head->fh2$w_checksum = VMSWORD(check);
+        check = checksum( (f11word *) head );
+        head->fh2$w_checksum = F11WORD(check);
     }
     return deaccesschunk( vioc, idxblk, 1, TRUE );
 }
@@ -125,15 +119,19 @@ unsigned accesshead(struct VCB *vcb,struct fiddef *fid,unsigned seg_num,
     register unsigned idxblk;
     vcbdev = RVN_TO_DEV(vcb,fid->fid$b_rvn);
     if (vcbdev == NULL) return SS$_DEVNOTMOUNT;
-    if (wrtflg && ((vcb->status & VCB_WRITE) == 0)) return SS$_WRITLCK;
+    if( wrtflg && !(vcb->status & VCB_WRITE) )
+        return SS$_WRITLCK;
     idxblk = fid->fid$w_num +
                  (fid->fid$b_nmx << 16) - 1 +
-                 VMSWORD(vcbdev->home.hm2$w_ibmapvbn) +
-                 VMSWORD(vcbdev->home.hm2$w_ibmapsize);
+                 F11WORD(vcbdev->home.hm2$w_ibmapvbn) +
+                 F11WORD(vcbdev->home.hm2$w_ibmapsize);
     if (vcbdev->idxfcb->head != NULL) {
         if (idxblk >=
-            VMSSWAP(vcbdev->idxfcb->head->fh2$w_recattr.fat$l_efblk)) {
-            printf("Not in index file\n");
+            F11SWAP(vcbdev->idxfcb->head->fh2$w_recattr.fat$l_efblk)) {
+#if DEBUG
+            printf("%u,%u,%u, %u Not in index file\n",
+                   fid->fid$w_num,fid->fid$w_seq,fid->fid$b_rvn,fid->fid$b_nmx);
+#endif
             return SS$_NOSUCHFILE;
         }
     }
@@ -144,9 +142,9 @@ unsigned accesshead(struct VCB *vcb,struct fiddef *fid,unsigned seg_num,
         if (retidxblk) {
             *retidxblk = wrtflg ? idxblk : 0;
         }
-        if (VMSWORD(head->fh2$w_fid.fid$w_num) != fid->fid$w_num ||
+        if (F11WORD(head->fh2$w_fid.fid$w_num) != fid->fid$w_num ||
             head->fh2$w_fid.fid$b_nmx != fid->fid$b_nmx ||
-            VMSWORD(head->fh2$w_fid.fid$w_seq) != fid->fid$w_seq ||
+            F11WORD(head->fh2$w_fid.fid$w_seq) != fid->fid$w_seq ||
             (head->fh2$w_fid.fid$b_rvn != fid->fid$b_rvn &&
              head->fh2$w_fid.fid$b_rvn != 0)) {
             /* lib$signal(SS$_NOSUCHFILE); */
@@ -158,18 +156,18 @@ unsigned accesshead(struct VCB *vcb,struct fiddef *fid,unsigned seg_num,
                 head->fh2$b_acoffset > head->fh2$b_rsoffset ||
                 head->fh2$b_map_inuse >
                     head->fh2$b_acoffset - head->fh2$b_mpoffset ||
-                checksum( (vmsword *) head ) !=
-                    VMSWORD( head->fh2$w_checksum ) ) {
-#ifdef DEBUG
+                checksum( (f11word *) head ) !=
+                    F11WORD( head->fh2$w_checksum ) ) {
+#if DEBUG
                     printf( "--->accesshead(): File header checksum failure:" );
                     printf( " FH2$W_CHECKSUM=%u, checksum()=%u\n",
-                            VMSWORD( head->fh2$w_checksum ),
-                            checksum( (vmsword *) head )
+                            F11WORD( head->fh2$w_checksum ),
+                            checksum( (f11word *) head )
                           );
 #endif
                 sts = SS$_DATACHECK;
             } else {
-                if (VMSWORD(head->fh2$w_seg_num) != seg_num) {
+                if (F11WORD(head->fh2$w_seg_num) != seg_num) {
                     sts = SS$_FILESEQCHK;
                 }
             }
@@ -230,24 +228,24 @@ struct HEAD *premap_indexf(struct FCB *fcb,unsigned *retsts)
     if (head == NULL) {
         *retsts = SS$_INSFMEM;
     } else {
-        *retsts = phyio_read( vcbdev->dev,
-                              VMSLONG( vcbdev->home.hm2$l_ibmaplbn ) +
-                              VMSWORD( vcbdev->home.hm2$w_ibmapsize ),
+        *retsts = virt_read( vcbdev->dev,
+                              F11LONG( vcbdev->home.hm2$l_ibmaplbn ) +
+                              F11WORD( vcbdev->home.hm2$w_ibmapsize ),
                               sizeof( struct HEAD ), (char *) head );
         if (!(*retsts & STS$M_SUCCESS)) {
             free(head);
             head = NULL;
         } else {
-            if (VMSWORD(head->fh2$w_fid.fid$w_num) != 1 ||
+            if (F11WORD(head->fh2$w_fid.fid$w_num) != 1 ||
                 head->fh2$w_fid.fid$b_nmx != 0 ||
-                VMSWORD(head->fh2$w_fid.fid$w_seq) != 1 ||
-                VMSWORD(head->fh2$w_checksum) !=
-                   checksum( (vmsword *) head ) ) {
-#ifdef DEBUG
+                F11WORD(head->fh2$w_fid.fid$w_seq) != 1 ||
+                F11WORD(head->fh2$w_checksum) !=
+                   checksum( (f11word *) head ) ) {
+#if DEBUG
                     printf( "--->premap_indexf(): Index file header checksum" );
                     printf( " failure: FH2$W_CHECKSUM=%u, checksum()=%u\n",
-                            VMSWORD( head->fh2$w_checksum ),
-                            checksum( (vmsword *) head )
+                            F11WORD( head->fh2$w_checksum ),
+                            checksum( (f11word *) head )
                           );
 #endif
                 *retsts = SS$_DATACHECK;
@@ -315,28 +313,28 @@ static void *wcb_create( unsigned hashval, void *keyval, unsigned *retsts ) {
             while (mp < me) {
                 register unsigned phylen,phyblk;
                 register unsigned short mp0;
-                switch ((mp0 = VMSWORD(*mp)) >> 14) {
+                switch ((mp0 = F11WORD(*mp)) >> 14) {
                     case 0:
                         phylen = 0;
                         mp++;
                         break;
                     case 1:
                         phylen =  (mp0 & 0x00ff) + 1;
-                        phyblk = ((mp0 & 0x3f00) << 8) | VMSWORD(mp[1]);
+                        phyblk = ((mp0 & 0x3f00) << 8) | F11WORD(mp[1]);
                         mp += 2;
                         break;
                     case 2:
                         phylen =  (mp0 & 0x3fff) + 1;
-                        phyblk = (VMSWORD(mp[2]) << 16) | VMSWORD(mp[1]);
+                        phyblk = (F11WORD(mp[2]) << 16) | F11WORD(mp[1]);
                         mp += 3;
                         break;
                     case 3:
-                        phylen = ((mp0 & 0x3fff) << 16) + VMSWORD(mp[1]) + 1;
-                        phyblk = (VMSWORD(mp[3]) << 16) | VMSWORD(mp[2]);
+                        phylen = ((mp0 & 0x3fff) << 16) + F11WORD(mp[1]) + 1;
+                        phyblk = (F11WORD(mp[3]) << 16) | F11WORD(mp[2]);
                         mp += 4;
                         break;
                     default:
-                        printf( "Unknown type %x\n", (VMSWORD(*mp)>>14) );
+                        printf( "Unknown type %x\n", (F11WORD(*mp)>>14) );
                         abort();
                 }
                 curvbn += phylen;
@@ -355,7 +353,7 @@ static void *wcb_create( unsigned hashval, void *keyval, unsigned *retsts ) {
                 }
             }
             if (extents >= EXTMAX ||
-                (VMSWORD(head->fh2$w_ext_fid.fid$w_num) == 0 &&
+                (F11WORD(head->fh2$w_ext_fid.fid$w_num) == 0 &&
                 head->fh2$w_ext_fid.fid$b_nmx == 0)) {
                 break;
             } else {
@@ -376,7 +374,7 @@ static void *wcb_create( unsigned hashval, void *keyval, unsigned *retsts ) {
         *retsts = SS$_NORMAL;
         if (curvbn <= wcbkey->vbn) {
             free(wcb);
-#ifdef DEBUG
+#if DEBUG
             printf( "--->wcb_create(): curvbn (=%u) <= wcbkey->vbn (=%u)\n",
                     curvbn, wcbkey->vbn );
 #endif
@@ -398,7 +396,7 @@ unsigned getwindow(struct FCB * fcb,unsigned vbn,struct VCBDEV **devptr,
     unsigned sts;
     struct WCB *wcb;
     struct WCBKEY wcbkey;
-#ifdef DEBUG
+#if DEBUG
     printf("Accessing window for vbn %d, file (%x)\n",vbn,fcb->cache.hashval);
 #endif
     wcbkey.vbn = vbn;
@@ -418,7 +416,7 @@ unsigned getwindow(struct FCB * fcb,unsigned vbn,struct VCBDEV **devptr,
         *phylen = wcb->phylen[extent] - togo;
         if (hdrfid != NULL) memcpy(hdrfid,&wcb->hd_fid,sizeof(struct fiddef));
         if (hdrseq != NULL) *hdrseq = wcb->hd_seg_num;
-#ifdef DEBUG
+#if DEBUG
         printf("Mapping vbn %d to %d (%d -> %d)[%d] file (%x)\n",
                vbn,*phyblk,wcb->loblk,wcb->hiblk,wcb->hd_basevbn,
                fcb->cache.hashval);
@@ -447,19 +445,21 @@ void *vioc_manager(struct CACHE * cacheobj,int flushonly)
         register unsigned curvbn = vioc->cache.hashval + 1;
         register char *address = (char *) vioc->data;
         register unsigned modmask = vioc->modmask;
+#if DEBUG
         printf("\nvioc_manager writing vbn %d\n",curvbn);
+#endif
         do {
             register unsigned sts;
             unsigned int wrtlen = 0;
             unsigned phyblk,phylen;
             struct VCBDEV *vcbdev;
-            while (length > 0 && (1 & modmask) == 0) {
+            while (length > 0 && !(1 & modmask) ) {
                 length--;
                 curvbn++;
                 address += 512;
                 modmask = modmask >> 1;
             }
-            while (wrtlen < length && (1 & modmask) != 0) {
+            while (wrtlen < length && (1 & modmask) ) {
                 wrtlen++;
                 modmask = modmask >> 1;
             }
@@ -476,7 +476,7 @@ void *vioc_manager(struct CACHE * cacheobj,int flushonly)
                     curvbn + phylen > fcb->highwater) {
                     phylen = fcb->highwater - curvbn;
                 }
-                sts = phyio_write( vcbdev->dev, phyblk, phylen * 512, address );
+                sts = virt_write( vcbdev->dev, phyblk, phylen * 512, address );
                 if (!(sts & STS$M_SUCCESS)) return NULL;
                 wrtlen -= phylen;
                 curvbn += phylen;
@@ -496,7 +496,7 @@ void *vioc_manager(struct CACHE * cacheobj,int flushonly)
 unsigned deaccesschunk(struct VIOC *vioc,unsigned wrtvbn,
                        int wrtblks,int reuse)
 {
-#ifdef DEBUG
+#if DEBUG
     printf("Deaccess chunk %8x\n",vioc->cache.hashval);
 #endif
     if (wrtvbn) {
@@ -550,7 +550,7 @@ static void *vioc_create( unsigned hashval, void *keyval, unsigned *retsts ) {
                     if (fcb->highwater != 0 && curvbn + phylen > fcb->highwater) {
                         phylen = fcb->highwater - curvbn;
                     }
-                    sts = phyio_read( vcbdev->dev, phyblk, phylen * 512,
+                    sts = virt_read( vcbdev->dev, phyblk, phylen * 512,
                                       address);
                 }
                 if (!(sts & STS$M_SUCCESS)) {
@@ -578,13 +578,14 @@ unsigned accesschunk(struct FCB *fcb,unsigned vbn,struct VIOC **retvioc,
     unsigned sts;
     register unsigned int blocks;
     register struct VIOC *vioc;
-#ifdef DEBUG
+#if DEBUG
     printf("Access chunk %d (%x)\n",vbn,fcb->cache.hashval);
 #endif
     if (vbn < 1 || vbn > fcb->hiblock) return SS$_ENDOFFILE;
     blocks = (vbn - 1) / VIOC_CHUNKSIZE * VIOC_CHUNKSIZE;
     if (wrtblks) {
-        if (!(fcb->status & FCB_WRITE)) return SS$_WRITLCK;
+        if( !(fcb->status & FCB_WRITE) )
+            return SS$_WRITLCK;
         if (vbn + wrtblks > blocks + VIOC_CHUNKSIZE + 1) {
             return SS$_BADPARAM;
         }
@@ -618,7 +619,7 @@ unsigned accesschunk(struct FCB *fcb,unsigned vbn,struct VIOC **retvioc,
 
 unsigned deaccessfile(struct FCB *fcb)
 {
-#ifdef DEBUG
+#if DEBUG
     printf("Deaccessing file (%x) reference %d\n",fcb->cache.hashval,
            fcb->cache.refcount);
 #endif
@@ -627,17 +628,19 @@ unsigned deaccessfile(struct FCB *fcb)
         refcount = cache_refcount((struct CACHE *) fcb->wcb) +
             cache_refcount((struct CACHE *) fcb->vioc);
         if (refcount != 0) {
+#if DEBUG
             printf("File reference counts non-zero %d  (%d)\n",refcount,
             fcb->cache.hashval);
-#ifdef DEBUG
+#endif
+#if DEBUG
             printf("File reference counts non-zero %d %d\n",
                    cache_refcount((struct CACHE *) fcb->wcb),
                    cache_refcount((struct CACHE *) fcb->vioc));
 #endif
             return SS$_BUGCHECK;
         }
-        if (fcb->status & FCB_WRITE) {
-            if (VMSLONG(fcb->head->fh2$l_filechar) & FH2$M_MARKDEL) {
+        if( fcb->status & FCB_WRITE ) {
+            if (F11LONG(fcb->head->fh2$l_filechar) & FH2$M_MARKDEL) {
                 return deallocfile(fcb);
             }
         }
@@ -704,12 +707,13 @@ unsigned accessfile(struct VCB * vcb,struct fiddef * fid,struct FCB **fcbadd,
     unsigned sts;
     register struct FCB *fcb;
     register unsigned filenum = (fid->fid$b_nmx << 16) + fid->fid$w_num;
-#ifdef DEBUG
+#if DEBUG
     printf("Accessing file (%d,%d,%d)\n",(fid->fid$b_nmx << 16) +
            fid->fid$w_num,fid->fid$w_seq,fid->fid$b_rvn);
 #endif
     if (filenum < 1) return SS$_BADPARAM;
-    if (wrtflg && ((vcb->status & VCB_WRITE) == 0)) return SS$_WRITLCK;
+    if( wrtflg && !(vcb->status & VCB_WRITE) )
+        return SS$_WRITLCK;
     if (fid->fid$b_rvn > 1) filenum |= fid->fid$b_rvn << 24;
     fcb = cache_find((void *) &vcb->fcb,filenum,NULL,&sts,NULL,fcb_create);
     if (fcb == NULL) return sts;
@@ -721,7 +725,7 @@ unsigned accessfile(struct VCB * vcb,struct fiddef * fid,struct FCB **fcbadd,
         fcb->vcb = vcb;
     }
     if (wrtflg) {
-        if (fcb->headvioc != NULL && (fcb->status & FCB_WRITE) == 0) {
+        if( fcb->headvioc != NULL && !(fcb->status & FCB_WRITE) ) {
             deaccesshead(fcb->headvioc,NULL,0);
             fcb->headvioc = NULL;
         }
@@ -732,14 +736,16 @@ unsigned accessfile(struct VCB * vcb,struct fiddef * fid,struct FCB **fcbadd,
         sts = accesshead(vcb,fid,0,&fcb->headvioc,&fcb->head,&fcb->headvbn,
                          wrtflg);
         if (sts & STS$M_SUCCESS) {
-            fcb->hiblock = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_hiblk);
+            fcb->hiblock = F11SWAP(fcb->head->fh2$w_recattr.fat$l_hiblk);
             if (fcb->head->fh2$b_idoffset > 39) {
-                fcb->highwater = VMSLONG(fcb->head->fh2$l_highwater);
+                fcb->highwater = F11LONG(fcb->head->fh2$l_highwater);
             } else {
                 fcb->highwater = 0;
             }
         } else {
+#if DEBUG
             printf("Accessfile status %d\n",sts);
+#endif
             fcb->cache.objmanager = NULL;
             cache_untouch(&fcb->cache,FALSE);
             cache_delete(&fcb->cache);
@@ -759,8 +765,9 @@ unsigned dismount(struct VCB * vcb)
     struct VCBDEV *vcbdev;
     int expectfiles = vcb->devices;
     int openfiles = cache_refcount(&vcb->fcb->cache);
-    if (vcb->status & VCB_WRITE) expectfiles *= 2;
-#ifdef DEBUG
+    if( vcb->status & VCB_WRITE )
+        expectfiles *= 2;
+#if DEBUG
     printf("Dismounting disk %d\n",openfiles);
 #endif
     sts = SS$_NORMAL;
@@ -769,14 +776,14 @@ unsigned dismount(struct VCB * vcb)
     } else {
         vcbdev = vcb->vcbdev;
         for (device = 0; device < vcb->devices; device++) {
-#ifdef DEBUG
+#if DEBUG
         printf( "--->dismount(): vcbdev[%d] = \"%s\"\n", device,
                 vcbdev->dev != NULL ? vcbdev->dev->devnam : "NULL" );
 #endif
             if (vcbdev->dev != NULL) {
                 if (vcb->status & VCB_WRITE && vcbdev->mapfcb != NULL) {
                     sts = deaccessfile(vcbdev->mapfcb);
-#ifdef DEBUG
+#if DEBUG
                     printf( "--->dismount(): %d = deaccessfile()\n", sts );
 #endif
                     if (!(sts & STS$M_SUCCESS)) break;
@@ -784,25 +791,25 @@ unsigned dismount(struct VCB * vcb)
                     vcbdev->mapfcb = NULL;
                 }
                 cache_remove(&vcb->fcb->cache);
-#ifdef DEBUG
+#if DEBUG
                 printf( "--->dismount(): cache_remove()\n" );
 #endif
                 sts = deaccesshead(vcbdev->idxfcb->headvioc,
                                    vcbdev->idxfcb->head,
                                    vcbdev->idxfcb->headvbn);
-#ifdef DEBUG
+#if DEBUG
                 printf( "--->dismount(): %d = deaccesshead()\n", sts );
 #endif
                 if (!(sts & STS$M_SUCCESS)) break;
                 vcbdev->idxfcb->headvioc = NULL;
                 cache_untouch(&vcbdev->idxfcb->cache,FALSE);
-#ifdef DEBUG
+#if DEBUG
                 printf( "--->dismount(): cache_untouch()\n" );
 #endif
                 vcbdev->dev->vcb = NULL;
-                phyio_done( vcbdev->dev );
-#ifdef DEBUG
-                printf( "--->dismount(): phyio_done()\n" );
+                virt_close( vcbdev->dev );
+#if DEBUG
+                printf( "--->dismount(): virt_close()\n" );
 #endif
             }
             vcbdev++;
@@ -811,12 +818,12 @@ unsigned dismount(struct VCB * vcb)
             struct VCB *lp;
 
             cache_remove(&vcb->fcb->cache);
-#ifdef DEBUG
+#if DEBUG
             printf( "--->dismount(): cache_remove()\n" );
 #endif
             while (vcb->dircache) {
                 cache_delete((struct CACHE *) vcb->dircache);
-#ifdef DEBUG
+#if DEBUG
                 printf( "--->dismount(): cache_delete()\n" );
 #endif
             }
@@ -834,7 +841,7 @@ unsigned dismount(struct VCB * vcb)
 
 /******************************************************************** mount() */
 
-#ifdef DEBUG
+#if DEBUG
 #ifndef HOME_SKIP
 #define HOME_SKIP 1
 #endif
@@ -855,18 +862,15 @@ unsigned dismount(struct VCB * vcb)
 unsigned mount( unsigned flags,
                 unsigned devices,
                 char *devnam[],
-                char *label[],
-                struct VCB **retvcb ) {
+                char *label[] ) {
     register unsigned device,sts = 0;
     struct VCB *vcb;
     struct VCBDEV *vcbdev;
     struct VOLSETREC *volsetSYS = NULL;
 
-#ifdef DEBUG
+#if DEBUG
     if (sizeof(struct HOME) != 512 || sizeof(struct HEAD) != 512) return SS$_NOTINSTALL;
 #endif
-    if( retvcb )
-        *retvcb = NULL;
 
     vcb = (struct VCB *) calloc( 1, sizeof(struct VCB) +
                                 ((devices - 1) * sizeof(struct VCBDEV)) );
@@ -897,29 +901,10 @@ unsigned mount( unsigned flags,
                 sts = SS$_BADPARAM;
                 break;
             }
-            if( flags & MOU_VIRTUAL ) {
-                sts = virt_device( dname, &dname );
-                if( !(sts & STS$M_SUCCESS) ) break;
-            } else {
-                if( virt_lookup( dname ) != NULL ) {
-                    char *p;
-                    p = strchr( dname, ':' );
-                    if( p != NULL ) *p = '\0';
-                    printf( "%%ODS2-E-VIRTDEV, %s is a virtual device\n", dname );
-                    sts = SS$_DEVMOUNT;
-                    break;
-                }
-            }
+            sts = virt_open( &dname, flags, &vcbdev->dev );
+            if( !(sts & STS$M_SUCCESS) )
+                break;
             vcb->devices++;
-            sts = device_lookup( strlen( dname ), dname, TRUE,
-                                 &vcbdev->dev );
-            if( !(sts & STS$M_SUCCESS) )
-                break;
-            vcbdev->dev->access = flags;        /* Requested mount options */
-                                                /*    (e.g., /Write)       */
-            sts = phyio_init( vcbdev->dev );
-            if( !(sts & STS$M_SUCCESS) )
-                break;
             if (vcbdev->dev->vcb != NULL) {
                 sts = SS$_DEVMOUNT;
                 break;
@@ -933,7 +918,7 @@ unsigned mount( unsigned flags,
                 if( homtry < HOME_SKIP )
                     continue;
 #endif
-                sts = phyio_read( vcbdev->dev, hba, sizeof( struct HOME ),
+                sts = virt_read( vcbdev->dev, hba, sizeof( struct HOME ),
                                  (char *) &vcbdev->home );
                 if (!(sts & STS$M_SUCCESS)) break;
                 hom = &vcbdev->home;
@@ -941,70 +926,73 @@ unsigned mount( unsigned flags,
                 printf( "--->mount(%u): LBA=%u, HM2$L_HOMELBN=%u, "
                         "HM2$L_ALHOMELBN=%u, "
                         "HM2$T_FORMAT=\"%12.12s\", memcmp()=%u\n",
-                        homtry+1,hba, VMSLONG( hom->hm2$l_homelbn ),
-                        VMSLONG( hom->hm2$l_alhomelbn ),
+                        homtry+1,hba, F11LONG( hom->hm2$l_homelbn ),
+                        F11LONG( hom->hm2$l_alhomelbn ),
                         hom->hm2$t_format,
                         memcmp( hom->hm2$t_format, "DECFILE11B  ", 12 )
                       );
 #endif
-                if( (hba == VMSLONG(hom->hm2$l_homelbn)) &&
-                    (VMSLONG(hom->hm2$l_alhomelbn) != 0) &&
-                    (VMSLONG(hom->hm2$l_altidxlbn) != 0) &&
-                    (VMSWORD(hom->hm2$w_homevbn)   != 0) &&
-                    (VMSLONG(hom->hm2$l_ibmaplbn)  != 0) &&
-                    (VMSWORD(hom->hm2$w_ibmapsize) != 0) &&
-                    (VMSWORD(hom->hm2$w_resfiles)  >= 5) &&
-                    (VMSWORD(hom->hm2$w_checksum1) ==
-                     checksumn( (vmsword *)hom,
+                if( (hba == F11LONG(hom->hm2$l_homelbn)) &&
+                    (F11LONG(hom->hm2$l_alhomelbn) != 0) &&
+                    (F11LONG(hom->hm2$l_altidxlbn) != 0) &&
+                    (F11WORD(hom->hm2$w_homevbn)   != 0) &&
+                    (F11LONG(hom->hm2$l_ibmaplbn)  != 0) &&
+                    (F11WORD(hom->hm2$w_ibmapsize) != 0) &&
+                    (F11WORD(hom->hm2$w_resfiles)  >= 5) &&
+                    (F11WORD(hom->hm2$w_checksum1) ==
+                     checksumn( (f11word *)hom,
                                 (offsetof( struct HOME, hm2$w_checksum1 )/2) ))  &&
-                    (VMSWORD(hom->hm2$w_checksum2) ==
-                     checksum( (vmsword *)hom )) &&
+                    (F11WORD(hom->hm2$w_checksum2) ==
+                     checksum( (f11word *)hom )) &&
                     (memcmp(hom->hm2$t_format,"DECFILE11B  ",12) == 0) ) {
                     break;
                 }
 #if defined( DEBUG ) || defined( HOME_LOG )
                 printf( "--->mount(): Home block validation failure\n" );
-                printf( "(VMSLONG(hom->hm2$l_alhomelbn) != 0) %u\n", (VMSLONG(hom->hm2$l_alhomelbn) != 0) );
-                printf( "(VMSLONG(hom->hm2$l_altidxlbn) != 0) %u\n", (VMSLONG(hom->hm2$l_altidxlbn) != 0) );
-                printf( "(VMSWORD(hom->hm2$w_homevbn)   != 0) %u\n", (VMSWORD(hom->hm2$w_homevbn)   != 0));
-                printf( "(VMSLONG(hom->hm2$l_ibmaplbn)  != 0) %u\n", (VMSLONG(hom->hm2$l_ibmaplbn)  != 0) );
-                printf( "(VMSWORD(hom->hm2$w_ibmapsize) != 0) %u\n", (VMSWORD(hom->hm2$w_ibmapsize) != 0));
-                printf( "(VMSWORD(hom->hm2$w_resfiles)  >= 5) %u\n", (VMSWORD(hom->hm2$w_resfiles)  >= 5));
-                printf( "(VMSWORD(hom->hm2$w_checksum1) = %u %u\n", VMSWORD(hom->hm2$w_checksum1),
-                        checksumn( (vmsword *)hom,
+                printf( "(F11LONG(hom->hm2$l_alhomelbn) != 0) %u\n", (F11LONG(hom->hm2$l_alhomelbn) != 0) );
+                printf( "(F11LONG(hom->hm2$l_altidxlbn) != 0) %u\n", (F11LONG(hom->hm2$l_altidxlbn) != 0) );
+                printf( "(F11WORD(hom->hm2$w_homevbn)   != 0) %u\n", (F11WORD(hom->hm2$w_homevbn)   != 0));
+                printf( "(F11LONG(hom->hm2$l_ibmaplbn)  != 0) %u\n", (F11LONG(hom->hm2$l_ibmaplbn)  != 0) );
+                printf( "(F11WORD(hom->hm2$w_ibmapsize) != 0) %u\n", (F11WORD(hom->hm2$w_ibmapsize) != 0));
+                printf( "(F11WORD(hom->hm2$w_resfiles)  >= 5) %u\n", (F11WORD(hom->hm2$w_resfiles)  >= 5));
+                printf( "(F11WORD(hom->hm2$w_checksum1) = %u %u\n", F11WORD(hom->hm2$w_checksum1),
+                        checksumn( (f11word *)hom,
                                    (offsetof( struct HOME, hm2$w_checksum1 )/2) ) );
-                printf( "(VMSWORD(hom->hm2$w_checksum2) = %u %u\n", VMSWORD(hom->hm2$w_checksum2),
-                        checksum( (vmsword *)hom ));
+                printf( "(F11WORD(hom->hm2$w_checksum2) = %u %u\n", F11WORD(hom->hm2$w_checksum2),
+                        checksum( (f11word *)hom ));
 #endif
                 sts = SS$_ENDOFFILE;
             }
-            if( !(sts & 1) ) break;
+            if( !(sts & STS$M_SUCCESS) )
+                break;
             if( label[device] != NULL ) {
                 int i;
                 char lbl[12+1]; /* Pad CLI-supplied label to match ODS */
-                snprintf( lbl, sizeof(lbl), "%-12s", label[device] );
+                (void) snprintf( lbl, sizeof(lbl), "%-12s", label[device] );
                 for( i = 0; i < 12; i++ ) {
-                    if( toupper(lbl[i]) != vcbdev->home.hm2$t_volname[i] ) {
+                    if( toupper( lbl[i] ) != toupper( vcbdev->home.hm2$t_volname[i] ) ) {
                         printf( "%%ODS2-W-WRONGVOL, Device %s contains volume '%12.12s', '%s' expected\n",
                                 dname, vcbdev->home.hm2$t_volname, lbl );
                         sts = SS$_ITEMNOTFOUND;
                         break;
                     }
                 }
-            if (!(sts & STS$M_SUCCESS)) break;
-            if (flags & MOU_WRITE && !(vcbdev->dev->access & MOU_WRITE)) {
-                printf("%%MOUNT-W-WRITELOCK, %s is write locked\n",
-                       dname);
-                vcb->status &= ~VCB_WRITE;
+                if( !(sts & STS$M_SUCCESS) )
+                    break;
+                if (flags & MOU_WRITE && !(vcbdev->dev->access & MOU_WRITE)) {
+                    printf("%%MOUNT-W-WRITELOCK, %s is write locked\n",
+                           dname);
+                    vcb->status &= ~VCB_WRITE;
+                }
             }
-            }
-            if( (VMSWORD(vcbdev->home.hm2$w_rvn) != device + 1) &&
-                !(VMSWORD(vcbdev->home.hm2$w_rvn) == 0 && device == 0) ) {
+            if( (F11WORD(vcbdev->home.hm2$w_rvn) != device + 1) &&
+                !(F11WORD(vcbdev->home.hm2$w_rvn) == 0 && device == 0) ) {
                     printf( "%%ODS2-E-WRONGVOL, Device %s contains RVN %u, RVN %u expected\n",
-                             dname, VMSWORD(vcbdev->home.hm2$w_rvn), device+1 );
+                             dname, F11WORD(vcbdev->home.hm2$w_rvn), device+1 );
                     sts = SS$_UNSUPVOLSET;
             }
-            if (!(sts & 1)) break;
+            if( !(sts & STS$M_SUCCESS) )
+                break;
         } /* for(each device) */
     }
     if (sts & STS$M_SUCCESS) {
@@ -1024,11 +1012,12 @@ unsigned mount( unsigned flags,
                 idxfid.fid$b_rvn = device + 1;
                 sts = accessfile( vcb, &idxfid, &vcbdev->idxfcb, (vcb->status & VCB_WRITE) != 0 );
                 if (!(sts & STS$M_SUCCESS)) {
-                    vcbdev->dev = NULL; /*** DECREF ***/
+                    virt_close( vcbdev->dev );
+                    vcbdev->dev = NULL;
                     continue;
                 }
                 vcbdev->dev->vcb = vcb;
-                if( VMSWORD(vcbdev->home.hm2$w_rvn) != 0 ) {
+                if( F11WORD(vcbdev->home.hm2$w_rvn) != 0 ) {
                     if( device == 0 ) {
                         struct fiddef vsfid = {6,6,1,0};
                         struct FCB *vsfcb = NULL;
@@ -1037,7 +1026,7 @@ unsigned mount( unsigned flags,
                         int rec;
                         unsigned int vbn = 1;
                         struct VOLSETREC *bufp;
-                        int setcount = VMSWORD(vcbdev->home.hm2$w_setcount);
+                        int setcount = F11WORD(vcbdev->home.hm2$w_setcount);
 
                         if( setcount != (int)devices ) {
                             printf( "%%ODS2-E-VOLCOUNT, Volume set %12.12s has %u members, but %u specified\n",
@@ -1048,7 +1037,7 @@ unsigned mount( unsigned flags,
                         /* Read VOLSET.SYS */
                         volsetSYS = (struct VOLSETREC *)malloc( (1+setcount) * sizeof( struct VOLSETREC ) );
                         sts = accessfile( vcb, &vsfid, &vsfcb, 0 );
-                        if( (sts & 1) == 0 ) {
+                        if( !(sts & STS$M_SUCCESS) ) {
                             printf( "%%ODS2-E-NOVOLSET, Unable to access VOLSET.SYS: %s\n", getmsg(sts, MSG_TEXT) );
                             break;
                         }
@@ -1056,7 +1045,8 @@ unsigned mount( unsigned flags,
                             if( recs == 0 ) {
                                 if( vbn != 1 ) deaccesschunk(vioc,0,0,0);
                                 sts = accesschunk(vsfcb,vbn, &vioc,(char **)&bufp, &recs, 0);
-                                if( (sts & 1) == 0 ) break;
+                                if( !(sts & STS$M_SUCCESS) )
+                                    break;
                                 vbn += recs;
                                 recs *= 512 / sizeof( struct VOLSETREC );
                             }
@@ -1065,9 +1055,9 @@ unsigned mount( unsigned flags,
                         deaccesschunk(vioc,0,0,0);
                         { int st2;
                             st2 = deaccessfile(vsfcb);
-                            if( sts & 1 ) sts = st2;
+                            if( sts & STS$M_SUCCESS ) sts = st2;
                         }
-                        if( (sts & 1) == 0 )  {
+                        if( !(sts & STS$M_SUCCESS) )  {
                             printf( "%%ODS2-E-VOLIOERR, Error reading VOLSET.SYS: %s\n", getmsg(sts, MSG_TEXT) );
                             break;
                         }
@@ -1102,97 +1092,103 @@ unsigned mount( unsigned flags,
                 } /* rvn != 0 */
 
                 if( vcb->status & VCB_WRITE ) {
-                    struct fiddef mapfid = {2,2,0,0};
+                    struct fiddef mapfid = { 2, 2, 0, 0 };
                     mapfid.fid$b_rvn = device + 1;
-                        sts = accessfile(vcb,&mapfid,&vcbdev->mapfcb,TRUE);
-                        if (sts & STS$M_SUCCESS) {
-                        struct VIOC *vioc;
-                        struct SCB *scb;
-                            sts = accesschunk(vcbdev->mapfcb,1,&vioc,
-                                              (char **) &scb,NULL,0);
-                            if (sts & STS$M_SUCCESS) {
-                                if (scb->scb$w_cluster ==
-                                    vcbdev->home.hm2$w_cluster) {
+                        sts = accessfile( vcb,&mapfid, &vcbdev->mapfcb, TRUE );
+                        if( sts & STS$M_SUCCESS ) {
+                            struct VIOC *vioc;
+                            struct SCB *scb;
+
+/* TODO *** scb->scb$w_checksum == checksum( (f11word *)scb */
+                            sts = accesschunk( vcbdev->mapfcb, 1, &vioc,
+                                              (char **) &scb, NULL ,0 );
+                            if( sts & STS$M_SUCCESS ) {
+                                if( scb->scb$w_cluster ==
+                                    vcbdev->home.hm2$w_cluster ) {
                                     vcbdev->clustersize =
-                                        vcbdev->home.hm2$w_cluster;
+                                        F11WORD( vcbdev->home.hm2$w_cluster );
                                     vcbdev->max_cluster =
-                                        (scb->scb$l_volsize +
-                                         scb->scb$w_cluster - 1) /
-                                        scb->scb$w_cluster;
+                                        (F11LONG(scb->scb$l_volsize) +
+                                         F11WORD(scb->scb$w_cluster) - 1) /
+                                        F11WORD(scb->scb$w_cluster);
                                     deaccesschunk(vioc,0,0,FALSE);
                                     sts = update_freecount(
-                                              vcbdev,&vcbdev->free_clusters
-                                          );
-#ifdef DEBUG
-                                printf( "%d of %d blocks are free on %12.12s\n",
-                                        vcbdev->free_clusters * vcbdev->clustersize, scb->scb$l_volsize,
+                                                           vcbdev,&vcbdev->free_clusters
+                                                           );
+#if DEBUG
+                                    printf( "%d of %d blocks are free on %12.12s\n",
+                                            vcbdev->free_clusters * vcbdev->clustersize, scb->scb$l_volsize,
                                         vcbdev->home.hm2$t_volname );
 #endif
-                            }
+                                } else {
+                                    deaccesschunk(vioc,0,0,FALSE);
+                                }
                         }
-                    } else {
-                        printf( "%%ODS2-E-NOBITMAP, Unable to access BITMAP.SYS: %s\n", getmsg(sts, MSG_TEXT) );
+                } else {
+                    printf( "%%ODS2-E-NOBITMAP, Unable to access BITMAP.SYS: %s\n", getmsg(sts, MSG_TEXT) );
                         vcbdev->mapfcb = NULL;
                         break;
                     }
                 }
-                if( (sts & 1) && (flags & MOU_LOG) ) {
-                    printf("%%MOUNT-I-MOUNTED, Volume %12.12s mounted on %s\n",
-                           vcbdev->home.hm2$t_volname, vcbdev->dev->devnam);
+                if( (sts & STS$M_SUCCESS) && (flags & MOU_LOG) ) {
+                    printf( "%%MOUNT-I-MOUNTED, Volume %12.12s mounted on %s\n",
+                            vcbdev->home.hm2$t_volname, vcbdev->dev->devnam );
                 }
             } /* device len */
         } /* for( each device ) */
-        if( !(sts & 1) ) {
+        if( !(sts & STS$M_SUCCESS) ) {
             vcbdev = vcb->vcbdev;
             for( device = 0; device < devices; device++, vcbdev++ ) {
                 if (vcbdev->dev == NULL) {
-                    if( flags & MOU_VIRTUAL )
-                         virt_device( devnam[device], NULL );
                     continue;
                 }
 
                 if( vcb->status & VCB_WRITE && vcbdev->mapfcb != NULL ) {
                     /* sts = */
                     deaccessfile(vcbdev->mapfcb);
-                    /* if( !(sts & 1) ) ??; */
+                    /* if( !(sts & STS$M_SUCCESS) ) ??; */
                     vcbdev->idxfcb->status &= ~FCB_WRITE;
                     vcbdev->mapfcb = NULL;
                 }
                 cache_remove( &vcb->fcb->cache );
                 /* sts = */
                 deaccesshead(vcbdev->idxfcb->headvioc,vcbdev->idxfcb->head,vcbdev->idxfcb->headvbn);
-                /* if (!(sts & 1)) ??; */
+                /* if (!(sts & STS$M_SUCCESS)) ??; */
                 vcbdev->idxfcb->headvioc = NULL;
                 cache_untouch(&vcbdev->idxfcb->cache,0);
                 vcbdev->dev->vcb = NULL;
-                /* ?? vcbdev->dev = NULL *//* **DECREF **/
-                sts = phyio_done( vcbdev->dev );
+                sts = virt_close( vcbdev->dev );
             }
             cache_remove( &vcb->fcb->cache );
             while( vcb->dircache ) cache_delete( (struct CACHE *) vcb->dircache );
         }
-    } else { /* *** DECREF *** */
+    } else {
         vcbdev = vcb->vcbdev;
         for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
             if (vcbdev->dev == NULL) {
-                if( flags & MOU_VIRTUAL )
-                    virt_device( devnam[device], NULL );
                 continue;
             }
-            phyio_done( vcbdev->dev );
+            virt_close( vcbdev->dev );
         }
         free(vcb);
         vcb = NULL;
     }
-    if( (sts & 1) && (flags & MOU_LOG) && VMSWORD(vcb->vcbdev[0].home.hm2$w_rvn) != 0 ) {
+    if( (sts & STS$M_SUCCESS) && (flags & MOU_LOG) && F11WORD(vcb->vcbdev[0].home.hm2$w_rvn) != 0 ) {
         printf ( "%%MOUNT-I-MOUNTEDVS, Volume set %12.12s mounted\n", vcb->vcbdev[0].home.hm2$t_strucname );
     }
     if( vcb != NULL ) {
-        vcb->next = vcb_list;
-        vcb_list = vcb;
+        struct VCB *lp;
+
+        for( lp = (struct VCB *)&vcb_list; lp->next != NULL; lp = lp->next )
+            ;
+        lp->next = vcb;
+        vcb->next = NULL;
     }
     if( volsetSYS != NULL ) free( volsetSYS );
-    if (retvcb != NULL) *retvcb = vcb;
+
+    if( sts & STS$M_SUCCESS )
+        (void) mountdef( vcb->vcbdev[0].dev->devnam );
+
     return sts;
 }
 
@@ -1208,7 +1204,7 @@ static void print_volhdr( int volset, size_t devwid ) {
     else
         printf( "  " );
     printf(
-"%-*s Volume       Lvl Clust Owner/CreateDate  VolProt/Default FileProt\n",
+"%-*s Volume/User  Lvl Clust Owner/CreateDate  VolProt/Default FileProt\n",
             (int)devwid, "Dev" );
     if( volset )
         printf( "    --- " );
@@ -1224,7 +1220,7 @@ static void print_volhdr( int volset, size_t devwid ) {
 }
 
 /********************************************************** print_prot() */
-static void print_prot( vmsword code, int vol ) {
+static void print_prot( f11word code, int vol ) {
     static const char grp[4] = { "SOGW" };
     static const char acc[2][4] = {{"RWED"}, {"RWCD"}};
     int g, b, w;
@@ -1253,10 +1249,41 @@ static void print_volinf( struct VCB *vcb,
                           unsigned device,
                           size_t wrap ) {
     struct VCBDEV *vcbdev;
+    struct SCB *scb = NULL;
+    struct VIOC *vioc = NULL;
+    unsigned sts;
     size_t n;
-    vmsword timbuf[7];
+    f11word timbuf[7];
 
     vcbdev = vcb->vcbdev+device;
+
+    if( !(vcb->status & VCB_WRITE) ) {
+        struct fiddef mapfid = { 2, 2, 0, 0 };
+
+        if( !(( sts = accessfile( vcb, &mapfid, &vcbdev->mapfcb, 0 )) & STS$M_SUCCESS) ) {
+            printf( " *Can't access BITMAP.SYS %s\n", getmsg( sts, MSG_TEXT ) );
+            return;
+        }
+    }
+    if( (sts = accesschunk( vcbdev->mapfcb, 1, &vioc, (char **)&scb, NULL, 0 )) & STS$M_SUCCESS ) {
+        if( scb->scb$w_cluster == vcbdev->home.hm2$w_cluster ) {
+            vcbdev->clustersize = F11WORD(vcbdev->home.hm2$w_cluster);
+            vcbdev->max_cluster = (F11LONG(scb->scb$l_volsize) +
+                                   F11WORD(scb->scb$w_cluster) - 1) /
+                F11WORD(scb->scb$w_cluster);
+            deaccesschunk(vioc,0,0,FALSE);
+            if( !(vcb->status & VCB_WRITE) )
+                sts = update_freecount( vcbdev, &vcbdev->free_clusters );
+        } else {
+            printf(" SCB data doesn't match HOM %u / %u ",
+                   F11WORD(scb->scb$w_cluster), F11WORD(vcbdev->home.hm2$w_cluster) );
+            deaccesschunk(vioc,0,0,FALSE);
+        }
+    } else {
+        printf( " *Can't read SCB %s", getmsg( sts, MSG_TEXT ) );
+    }
+    if( !(vcb->status & VCB_WRITE) )
+        deaccessfile( vcbdev->mapfcb );
 
     for( n = 0; n < strlen( vcbdev->dev->devnam ); n++ ) {
         if( vcbdev->dev->devnam[n] == ':' )
@@ -1268,18 +1295,53 @@ static void print_volinf( struct VCB *vcb,
     printf( "%12.12s", vcbdev->home.hm2$t_volname );
 
     printf( " %u.%u %5u [%6o,%6o]",
-            VMSWORD( vcbdev->home.hm2$w_struclev ) >> 8,
-            VMSWORD( vcbdev->home.hm2$w_struclev ) & 0xFF,
-            VMSWORD( vcbdev->home.hm2$w_cluster ),
-            VMSWORD( vcbdev->home.hm2$w_volowner.uic$w_grp ),
-            VMSWORD( vcbdev->home.hm2$w_volowner.uic$w_mem )
+            F11WORD( vcbdev->home.hm2$w_struclev ) >> 8,
+            F11WORD( vcbdev->home.hm2$w_struclev ) & 0xFF,
+            F11WORD( vcbdev->home.hm2$w_cluster ),
+            F11WORD( vcbdev->home.hm2$w_volowner.uic$w_grp ),
+            F11WORD( vcbdev->home.hm2$w_volowner.uic$w_mem )
             );
     printf( "   " );
-    print_prot( VMSWORD( vcbdev->home.hm2$w_protect ), 1 );
+    print_prot( F11WORD( vcbdev->home.hm2$w_protect ), 1 );
     if( !(vcb->status & VCB_WRITE) )
         printf( " write-locked" );
 
-    printf( "\n%*s ", (int)(wrap+devwid+23), "" );
+    if( sts & STS$M_SUCCESS ) {
+        disktypep_t dp;
+        int first = 1;
+
+        for( dp = disktype; dp->name != NULL; dp++ ) {
+            unsigned size;
+            unsigned blksize = 1;
+
+            size = dp->sectors * dp->tracks * dp->cylinders - dp->reserved;
+            if( dp->sectorsize > 512 )
+                size = size * dp->sectorsize / 512;
+            else {
+                if( dp->sectorsize < 512 ) {
+                    blksize = (512 / dp->sectorsize);
+                    size = size / blksize;
+                }
+            }
+            if( scb->scb$l_volsize == size &&
+                scb->scb$l_blksize == blksize &&
+                scb->scb$l_sectors == dp->sectors &&
+                scb->scb$l_tracks == dp->tracks &&
+                scb->scb$l_cylinders == dp->cylinders ) {
+                if( first ) {
+                    printf( " type:" );
+                    first = 0;
+                } else
+                    printf( "|" );
+                printf( " %s", dp->name );
+            }
+        }
+        if( first )
+            printf( " Unrecognized type" );
+    }
+
+    printf( "\n%*s %12.12s           ", (int)(wrap+devwid), "",
+            vcbdev->home.hm2$t_ownername );
 
     if( sys$numtim( timbuf, vcbdev->home.hm2$q_credate ) & STS$M_SUCCESS ) {
         static const char *months =
@@ -1291,7 +1353,16 @@ static void print_volinf( struct VCB *vcb,
     } else
         printf( "%*s", 41-23, "" );
 
-    print_prot( VMSWORD( vcbdev->home.hm2$w_fileprot ), 0 );
+    print_prot( F11WORD( vcbdev->home.hm2$w_fileprot ), 0 );
+
+    if( sts & STS$M_SUCCESS ) {
+        printf( " Free: %u/%u", vcbdev->free_clusters * vcbdev->clustersize,
+                scb->scb$l_volsize );
+        printf( " Geo: %u/%u/%u", F11LONG(scb->scb$l_sectors),
+                F11LONG(scb->scb$l_tracks), F11LONG(scb->scb$l_cylinders) );
+        if( F11LONG(scb->scb$l_blksize) != 1 )
+            printf( " %u phys blks/LBN", F11LONG(scb->scb$l_blksize) );
+    }
     putchar( '\n' );
 }
 
@@ -1330,7 +1401,7 @@ void show_volumes( void ) {
         unsigned device;
 
         vcbdev = vcb->vcbdev;
-        if( VMSWORD(vcbdev->home.hm2$w_rvn) == 0 )
+        if( F11WORD(vcbdev->home.hm2$w_rvn) == 0 )
             continue;
 
         nvol--;
@@ -1339,7 +1410,7 @@ void show_volumes( void ) {
         print_volhdr( TRUE, maxd );
 
         for( device = 0; device < vcb->devices; device++, vcbdev++ ) {
-            printf( "    %3d ", VMSWORD(vcbdev->home.hm2$w_rvn) );
+            printf( "    %3d ", F11WORD(vcbdev->home.hm2$w_rvn) );
             print_volinf( vcb, maxd, device, 8 );
         }
     }
@@ -1354,7 +1425,7 @@ void show_volumes( void ) {
         unsigned device;
 
         vcbdev = vcb->vcbdev;
-        if( VMSWORD(vcbdev->home.hm2$w_rvn) != 0 )
+        if( F11WORD(vcbdev->home.hm2$w_rvn) != 0 )
             continue;
 
         vcbdev = vcb->vcbdev;
@@ -1377,187 +1448,8 @@ void access_rundown( void ) {
 
         sts = dismount( vcb );
         if( !(sts & STS$M_SUCCESS) ) {
-            printf( "Dismount failed in rundown: %s", getmsg(sts, MSG_TEXT) );
+            printf( "Dismount failed in rundown: %s\n", getmsg(sts, MSG_TEXT) );
         }
     }
 }
 
-/*************************************************************** compute_delta() */
-/*
- * The search delta is computed from the
- * volume  geometry,  expressed  in  sectors,  tracks   (surfaces),   and
- * cylinders, according to the following rules, to handle the cases where
- * one or two dimensions of the volume have a size of 1.
- *
- *           Geometry:     Delta
- *
- *           s x 1 x 1:    1          Rule 1
- *           1 x t x 1:    1          Rule 2
- *           1 x 1 x c:    1          Rule 3
- *
- *           s x t x 1:    s+1        Rule 4
- *           s x 1 x c:    s+1        Rule 5
- *           1 x t x c:    t+1        Rule 6
- *
- *           s x t x c:    (t+1)*s+1  Rule 7
- */
-
-
-#define DISK( name, sectors, tracks, cylinders ) \
-    {#name,       512  ## ul, sectors ## ul, tracks ## ul, cylinders ## ul},
-#define DISKS( name, sectorsize, sectors, tracks, cylinders ) \
-    {#name, sectorsize ## ul, sectors ## ul, tracks ## ul, cylinders ## ul},
-struct disktype disktype[] = {
-    DISK(UNKNOWN,  1,  1,    1)    /* First = short sequence delta = 1 */
-    DISK(RK05, 12,  2,  203)
-    DISK(RK06, 22,  3,  411)
-    DISK(RK07, 22,  3,  815)
-    DISK(RK11, 12,  2,  203)
-
-    DISK(RL01, 40,  2,  256)
-    DISK(RL02, 40,  2,  512)
-
-    DISK(RM02, 32,  5,  823)
-    DISK(RM03, 32,  5,  823)
-    DISK(RP04, 22, 19,  411)
-    DISK(RP05, 22, 19,  411)
-    DISK(RM80, 31, 14,  559)
-    DISK(RP06, 22, 19,  815)
-    DISK(RM05, 32, 19,  823)
-    DISK(RP07, 50, 32,  630)
-
-#if 0 /* Not useful now as RSX20-F used ODS-1 */
-   DISKS(RM02-T, 576, 30,  5,  823)
-    DISKS(RM03-T, 576, 30,  5,  823)
-    DISKS(RP04-T, 576, 20, 19,  411)
-    DISKS(RP05-T, 576, 20, 19,  411)
-    DISKS(RM80-T, 576, 30, 14,  559)
-    DISKS(RP06-T, 576, 20, 19,  815)
-    DISKS(RM05-T, 576, 30, 19,  823)
-    DISKS(RP07-T, 576, 43, 32,  630)
-#endif
-
-    DISK(RX50, 10, 1, 80)
-    DISK(RX33, 15, 2, 80)
-
-#if 0
-    DISK(RD50, 99, 99, 9999)
-#endif
-    DISK(RD51, 18, 4, 306)
-    DISK(RD31, 17, 4, 615)
-    DISK(RD52, 17, 8, 512)
-    DISK(RD53, 17, 7, 1024)
-    DISK(RD54, 17, 15, 1225)
-
-    DISK(RA72, 51, 20, 1921)
-
-#if 0
-    DISK(RA80, 99, 99, 9999)
-
-#endif
-    DISK(RA81, 51, 14, 1258)
-    DISK(RA82, 57, 15, 1435)
-
-    DISK(RA90, 69, 13, 2649)
-    DISK(RA92, 73, 13, 3099)
-
-    DISK(RRD40,128, 1, 10400)
-    DISK(RRD50,128, 1, 10400)
-    DISKS(RX01, 128, 26, 1, 77)
-    DISKS(RX02, 256, 26, 1, 77)
-
-#if 0
-    DISK(RX23-SD, 99, 99, 9999)
-    DISK(RX23-DD, 99, 99, 9999)
-
-    DISK(RX33-SD, 10, 1, 80)
-    DISK(RX33-DD, 99, 99, 9999)
-#endif
-
-    DISK(RX50, 10, 1, 80)
-#if 0
-    DISK(RC25, 99, 99, 9999 )
-
-    DISK(RF30, 99, 99, 9999 )
-    DISK(RF31, 99, 99, 9999 )
-    DISK(RF35, 99, 99, 9999 )
-    DISK(RF36, 99, 99, 9999 )
-    DISK(RF71, 99, 99, 9999 )
-    DISK(RF72, 99, 99, 9999 )
-    DISK(RF73, 99, 99, 9999 )
-    DISK(RF74, 99, 99, 9999 )
-
-    DISK(RZ22, 99, 99, 9999 )
-    DISK(RZ23, 99, 99, 9999 )
-    DISK(RZ24, 99, 99, 9999 )
-    DISK(RZ25, 99, 99, 9999 )
-    DISK(RZ26, 99, 99, 9999 )
-    DISK(RZ27, 99, 99, 9999 )
-    DISK(RZ28, 99, 99, 9999 )
-    DISK(RZ29, 99, 99, 9999 )
-    DISK(RZ31, 99, 99, 9999 )
-    DISK(RZ33, 99, 99, 9999 )
-    DISK(RZ35, 99, 99, 9999 )
-    DISK(RZ55, 99, 99, 9999 )
-    DISK(RZ56, 99, 99, 9999 )
-    DISK(RZ57, 99, 99, 9999 )
-    DISK(RZ58, 99, 99, 9999 )
-    DISK(RZ59, 99, 99, 9999 )
-
-    DISK(RZ72, 99, 99, 9999 )
-    DISK(RZ73, 99, 99, 9999 )
-    DISK(RZ74, 99, 99, 9999 )
-#endif
-
-    { NULL, 0, 0, 0, 0 }
-};
-
-
-static unsigned int compute_delta( unsigned long sectorsize,
-                                   unsigned long sectors,
-                                   unsigned long tracks,
-                                   unsigned long cylinders ) {
-
-    if( sectorsize < 512 )
-        sectors = (sectorsize * sectors) / 512;
-
-    if( sectors > 1 && tracks > 1 && cylinders > 1 )        /* Rule 7 */
-        return  (tracks + 1) * sectors +1;
-
-    if( (sectors > 1 && tracks > 1 && cylinders == 1 ) ||   /* Rule 4 */
-        (sectors > 1 && tracks == 1 && cylinders > 1 ) )    /* Rule 5 */
-        return sectors + 1;
-
-    if( sectors == 1 && tracks > 1 && cylinders > 1 )       /* Rule 6 */
-        return tracks + 1;
-
-    return 1;                                               /* Rules 1-3 */
-}
-
-#if 0
-static unsigned int delta_from_name( const char *diskname ) {
-    struct disktype *dp;
-
-    for( dp = disktype; dp->name != NULL; dp++ ) {
-        if( !strcmp( dp->name, diskname ) )
-            return compute_delta( dp->sectorsize, dp->sectors, dp->tracks, dp->cylinders );
-    }
-
-    return ~0u;
-}
-#endif
-static unsigned int delta_from_index( size_t index ) {
-    struct disktype *dp;
-    unsigned int delta;
-
-    if( index >= sizeof(disktype)/sizeof(disktype[0]) )
-        abort();
-    dp = disktype + index;
-    delta = compute_delta( dp->sectorsize, dp->sectors, dp->tracks, dp->cylinders );
-
-#if defined( DEBUG )  || HOME_SKIP > 0
-    printf( "HOM search index for %s is %u\n", dp->name, delta );
-#endif
-
-    return delta;
-}

@@ -1,4 +1,4 @@
-/* Device.c V2.1  Module to remember and find devices...*/
+/* Device.c  Module to remember and find devices...*/
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -20,10 +20,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ods2.h"
 #include "access.h"
 #include "cache.h"
 #include "device.h"
 #include "ssdef.h"
+
+#if !defined( DEBUG ) && defined( DEBUG_DEVICE )
+#define DEBUG DEBUG_DEVICE
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
 
 static void *device_create( unsigned devsiz, void *keyval, unsigned *retsts );
 static int device_compare( unsigned keylen, void *keyval, void *node );
@@ -48,10 +57,30 @@ static void *device_create( unsigned devsiz, void *keyval, unsigned *retsts ) {
     dev->cache.objtype = OBJTYPE_DEV;
     dev->vcb = NULL;
     dev->access = 0;
+    dev->context = NULL;
     memcpy( dev->devnam, keyval, devsiz );
     memcpy( dev->devnam + devsiz, ":", 2 );
     *retsts = SS$_NORMAL;
     return dev;
+}
+
+/************************************************************ device_done() */
+
+/* device_done() releases a device reference and
+ * eventually the device structure.
+ */
+
+void device_done( struct DEV *dev ) {
+    if( dev->cache.refcount < 1 ) {
+#if DEBUG
+        printf( "Device done with no reference\n" );
+#endif
+        abort();
+    }
+    cache_untouch( &dev->cache, FALSE );
+    if( dev->cache.refcount == 0 ) /* Safe because on LRU list */
+        cache_delete( &dev->cache );
+    return;
 }
 
 /*********************************************************** device_compare() */

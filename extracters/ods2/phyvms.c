@@ -1,4 +1,4 @@
-/* PHYVMS.c V2.1    Physical I/O module for VMS */
+/* PHYVMS.c    Physical I/O module for VMS */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -29,6 +29,14 @@
  *      If Mount/Virtual, use normal Unix open()/close()/read()/write().
  *      Negative handle -> Unix I/O; positive handle -> SYS$QIOW().
  */
+
+#if !defined( DEBUG ) && defined( DEBUG_PHYVMS )
+#define DEBUG DEBUG_PHYVMS
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
 
 #include <dcdef.h>
 #include <descrip.h>
@@ -78,7 +86,12 @@ unsigned sys$dassgn();
 
 #include "ods2.h"
 #include "phyio.h"
-#include "virtual.h"
+#include "phyvirt.h"
+
+static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
+                            char *buffer );
+static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
+                             const char *buffer );
 
 struct ITMLST {
     unsigned short  length;
@@ -252,12 +265,60 @@ unsigned phyio_init( struct DEV *dev ) {
 
     init_count++;
 
-    dev->handle = 0;
+    dev->handle = -1;
+    dev->devread = phyio_read;
+    dev->devwrite = phyio_write;
     dev->sectors = 0;
 
-    dev->access &= ~MOU_VIRTUAL;
-    virtual = virt_lookup( dev->devnam );
-    if ( virtual == NULL ) {
+    if( dev->access & MOU_VIRTUAL ) {
+        int vmsfd;
+        struct FAB fab;
+
+        virtual = virt_lookup( dev->devnam );
+        if ( virtual == NULL ) {
+            return SS$_NOSUCHDEV;
+        }
+#define opnopts "ctx=stm", "rfm=udf", "shr=get,put"
+        vmsfd = open( virtual,
+                      ((dev->access & MOU_WRITE )? O_RDWR : O_RDONLY) |
+                      ((dev->access & (MOU_VIRTUAL|PHY_CREATE)) == (MOU_VIRTUAL|PHY_CREATE)?
+                       O_CREAT | O_EXCL : 0),
+                      0666, opnopts );
+
+        if ( vmsfd < 0 && (dev->access & (MOU_WRITE|PHY_CREATE)) == MOU_WRITE ) {
+            dev->access &= ~MOU_WRITE;
+            vmsfd = open( virtual, O_RDONLY, 0444, opnopts );
+        }
+        if ( vmsfd < 0 ) {
+            switch( errno ) {
+            case EEXIST:
+                printf( "%%ODS2-E-EXISTS, File %s already exists, not superseded\n",
+                        virtual );
+                sts = SS$_DUPFILENAME;
+                break;
+            default:
+                printf( "%%ODS2-E-OPENERR, Open %s: %s\n",
+                        virtual, strerror( errno ) );
+            }
+            return SS$_NOSUCHFILE;
+        }
+
+        dev->handle = vmsfd;
+
+        fab = cc$rms_fab;                       /* Make this a real FAB (bid and bln) */
+        fab.fab$l_fna = (char *) virtual;
+        fab.fab$b_fns = strlen( virtual );
+        sts = sys$open( &fab );                 /* Lookup file, get file size */
+        if ( sts & STS$M_SUCCESS ) {
+            dev->sectors = fab.fab$l_alq;
+            sys$close( &fab );
+            if ( sizeof( off_t ) < 8 && dev->sectors > 0x3FFFFF ) {
+                close( vmsfd );
+                dev->handle = -1;
+                return SS$_OFFSET_TOO_BIG;      /* Sorry, need 64-bit off_t */
+            }
+        }
+    } else { /* Physical */
         struct dsc$descriptor devdsc;
         unsigned long devclass, cylinders, tracks, sectors;
         char devname[65];
@@ -318,34 +379,8 @@ unsigned phyio_init( struct DEV *dev ) {
         if ( sts & STS$M_SUCCESS ) {
             sts = sys$assign( &devdsc, &dev->handle, 0, 0, 0, 0 );
         }
-    } else {
-        int vmsfd;
-        struct FAB fab;
-        fab = cc$rms_fab;               /* Make this a real FAB (bid and bln) */
-        fab.fab$l_fna = (char *) virtual;
-        fab.fab$b_fns = strlen( virtual );
-        sts = sys$open( &fab );                 /* Lookup file, get file size */
-        if ( sts & STS$M_SUCCESS ) {
-            dev->sectors = fab.fab$l_alq;
-            sys$close( &fab );
-            if ( sizeof( off_t ) < 8 && dev->sectors > 0x3FFFFF ) {
-                return SS$_OFFSET_TOO_BIG;        /* Sorry, need 64-bit off_t */
-            }
-            dev->access |= MOU_VIRTUAL;
-            vmsfd = ( dev->access & MOU_WRITE ) ?
-                        open( virtual, O_RDWR,   0666 ) :
-                        open( virtual, O_RDONLY, 0444 );
-            if ( vmsfd < 0 && dev->access & MOU_WRITE ) {
-                dev->access &= ~MOU_WRITE;
-                vmsfd = open( virtual, O_RDONLY, 0444 );
-            }
-            if ( vmsfd < 0 ) {
-                return SS$_NOSUCHFILE;
-            }
-        }
-        dev->handle = vmsfd;
-        sts = SS$_NORMAL;
     }
+
     return sts;
 }
 
@@ -365,10 +400,10 @@ unsigned phyio_done( struct DEV *dev ) {
 
 /*************************************************************** phyio_read() */
 
-unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                     char *buffer ) {
+static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
+                            char *buffer ) {
 
-#ifdef DEBUG
+#if DEBUG
     printf("Phyio read block: %d into %x (%d bytes)\n",block,buffer,length);
 #endif
     read_count++;
@@ -396,10 +431,10 @@ unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
 
 /************************************************************** phyio_write() */
 
-unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                      const char *buffer ) {
+static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
+                             const char *buffer ) {
 
-#ifdef DEBUG
+#if DEBUG
     printf("Phyio write block: %d from %x (%d bytes)\n",block,buffer,length);
 #endif
     write_count++;

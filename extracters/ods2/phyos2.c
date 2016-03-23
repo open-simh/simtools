@@ -15,7 +15,10 @@
 #include "phyio.h"
 #include "ssdef.h"
 
-
+static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
+                            char *buffer );
+static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
+                             const char *buffer );
 
 unsigned init_count = 0;
 unsigned read_count = 0;
@@ -70,8 +73,17 @@ void phyio_help(FILE *fp ) {
   return;
 }
 
+NOTE: This will not compile.  The API for phyio_init has changed to
+taking a DEV struct.  I'm leaving it this way becauses I don't have the
+ability to test under OS2.  This was left undone when the API was changed...
+before my time.
+
+
 unsigned phyio_init(int devlen,char *devnam,unsigned *hand,struct phyio_info *info)
 {
+    dev->devread = phyio_read;
+    dev->devwrite = phyio_write;
+
     if (hand_count < HANDLE_MAX - 1) {
         ULONG usAction;
         ULONG open_mode;
@@ -163,10 +175,10 @@ unsigned phy_getsect(HFILE hfile,unsigned sector,char *buffer)
 
 
 
-unsigned phyio_read(unsigned handno,unsigned block,unsigned length,char *buffer)
+static unsigned phyio_read(unsigned handno,unsigned block,unsigned length,char *buffer)
 {
     register unsigned sts = 1;
-#ifdef DEBUG
+#if DEBUG
     printf("PHYIO_READ block %d length %d\n",block,length);
 #endif
     if (handno >= hand_count) {
@@ -212,7 +224,7 @@ unsigned phyio_read(unsigned handno,unsigned block,unsigned length,char *buffer)
 }
 
 
-unsigned phyio_write(unsigned handle,unsigned block,unsigned length,char *buffer)
+static unsigned phyio_write(unsigned handle,unsigned block,unsigned length,char *buffer)
 {
     write_count++;
     return SS$_WRITLCK;

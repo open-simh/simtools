@@ -44,3 +44,12 @@
    fun:rl_set_prompt
    fun:readline
 }
+{
+   readline
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:readline_internal_charloop
+   fun:readline_internal
+   fun:readline
+}

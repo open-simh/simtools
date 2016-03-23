@@ -1,4 +1,4 @@
-/* Direct.c V2.1 */
+/* Direct.c */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -13,6 +13,14 @@
 /*  This module does all directory file handling - mostly
     lookups of filenames in directory files... */
 
+#if !defined( DEBUG ) && defined( DEBUG_DIRECT )
+#define DEBUG DEBUG_DIRECT
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
+
 #define DEBUGx on
 
 #include <ctype.h>
@@ -24,19 +32,12 @@
 #include "descrip.h"
 #include "direct.h"
 #include "fibdef.h"
+#include "ods2.h"
 #include "ssdef.h"
 #include "stsdef.h"
 
-#ifndef TRUE
-#define TRUE ( 0 == 0 )
-#endif
-#ifndef FALSE
-#define FALSE ( 0 != 0 )
-#endif
-
 #define BLOCKSIZE 512
 #define MAXREC (BLOCKSIZE - 2)
-
 
 /* Some statistical counters... */
 
@@ -66,8 +67,7 @@ void direct_show( void ) {
 /* name_check() - take a name specification and return name length without
            the version number, an integer version number, and a wildcard flag */
 
-unsigned name_check(char *str,int len,int *retlen,int *retver,int *wildflag)
-{
+static unsigned name_check( char *str, int len, int *retlen, int *retver, int *wildflag ) {
     int wildcard = FALSE;
     char *name_start = str;
     register int dots = 0;
@@ -256,7 +256,7 @@ int name_match(char *spec,int spec_len,char *dirent,int dirent_len)
 
 unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
                     struct VIOC * vioc,char *buffer,
-                    struct dir$rec * dr,struct dir$ent * de,
+                    struct dir$r_rec * dr,struct dir$r_ent * de,
                     char *filename,unsigned filelen,
                     unsigned version,struct fiddef * fid)
 {
@@ -265,10 +265,10 @@ unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
 
     /* Compute space required... */
 
-    register int addlen = sizeof(struct dir$ent);
+    register int addlen = sizeof(struct dir$r_ent);
     direct_inserts++;
     if (de == NULL)
-        addlen += (filelen + sizeof(struct dir$rec)) & ~1;
+        addlen += (filelen + sizeof(struct dir$r_rec)) & ~1;
 
     /* Compute block space in use ... */
 
@@ -276,29 +276,29 @@ unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
         int invalid_dir = TRUE;
         while (TRUE) {
             register int sizecheck;
-            register struct dir$rec *nr = (struct dir$rec *) (buffer + inuse);
+            register struct dir$r_rec *nr = (struct dir$r_rec *) (buffer + inuse);
             if (dr == nr) invalid_dir = FALSE;
-            sizecheck = VMSWORD(nr->dir$size);
-            if (sizecheck == 0xffff)
+            sizecheck = F11WORD(nr->dir$w_size);
+            if (sizecheck == 0xffff) /* End of data marker */
                 break;
             sizecheck += 2;
             inuse += sizecheck;
-            sizecheck -= (nr->dir$namecount + sizeof(struct dir$rec)) & ~1;
+            sizecheck -= (nr->dir$b_namecount + sizeof(struct dir$r_rec)) & ~1;
             if (inuse > MAXREC || (inuse & 1) || sizecheck <= 0 ||
-                sizecheck % sizeof(struct dir$ent) != 0) {
+                sizecheck % sizeof(struct dir$r_ent) != 0) {
                 deaccesschunk(vioc,0,0,FALSE);
                 return SS$_BADIRECTORY;
             }
-        };
+        }
 
         if (invalid_dir) {
             printf("BUGCHECK invalid dir\n");
             exit(EXIT_FAILURE);
         }
         if (de != NULL) {
-            if (VMSWORD(dr->dir$size) > MAXREC ||
-                (char *) de < dr->dir$name + dr->dir$namecount ||
-                (char *) de > (char *) dr + VMSWORD(dr->dir$size) + 2) {
+            if (F11WORD(dr->dir$w_size) > MAXREC ||
+                (char *) de < dr->dir$t_name + dr->dir$b_namecount ||
+                (char *) de > (char *) dr + F11WORD(dr->dir$w_size) + 2) {
                 printf("BUGCHECK invalid de\n");
                 exit(EXIT_FAILURE);
             }
@@ -308,14 +308,18 @@ unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
     /* If not enough space free extend the directory... */
 
     if (addlen > MAXREC - inuse) {
-        register struct dir$rec *nr;
+        register struct dir$r_rec *nr;
         unsigned keep_new = 0;
         char *newbuf;
         struct VIOC *newvioc;
         unsigned newblk = eofblk + 1;
         direct_splits++;
-        printf("Splitting record... %s %u,%u,%u,%u\n", dr->dir$name,de->dir$fid.fid$w_num,
-               de->dir$fid.fid$w_seq,de->dir$fid.fid$b_rvn,de->dir$fid.fid$b_nmx);
+        printf( "Splitting record... %s", dr->dir$t_name );
+        if( de != NULL )
+            printf( " %u,%u,%u,%u\n", de->dir$w_fid.fid$w_num,
+                de->dir$w_fid.fid$w_seq, de->dir$w_fid.fid$b_rvn, de->dir$w_fid.fid$b_nmx );
+        else
+            putchar( '\n' );
         if (newblk > fcb->hiblock) {
             printf("I can't extend a directory yet!!\n");
             exit(EXIT_FAILURE);
@@ -345,49 +349,49 @@ unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
         }
         memset(newbuf,0,BLOCKSIZE);
         eofblk++;
-        fcb->head->fh2$w_recattr.fat$l_efblk = VMSWORD(eofblk + 1);
+        fcb->head->fh2$w_recattr.fat$l_efblk = F11WORD(eofblk + 1);
 
         /* First find where the next record is... */
 
         nr = dr;
-        if (VMSWORD(nr->dir$size) <= MAXREC)
-            nr = (struct dir$rec *) ((char *) nr + VMSWORD(nr->dir$size) + 2);
+        if (F11WORD(nr->dir$w_size) <= MAXREC)
+            nr = (struct dir$r_rec *) ((char *) nr + F11WORD(nr->dir$w_size) + 2);
 
         /* Can we split between records? */
 
         if (de == NULL || (char *) dr != buffer ||
-            VMSWORD(nr->dir$size) <= MAXREC) {
-            register struct dir$rec *sp = dr;
+            F11WORD(nr->dir$w_size) <= MAXREC) {
+            register struct dir$r_rec *sp = dr;
             if ((char *) dr == buffer && de != NULL) sp = nr;
             memcpy(newbuf,sp,((buffer + BLOCKSIZE) - (char *) sp));
             memset(sp,0,((buffer + BLOCKSIZE) - (char *) sp));
-            sp->dir$size = VMSWORD(0xffff);
+            sp->dir$w_size = F11WORD(0xffff);
             if (sp == dr &&
                 (de != NULL || (char *) sp >= buffer + MAXREC - addlen)) {
                 if (de != NULL)
-                    de = (struct dir$ent *)
+                    de = (struct dir$r_ent *)
                         (newbuf + ((char *) de - (char *) sp));
-                dr = (struct dir$rec *) (newbuf + ((char *) dr - (char *) sp));
+                dr = (struct dir$r_rec *) (newbuf + ((char *) dr - (char *) sp));
                 keep_new = 1;
             }
             /* OK, we have to split the record then.. */
 
         } else {
-            register unsigned reclen = (dr->dir$namecount +
-                                        sizeof(struct dir$rec)) & ~1;
-            register struct dir$rec *nbr = (struct dir$rec *) newbuf;
-            printf("Super split %s %u,%u,%u,%u\n", dr->dir$name,de->dir$fid.fid$w_num,
-               de->dir$fid.fid$w_seq,de->dir$fid.fid$b_rvn,de->dir$fid.fid$b_nmx);
+            register unsigned reclen = (dr->dir$b_namecount +
+                                        sizeof(struct dir$r_rec)) & ~1;
+            register struct dir$r_rec *nbr = (struct dir$r_rec *) newbuf;
+            printf("Super split %s %u,%u,%u,%u\n", dr->dir$t_name,de->dir$w_fid.fid$w_num,
+               de->dir$w_fid.fid$w_seq,de->dir$w_fid.fid$b_rvn,de->dir$w_fid.fid$b_nmx);
             memcpy(newbuf,buffer,reclen);
             memcpy(newbuf + reclen,de,((char *) nr - (char *) de) + 2);
-            nbr->dir$size = VMSWORD(reclen + ((char *) nr - (char *) de) - 2);
+            nbr->dir$w_size = F11WORD(reclen + ((char *) nr - (char *) de) - 2);
 
             memset((char *) de + 2,0,((char *) nr - (char *) de));
-            ((struct dir$rec *) de)->dir$size = VMSWORD(0xffff);
-            dr->dir$size = VMSWORD(((char *) de - (char *) dr) - 2);
+            ((struct dir$r_rec *) de)->dir$w_size = F11WORD(0xffff);
+            dr->dir$w_size = F11WORD(((char *) de - (char *) dr) - 2);
             if ((char *) de >= (char *) nr) {
-                dr = (struct dir$rec *) newbuf;
-                de = (struct dir$ent *) (newbuf + reclen);
+                dr = (struct dir$r_rec *) newbuf;
+                de = (struct dir$r_ent *) (newbuf + reclen);
                 keep_new = 1;
             }
         }
@@ -409,23 +413,23 @@ unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
     if (de == NULL) {
         memmove((char *) dr + addlen,dr,
                 BLOCKSIZE - (((char *) dr + addlen) - buffer));
-        dr->dir$size = VMSWORD(addlen - 2);
-        dr->dir$verlimit = 0;
-        dr->dir$flags = 0;
-        dr->dir$namecount = filelen;
-        memcpy(dr->dir$name,filename,filelen);
-        de = (struct dir$ent *)
-                 ((char *) dr + (addlen - sizeof(struct dir$ent)));
+        dr->dir$w_size = F11WORD(addlen - 2);
+        dr->dir$w_verlimit = 0;
+        dr->dir$b_flags = 0;
+        dr->dir$b_namecount = filelen;
+        memcpy(dr->dir$t_name,filename,filelen);
+        de = (struct dir$r_ent *)
+                 ((char *) dr + (addlen - sizeof(struct dir$r_ent)));
     } else {
-        dr->dir$size = VMSWORD(VMSWORD(dr->dir$size) + addlen);
+        dr->dir$w_size = F11WORD(F11WORD(dr->dir$w_size) + addlen);
         memmove((char *) de + addlen,de,
                 BLOCKSIZE - (((char *) de + addlen) - buffer));
     }
 
     /* Write the entry values are we are done! */
 
-    de->dir$version = VMSWORD(version);
-    fid_copy(&de->dir$fid,fid,0);
+    de->dir$w_version = F11WORD(version);
+    fid_copy(&de->dir$w_fid,fid,0);
     return deaccesschunk(vioc,curblk,1,TRUE);
 }
 
@@ -434,20 +438,20 @@ unsigned insert_ent(struct FCB * fcb,unsigned eofblk,unsigned curblk,
 /* delete_ent() - delete a directory entry */
 
 unsigned delete_ent(struct FCB * fcb,struct VIOC * vioc,unsigned curblk,
-                    struct dir$rec * dr,struct dir$ent * de,
+                    struct dir$r_rec * dr,struct dir$r_ent * de,
                     char *buffer,unsigned eofblk)
 {
     unsigned sts = SS$_NORMAL;
     unsigned ent;
     direct_deletes++;
-    ent = (VMSWORD(dr->dir$size) - sizeof(struct dir$rec)
-           - dr->dir$namecount + 3) / sizeof(struct dir$ent);
+    ent = (F11WORD(dr->dir$w_size) - sizeof(struct dir$r_rec)
+           - dr->dir$b_namecount + 3) / sizeof(struct dir$r_ent);
     if (ent > 1) {
-        char *ne = (char *) de + sizeof(struct dir$ent);
+        char *ne = (char *) de + sizeof(struct dir$r_ent);
         memcpy(de,ne,BLOCKSIZE - (ne - buffer));
-        dr->dir$size = VMSWORD(VMSWORD(dr->dir$size) - sizeof(struct dir$ent));
+        dr->dir$w_size = F11WORD(F11WORD(dr->dir$w_size) - sizeof(struct dir$r_ent));
     } else {
-        char *nr = (char *) dr + VMSWORD(dr->dir$size) + 2;
+        char *nr = (char *) dr + F11WORD(dr->dir$w_size) + 2;
         if (eofblk == 1 || (char *) dr > buffer ||
             (nr <= buffer + MAXREC && (unsigned short) *nr < BLOCKSIZE)) {
             memcpy(dr,nr,BLOCKSIZE - (nr - buffer));
@@ -464,7 +468,7 @@ unsigned delete_ent(struct FCB * fcb,struct VIOC * vioc,unsigned curblk,
                 vioc = nxtvioc;
             }
             if (sts & STS$M_SUCCESS) {
-                fcb->head->fh2$w_recattr.fat$l_efblk = VMSSWAP(eofblk);
+                fcb->head->fh2$w_recattr.fat$l_efblk = F11SWAP(eofblk);
                 eofblk--;
             }
         }
@@ -481,17 +485,17 @@ unsigned delete_ent(struct FCB * fcb,struct VIOC * vioc,unsigned curblk,
 /* return_ent() - return information about a directory entry */
 
 unsigned return_ent(struct FCB * fcb,struct VIOC * vioc,unsigned curblk,
-                    struct dir$rec * dr,struct dir$ent * de,struct fibdef * fib,
+                    struct dir$r_rec * dr,struct dir$r_ent * de,struct fibdef * fib,
                     unsigned short *reslen,struct dsc_descriptor * resdsc,
                     int wildcard)
 {
     register int scale = 10;
-    register int version = VMSWORD(de->dir$version);
-    register int length = dr->dir$namecount;
+    register int version = F11WORD(de->dir$w_version);
+    register int length = dr->dir$b_namecount;
     register char *ptr = resdsc->dsc_a_pointer;
     register int outlen = resdsc->dsc_w_length;
     if (length > outlen) length = outlen;
-    memcpy(ptr,dr->dir$name,length);
+    memcpy(ptr,dr->dir$t_name,length);
     while (version >= scale) scale *= 10;
     ptr += length;
     if (length < outlen) {
@@ -506,8 +510,9 @@ unsigned return_ent(struct FCB * fcb,struct VIOC * vioc,unsigned curblk,
         } while (scale > 1);
     }
     *reslen = length;
-    fid_copy((struct fiddef *)&fib->fib$w_fid_num,&de->dir$fid,0);
+    fid_copy((struct fiddef *)&fib->fib$w_fid_num,&de->dir$w_fid,0);
     if (fib->fib$b_fid_rvn == 0) fib->fib$b_fid_rvn = fcb->rvn;
+    fib->fib$w_verlimit = dr->dir$w_verlimit;
     if (wildcard || (fib->fib$w_nmctl & FIB$M_WILD)) {
         fib->fib$l_wcc = curblk;
     } else {
@@ -540,14 +545,15 @@ unsigned search_ent(struct FCB *fcb,
     curblk = fib->fib$l_wcc;
     if (curblk != 0) {
         searchspec = resdsc->dsc_a_pointer;
-        sts = name_check(searchspec,*reslen,&searchlen,&version,&wildcard);
-        if (action || wildcard) sts = SS$_BADFILENAME;
+        sts = name_check( searchspec, *reslen, &searchlen, &version, &wildcard );
+        if( MODIFIES(action) || wildcard )
+            sts = SS$_BADFILENAME;
         wcc_flag = TRUE;
     } else {
         searchspec = filedsc->dsc_a_pointer;
-        sts = name_check(searchspec,filedsc->dsc_w_length,&searchlen,&version,
-                         &wildcard);
-        if ((action && wildcard) || (action > 1 && version < 0)) {
+        sts = name_check( searchspec, filedsc->dsc_w_length, &searchlen, &version,
+                          &wildcard);
+        if( (MODIFIES(action) && wildcard) || (action == DIRECT_CREATE && version < 0) ) {
             sts = SS$_BADFILENAME;
         }
         wcc_flag = FALSE;
@@ -564,27 +570,27 @@ unsigned search_ent(struct FCB *fcb,
         while (loblk < hiblk) {
             register int cmp;
             register unsigned newblk;
-            register struct dir$rec *dr;
+            register struct dir$r_rec *dr;
             direct_searches++;
-            sts = accesschunk(fcb,curblk,&vioc,&buffer,NULL,action ? 1 : 0);
+            sts = accesschunk(fcb,curblk,&vioc,&buffer,NULL,MODIFIES(action));
             if (!(sts & STS$M_SUCCESS)) return sts;
-            dr = (struct dir$rec *) buffer;
-            if (VMSWORD(dr->dir$size) > MAXREC) {
+            dr = (struct dir$r_rec *) buffer;
+            if (F11WORD(dr->dir$w_size) > MAXREC) {
                 cmp = MAT_GT;
             } else {
-                cmp = name_match(searchspec,searchlen,dr->dir$name,
-                                 dr->dir$namecount);
+                cmp = name_match(searchspec,searchlen,dr->dir$t_name,
+                                 dr->dir$b_namecount);
                 if (cmp == MAT_EQ) {
                     if (wildcard || version < 1 || version > 32767) {
                         cmp = MAT_NE;   /* no match - want to find start */
                     } else {
-                        register struct dir$ent *de =
-                            (struct dir$ent *)
-                                (dr->dir$name + ((dr->dir$namecount + 1) & ~1));
-                        if (VMSWORD(de->dir$version) < version) {
+                        register struct dir$r_ent *de =
+                            (struct dir$r_ent *)
+                                (dr->dir$t_name + ((dr->dir$b_namecount + 1) & ~1));
+                        if (F11WORD(de->dir$w_version) < version) {
                             cmp = MAT_GT;       /* too far... */
                         } else {
-                            if (VMSWORD(de->dir$version) > version) {
+                            if (F11WORD(de->dir$w_version) > version) {
                                 cmp = MAT_LT;   /* further ahead... */
                             }
                         }
@@ -624,21 +630,21 @@ unsigned search_ent(struct FCB *fcb,
         unsigned last_len = 0;
         register int relver = 0;
         while ((sts & STS$M_SUCCESS) && curblk <= eofblk) {
-            register struct dir$rec *dr;
+            register struct dir$r_rec *dr;
             register int cmp = MAT_LT;
 
             /* Access a directory block. Reset relative version if it starts
                with a record we haven't seen before... */
 
-            if (vioc == NULL) {
-                sts = accesschunk(fcb,curblk,&vioc,&buffer,NULL,action ? 1 : 0);
+            if( vioc == NULL ) {
+                sts = accesschunk( fcb,curblk,&vioc,&buffer,NULL,MODIFIES(action) );
                 if (!(sts & STS$M_SUCCESS)) return sts;
             }
-            dr = (struct dir$rec *) buffer;
-            if (last_len != dr->dir$namecount) {
+            dr = (struct dir$r_rec *) buffer;
+            if (last_len != dr->dir$b_namecount) {
                 relver = 0;
             } else {
-                if (name_match(last_name,last_len,dr->dir$name,last_len) !=
+                if (name_match(last_name,last_len,dr->dir$t_name,last_len) !=
                     MAT_EQ) {
                     relver = 0;
                 }
@@ -647,11 +653,11 @@ unsigned search_ent(struct FCB *fcb,
             /* Now loop through the records seeing which match our spec... */
 
             while (TRUE) {        /* dr records within block */
-                register char *nr = (char *) dr + VMSWORD(dr->dir$size) + 2;
+                register char *nr = (char *) dr + F11WORD(dr->dir$w_size) + 2;
                 if (nr >= buffer + BLOCKSIZE) break;
-                if (dr->dir$name + dr->dir$namecount >= nr) break;
-                cmp = name_match(searchspec,searchlen,dr->dir$name,
-                                 dr->dir$namecount);
+                if (dr->dir$t_name + dr->dir$b_namecount >= nr) break;
+                cmp = name_match(searchspec,searchlen,dr->dir$t_name,
+                                 dr->dir$b_namecount);
                 if (cmp == MAT_GT && wcc_flag) {
                     wcc_flag = FALSE;
                     searchspec = filedsc->dsc_a_pointer;
@@ -660,12 +666,12 @@ unsigned search_ent(struct FCB *fcb,
                     if (!(sts & STS$M_SUCCESS)) break;
                 } else {
                     if (cmp == MAT_EQ) {
-                        register struct dir$ent *de;
-                        de = (struct dir$ent *)
-                                 (dr->dir$name +
-                                  ((dr->dir$namecount + 1) & ~1));
-                        if (version == 0 && action == 2) {
-                            version = VMSWORD(de->dir$version) + 1;
+                        register struct dir$r_ent *de;
+                        de = (struct dir$r_ent *)
+                                 (dr->dir$t_name +
+                                  ((dr->dir$b_namecount + 1) & ~1));
+                        if (version == 0 && action == DIRECT_CREATE) {
+                            version = F11WORD(de->dir$w_version) + 1;
                             if (version > 32767) {
                                 sts = SS$_BADFILENAME;
                                 break;
@@ -679,12 +685,12 @@ unsigned search_ent(struct FCB *fcb,
                         while ((char *) de < nr) {
                             if ((version < 1) ?
                                     (relver > version) :
-                                    (version < VMSWORD(de->dir$version))) {
+                                    (version < F11WORD(de->dir$w_version))) {
                                 relver--;
                                 de++;
                             } else {
                                 if (version > 32767 || version == relver ||
-                                    version == VMSWORD(de->dir$version)) {
+                                    version == F11WORD(de->dir$w_version)) {
                                     cmp = MAT_EQ;
                                 } else {
                                     cmp = MAT_GT;
@@ -694,14 +700,15 @@ unsigned search_ent(struct FCB *fcb,
                                 } else {
                                     wcc_flag = FALSE;
                                     searchspec = filedsc->dsc_a_pointer;
-                                    sts = name_check(searchspec,
-                                                     filedsc->dsc_w_length,
-                                                     &searchlen,&version,
-                                                     &wildcard);
-                                    if (!(sts & STS$M_SUCCESS)) break;
+                                    sts = name_check( searchspec,
+                                                      filedsc->dsc_w_length,
+                                                      &searchlen,&version,
+                                                      &wildcard );
+                                    if( !(sts & STS$M_SUCCESS) )
+                                        break;
                                     if (name_match(searchspec,searchlen,
-                                                   dr->dir$name,
-                                                   dr->dir$namecount) !=
+                                                   dr->dir$t_name,
+                                                   dr->dir$b_namecount) !=
                                         MAT_EQ) {
                                         cmp = MAT_NE;
                                         break;
@@ -725,23 +732,25 @@ unsigned search_ent(struct FCB *fcb,
 
                         if (cmp == MAT_EQ) {
                             switch (action) {
-                                case 0:
-                                    return return_ent(fcb,vioc,curblk,dr,de,fib,
-                                                      reslen,resdsc,wildcard);
-                                case 1:
-                                    return delete_ent(fcb,vioc,curblk,dr,de,
-                                                      buffer,eofblk);
-                                default:
-                                    sts = SS$_DUPFILENAME;
-                                    break;
+                            case DIRECT_FIND:
+                                return return_ent( fcb, vioc, curblk, dr, de, fib,
+                                                   reslen, resdsc, wildcard );
+                            case DIRECT_DELETE:
+                                return delete_ent( fcb, vioc, curblk, dr, de,
+                                                   buffer, eofblk );
+                            case DIRECT_CREATE:
+                                sts = SS$_DUPFILENAME;
+                                break;
+                            default:
+                                abort();
                             }
                         } else {
-                            if (cmp != MAT_NE && action == 2) {
-                                return insert_ent(fcb,eofblk,curblk,vioc,buffer,
-                                                  dr,de,searchspec,searchlen,
-                                                  version,
-                                                  (struct fiddef *)
-                                                      &fib->fib$w_fid_num);
+                            if( cmp != MAT_NE && action == DIRECT_CREATE ) {
+                                return insert_ent( fcb, eofblk, curblk, vioc, buffer,
+                                                   dr, de, searchspec, searchlen,
+                                                   version,
+                                                   (struct fiddef *)
+                                                              &fib->fib$w_fid_num);
                             }
                         }
                     }
@@ -753,23 +762,23 @@ unsigned search_ent(struct FCB *fcb,
                        so that if it continues into the next block we can get
                        the relative version right! Sigh! */
 
-                    if (VMSWORD(((struct dir$rec *) nr)->dir$size) > MAXREC) {
-                        last_len = dr->dir$namecount;
+                    if (F11WORD(((struct dir$r_rec *) nr)->dir$w_size) > MAXREC) {
+                        last_len = dr->dir$b_namecount;
                         if (last_len > sizeof(last_name)) {
                             last_len = sizeof(last_name);
                         }
-                        memcpy(last_name,dr->dir$name,last_len);
-                        dr = (struct dir$rec *) nr;
+                        memcpy(last_name,dr->dir$t_name,last_len);
+                        dr = (struct dir$r_rec *) nr;
                         break;
                     }
-                    dr = (struct dir$rec *) nr;
+                    dr = (struct dir$r_rec *) nr;
                 }
             }
 
             /* Release the buffer ready to get the next one - unless it is the
                last one in which case we can't defer an insert any longer!! */
 
-            if (!(sts & STS$M_SUCCESS) || action != 2 ||
+            if (!(sts & STS$M_SUCCESS) || action != DIRECT_CREATE ||
                 (cmp != MAT_GT && curblk < eofblk)) {
                 register unsigned dests = deaccesschunk(vioc,0,0,TRUE);
                 if (!(dests & STS$M_SUCCESS)) {
@@ -805,7 +814,8 @@ unsigned search_ent(struct FCB *fcb,
 /* direct() - this routine handles all directory manipulations:-
          action 0 - find directory entry
                 1 - delete entry
-                2 - create an entry   */
+                2 - create an entry
+  */
 
 unsigned direct(struct VCB * vcb,struct dsc_descriptor * fibdsc,
                 struct dsc_descriptor * filedsc,unsigned short *reslen,
@@ -814,11 +824,11 @@ unsigned direct(struct VCB * vcb,struct dsc_descriptor * fibdsc,
     struct FCB *fcb;
     register unsigned sts,eofblk;
     register struct fibdef *fib = (struct fibdef *) fibdsc->dsc_a_pointer;
-    sts = accessfile(vcb,(struct fiddef *) & fib->fib$w_did_num,&fcb,action);
+    sts = accessfile(vcb,(struct fiddef *) &fib->fib$w_did_num, &fcb, (action != DIRECT_FIND) );
     if (sts & STS$M_SUCCESS) {
-        if (VMSLONG(fcb->head->fh2$l_filechar) & FH2$M_DIRECTORY) {
-            eofblk = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
-            if (VMSWORD(fcb->head->fh2$w_recattr.fat$w_ffbyte) == 0) --eofblk;
+        if (F11LONG(fcb->head->fh2$l_filechar) & FH2$M_DIRECTORY) {
+            eofblk = F11SWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
+            if (F11WORD(fcb->head->fh2$w_recattr.fat$w_ffbyte) == 0) --eofblk;
             sts = search_ent(fcb,fibdsc,filedsc,reslen,resdsc,eofblk,action);
         } else {
             sts = SS$_BADIRECTORY;

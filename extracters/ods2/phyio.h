@@ -1,4 +1,4 @@
-/* Phyio.h  V2.1   Definition of Physical I/O routines */
+/* Phyio.h    Definition of Physical I/O routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -37,7 +37,7 @@
 #ifndef _PHYIO_H
 #define _PHYIO_H
 
-#include "device.h"
+#include <stdio.h>
 
 #define PHYIO_READONLY 1
 
@@ -47,14 +47,18 @@ typedef enum showtype {
     SHOW_DEVICES
 } showtype_t;
 
+struct DEV;
+
 void phyio_show( showtype_t type );
 char *phyio_path( const char *filnam );
 unsigned phyio_init( struct DEV *dev );
 unsigned phyio_done( struct DEV *dev );
-unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                     char *buffer );
-unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                      const char *buffer );
+
+typedef unsigned (*phy_iord_t)( struct DEV *dev, unsigned block, unsigned length,
+                                char *buffer );
+typedef unsigned (*phy_iowr_t)( struct DEV *dev, unsigned block, unsigned length,
+                                const char *buffer );
+
 void phyio_help(FILE *fp );
 
 #endif /* #ifndef _PHYIO_H */

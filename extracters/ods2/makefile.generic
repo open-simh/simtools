@@ -1,4 +1,10 @@
+# -*- Makefile -*-
+
 # Generic makefile for ods2
+#
+# This tries really hard to be OS-agnostic, because
+# otherwise, every little change means updating all
+# the os-specific makefiles.
 #
 # See makefile.<osname>, which normally includes it
 #
@@ -18,10 +24,17 @@
 #DEFS =
 
 # Libraries, e.g. -lreadline
+#LDLIBS =
+
+# Linker flags
 #LDFLAGS =
 
 # Object file suffix
 #OBJ = .o
+
+# Executable file suffix
+
+#EXE =
 
 # Physical IO module
 #PHYSIO = phyunix
@@ -29,61 +42,94 @@
 # Extra physical IO headers
 #PHYSIOH =
 
+# VHD format options
+
+include $(VHDOPTS)
+
 # #####################################################
 
-all : ods2
+DEPENDS = makefile.depends
+MAKEDEPEND = makedepend
+SED = sed
 
-OBJS = $(ODS2_OBJS)
+all : ods2$(EXE)
 
-COMMON_OBJS =  \
-access$(OBJ) \
-cache$(OBJ) \
-compat$(OBJ)\
-device$(OBJ) \
-direct$(OBJ) \
-phyvirt$(OBJ) \
-rms$(OBJ) \
-sysmsg$(OBJ) \
-update$(OBJ) \
-vmstime$(OBJ)
+SRCS = ods2.c 	\
+access.c  	\
+cache.c  	\
+compat.c  	\
+copycmd.c 	\
+createcmd.c 	\
+debug.c		\
+deletecmd.c	\
+device.c	\
+diffcmd.c 	\
+dircmd.c	\
+direct.c	\
+dismountcmd.c	\
+extendcmd.c	\
+helpcmd.c	\
+importcmd.c	\
+initialcmd.c	\
+initvol.c	\
+mountcmd.c	\
+$(PHYSIO).c 	\
+phyvirt.c	\
+rms.c		\
+searchcmd.c	\
+setcmd.c	\
+showcmd.c	\
+spawncmd.c	\
+sysmsg.c	\
+typecmd.c	\
+update.c	\
+vmstime.c	\
+$(VHDLIB)
 
-ODS2_OBJS = ods2$(OBJ) $(COMMON_OBJS) $(PHYSIO)$(OBJ)
+OBJS = $(SRCS:.c=$(OBJ))
 
-ods2 : $(ODS2_OBJS) $(LIBS)
-	$(CC) $(CCFLAGS) -o ods2 $(ODS2_OBJS) $(LDFLAGS)
+depend: $(MAKEFILE_LIST)
+	$(DELETE) $(DEPENDS)
+	$(MAKE) -f $(TOPMAKE) $(DEPENDS)
+	$(MAKE) -f makefile.vms descrip.mms
 
-access$(OBJ) : access.c ssdef.h access.h phyio.h compat.h sysmsg.h phyvirt.h
-	$(CC) -c $(CCFLAGS) $(DEFS) access.c
+# Used to list sourcefiles for updating VC project & git repository.
+# Not used for Makefile builds
+# Run after make depends
+# To get the Windows file list on Unix, use
+# make -f makefile.nt "DELETE=rm -f" depend vclist
 
-cache$(OBJ) : cache.c cache.h ssdef.h
-	$(CC) -c $(CCFLAGS) $(DEFS) cache.c
+vclist:
+	@echo "** Header files **"
+	@$(SED) $(DEPENDS) -e'/ *#/d' -e's/^.*.$(OBJ): //g' -e's/ /\n/g' | sort | uniq
+	@echo ""
+	@echo "** Source files **"
+	@echo $(SRCS) | sed -e's/  */\n/g' | sort | uniq
 
-compat$(OBJ) : compat.c compat.h
-	$(CC) -c $(CCFLAGS) $(DEFS) compat.c
+# This processing is so the kit can contain a generic, up-to-date depends file
+# I don't want to require makedepend for people to build from source.
+# I do want the file to be accurate when shipped, so auto-maintained.
+# makedepend will include all the system library includes, which is not
+# helpful for this case.  So the sed processing removes dependencies that
+# start with "/" - e.g. /usr/include and friends.
 
-device$(OBJ) : device.c ssdef.h access.h phyio.h
-	$(CC) -c $(CCFLAGS) $(DEFS) device.c
+$(DEPENDS): $(MAKEFILE_LIST)
+	touch $(DEPENDS)
+	2>/dev/null $(MAKEDEPEND) -o$(OBJ) -I. -f- -- $(CFLAGS) $(CPPFLAGS) $(DEFS) -- $(SRCS) | $(SED)  -e's/ \/[^ ]*\.h/ /g' -e'/^[^:]*: *$$/d' -e's/  */ /g' >$(DEPENDS)
 
-direct$(OBJ) : direct.c direct.h access.h fibdef.h descrip.h ssdef.h
-	$(CC) -c $(CCFLAGS) $(DEFS) direct.c
+-include $(DEPENDS)
 
-ods2$(OBJ) : ods2.c compat.h sysmsg.h phyio.h ssdef.h descrip.h access.h rms.h version.h
-	$(CC) -c $(CCFLAGS) $(VERSION) $(DEFS) ods2.c
+# Currently, the descrip.mms file is updated on Unix.  A makefile.vms
+# exists solely to enable this.  It might be possible to build ODS2
+# on VMS with it using GNU tools.  But that's not the point.
 
-$(PHYSIO)$(OBJ) : $(PHYSIO).c phyio.h phyvirt.h ssdef.h compat.h $(PHYSIOH)
-	$(CC) -c $(CCFLAGS) $(DEFS) $(PHYSIO).c
+descrip.mms : $(SRCS) $(DEPENDS)
+	$(SED) -i.bak -e's!^OBJS = .*$$!OBJS = $(SRCS:.c=)!' -e'/^# ### BEGIN RULES ###/,$$d' -e'/^OBJS =/y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/' descrip.mms
+	echo "# ### BEGIN RULES ###" >>descrip.mms
+	2>/dev/null $(MAKEDEPEND) -o$(OBJ) -I. -f- -- $(CFLAGS) $(CPPFLAGS) $(DEFS) -- $(SRCS) | $(SED)  -e's/ \/[^ ]*\.h/ /g' -e'/^[^:]*: *$$/d' -e's/  */ /g' | $(SED) -e'/^# DO NOT DELETE/d' -e's/^\([^:]*\)$(OBJ):/\1$$(OBJ):/g' -e'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/' >>descrip.mms
 
-phyvirt$(OBJ) : phyvirt.c phyvirt.h compat.h ssdef.h
-	$(CC) -c $(CCFLAGS) $(DEFS) phyvirt.c
+%$(OBJ): %.c
+	$(CC) -c $(CCFLAGS) $(CPPFLAGS) $(DEFS) $< -o $@
 
-rms$(OBJ) : rms.c rms.h compat.h direct.h access.h fibdef.h descrip.h ssdef.h
-	$(CC) -c $(CCFLAGS) $(DEFS) rms.c
-
-sysmsg$(OBJ) : sysmsg.c sysmsg.h rms.h ssdef.h
-	$(CC) -c $(CCFLAGS) $(DEFS) sysmsg.c
-
-update$(OBJ) : update.c ssdef.h access.h
-	$(CC) -c $(CCFLAGS) $(DEFS) update.c
-
-vmstime$(OBJ) : vmstime.c vmstime.h
-	$(CC) -c $(CCFLAGS) $(DEFS) vmstime.c
+ods2$(EXE) : $(OBJS) $(LIBS)
+	$(CC) $(LDFLAGS) -o ods2$(EXE) $(OBJS) $(LDLIBS)

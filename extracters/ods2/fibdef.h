@@ -1,4 +1,4 @@
-/* Fibdef.h V2.1    Definition of 'struct fibdef' */
+/* Fibdef.h    Definition of 'struct fibdef' */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -29,6 +29,7 @@ struct fibdef {
     unsigned fib$w_nmctl;
     unsigned fib$l_exsz;
     unsigned fib$w_exctl;
+    unsigned short fib$w_verlimit;
 };
 
 #endif /* #ifndef _FIBDEF_H */

@@ -1,4 +1,4 @@
-/* PHYUNIX.c V2.1    Physical I/O module for Unix */
+/* PHYUNIX.c    Physical I/O module for Unix */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -26,6 +26,14 @@
 /*                                                                            */
 /******************************************************************************/
 
+#if !defined( DEBUG ) && defined( DEBUG_PHYUNIX )
+#define DEBUG DEBUG_PHYUNIX
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
+
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -46,13 +54,6 @@
 #include "phyvirt.h"
 #include "compat.h"
 
-#ifndef TRUE
-#define TRUE ( 0 == 0 )
-#endif
-#ifndef FALSE
-#define FALSE ( 0 != 0 )
-#endif
-
 #if defined(__digital__) && defined(__unix__)
 #define DEV_PREFIX "/devices/rdisk/"
 #else
@@ -72,6 +73,11 @@ struct devdat {
     unsigned low;
     unsigned high;
 };
+
+static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
+                            char *buffer );
+static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
+                             const char *buffer );
 
 /*************************************************************** showdevs() */
 
@@ -253,85 +259,131 @@ char *phyio_path( const char *filnam ) {
 /*************************************************************** phyio_init() */
 
 unsigned phyio_init( struct DEV *dev ) {
-
+    int sts = SS$_NORMAL;
     size_t n;
-    int fd;
+    int fd, saverr = 0;
     char *device;
     const char *virtual;
     struct stat statbuf;
 
     init_count++;
 
-    dev->access &= ~MOU_VIRTUAL;
-    dev->handle = 0;
-    dev->sectors = 0;
+    dev->handle = -1;
+    dev->devread = phyio_read;
+    dev->devwrite = phyio_write;
 
-    virtual = virt_lookup( dev->devnam );
-    if ( virtual == NULL ) {
-        n = sizeof( DEV_PREFIX ) + strlen( dev->devnam );
-        device = (char *) malloc( n );
-        if ( device != NULL ) {
-            memcpy( device, DEV_PREFIX, sizeof( DEV_PREFIX ) -1 );
-            memcpy( device+sizeof( DEV_PREFIX ) -1, dev->devnam, n +1 - sizeof( DEV_PREFIX ) );
-            device[n - 2] = '\0'; /* Remove : from device name */
+    if( dev->access & MOU_VIRTUAL ) {
+        virtual = virt_lookup( dev->devnam );
+        if ( virtual == NULL ) {
+            return SS$_NOSUCHDEV;
         }
-    } else {
         n = strlen( virtual );
         device = (char *) malloc( n + 1 );
-        if ( device != NULL ) {
-            memcpy( device, virtual, n + 1 );
-            dev->access |= MOU_VIRTUAL;
-        }
+        if( device == NULL )
+            return SS$_INSFMEM;
+
+        memcpy( device, virtual, n + 1 );
+    } else {
+        n = sizeof( DEV_PREFIX ) + strlen( dev->devnam );
+        device = (char *) malloc( n );
+        if ( device == NULL )
+            return SS$_INSFMEM;
+
+        memcpy( device, DEV_PREFIX, sizeof( DEV_PREFIX ) -1 );
+        memcpy( device+sizeof( DEV_PREFIX ) -1, dev->devnam, n +1 - sizeof( DEV_PREFIX ) );
+        device[n - 2] = '\0'; /* Remove : from device name */
     }
-    if ( device == NULL ) {
-        return SS$_INSFMEM;
-    }
-    stat( device, &statbuf );
-    dev->sectors = ( statbuf.st_size + (off_t) 511 ) / (off_t) 512;
-    fd = open( device, ( dev->access & MOU_WRITE ) ? O_RDWR : O_RDONLY );
-#ifdef DEBUG
-    printf( "%d = open( \"%s\", %s )\n", fd, device,
-            ( dev->access & MOU_WRITE ) ? "O_RDWR" : "O_RDONLY" );
+
+    fd = open( device,
+               ((dev->access & MOU_WRITE )? O_RDWR : O_RDONLY) |
+               ((dev->access & (MOU_VIRTUAL|PHY_CREATE)) == (MOU_VIRTUAL|PHY_CREATE)?
+                                                            O_CREAT | O_EXCL : 0),
+               0644 );
+    if( fd < 0 )
+        saverr = errno;
+#if DEBUG
+    printf( "%d = open( \"%s\", %s%s )\n", fd, device,
+            (dev->access & MOU_WRITE )? "O_RDWR" : "O_RDONLY",
+            (dev->access & PHY_CREATE)? "|O_CREAT|O_EXCL, 0666" : "" );
 #endif
-    if ( fd < 0 && dev->access & MOU_WRITE ) {
+    if ( fd < 0 && (dev->access & (MOU_WRITE|PHY_CREATE)) == MOU_WRITE ) {
         dev->access &= ~MOU_WRITE;
         fd = open( device, O_RDONLY );
-#ifdef DEBUG
+#if DEBUG
         printf( "%d = open( \"%s\", O_RDONLY )\n", fd, device );
 #endif
     }
-    free( device );
+    dev->handle = fd;
+
+    if( fd >= 0 ) {
+        if( fstat( fd, &statbuf ) == 0 ) {
+            if( dev->access & MOU_VIRTUAL ) {
+                if( !S_ISREG(statbuf.st_mode) ) {
+                    printf( "%%ODS2-E-NOTFILE, %s is not a regular file\n", device );
+                    close( fd );
+                    dev->handle = -1;
+                    sts = SS$_IVDEVNAM;
+                } else
+                    dev->eofptr = statbuf.st_size;
+            } else {
+                if( !S_ISBLK(statbuf.st_mode ) ) {
+                    printf( "%%ODS2-E-NOTFILE, %s is not a block device\n", device );
+                    close( fd );
+                    dev->handle = -1;
+                    sts = SS$_IVDEVNAM;
+                }
+            }
+        } else {
+            if( !saverr )
+                saverr = errno;
+            close( fd );
+            dev->handle = -1;
+            fd = -1;
+        }
+    }
+
     if ( fd < 0 ) {
-#ifdef DEBUG
+#if DEBUG
+        errno = saverr;
         perror( "open" );
 #endif
-        return ( ( dev->access & MOU_VIRTUAL ) ?
-                 SS$_NOSUCHFILE : SS$_NOSUCHDEV );
+
+        errno = saverr;
+        switch( errno ) {
+        case EEXIST:
+            printf( "%%ODS2-E-EXISTS, File %s already exists, not superseded\n", device );
+            sts = SS$_DUPFILENAME;
+            break;
+        default:
+            printf( "%%ODS2-E-OPENERR, Open %s: %s\n", device, strerror( errno ) );
+            sts =  (dev->access & MOU_VIRTUAL) ? SS$_NOSUCHFILE : SS$_NOSUCHDEV;
+        }
     }
-    dev->handle = fd;
-    return SS$_NORMAL;
+    free( device );
+
+    return sts;
 }
 
 /*************************************************************** phyio_done() */
 
 unsigned phyio_done( struct DEV *dev ) {
 
-    close( dev->handle );
-    dev->handle = 0;
-     if( dev->access & MOU_VIRTUAL )
-         virt_device( dev->devnam, NULL );
+    if( dev->handle != -1 )
+        close( dev->handle );
+    dev->handle = -1;
+
     return SS$_NORMAL;
 }
 
 /*************************************************************** phyio_read() */
 
-unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
+static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
                      char *buffer ) {
 
     ssize_t res;
     off_t pos;
 
-#ifdef DEBUG
+#if DEBUG
     printf("Phyio read block: %d into %p (%d bytes)\n",
             block, buffer, length );
 #endif
@@ -340,15 +392,19 @@ unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
     pos = (off_t) block * (off_t) 512;
     if ( ( pos = lseek( dev->handle, pos, SEEK_SET ) ) < 0 ) {
         perror( "lseek " );
-        printf("lseek failed %" PRIuMAX "u\n",(uintmax_t)pos);
+        printf("lseek failed %" PRIuMAX "\n",(uintmax_t)pos);
         return SS$_PARITY;
     }
     if ( ( res = read( dev->handle, buffer, length ) ) != length ) {
         if( res == 0 ) {
             return SS$_ENDOFFILE;
         }
-        perror( "read " );
-        printf("read failed %" PRIuMAX "u\n", (uintmax_t)res);
+        if( res == (off_t)-1 ) {
+            perror( "%%ODS2-F-READERR, read failed" );
+        } else {
+            printf( "%%ODS2-F-READERR, read failed with bc = %" PRIuMAX " for length %u, lbn %u\n",
+                    (uintmax_t)res, length, block );
+        }
         return SS$_PARITY;
     }
     return SS$_NORMAL;
@@ -356,13 +412,13 @@ unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
 
 /************************************************************** phyio_write() */
 
-unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
+static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
                       const char *buffer ) {
 
     off_t pos;
     ssize_t res;
 
-#ifdef DEBUG
+#if DEBUG
     printf("Phyio write block: %d from %p (%d bytes)\n",
             block, buffer, length );
 #endif
@@ -371,12 +427,16 @@ unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
     pos = (off_t) block * (off_t) 512;
     if ( ( pos = lseek( dev->handle, pos, SEEK_SET ) ) < 0 ) {
         perror( "lseek " );
-        printf( "lseek failed %" PRIuMAX "u\n", (uintmax_t)pos );
+        printf( "lseek failed %" PRIuMAX "\n", (uintmax_t)pos );
         return SS$_PARITY;
     }
     if ( ( res = write( dev->handle, buffer, length ) ) != length ) {
-        perror( "write " );
-        printf( "write failed %" PRIuMAX "u\n", (uintmax_t)res );
+        if( res == (off_t)-1 ) {
+            perror( "%%ODS2-F-WRITEERR, write failed" );
+        } else {
+            printf( "%%ODS2-F-WRITEERR, write failed with bc = %" PRIuMAX " for length %u, lbn %u\n",
+                    (uintmax_t)res, length, block );
+        }
         return SS$_PARITY;
     }
     return SS$_NORMAL;

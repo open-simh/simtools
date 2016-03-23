@@ -1,4 +1,4 @@
-/* Cache.h V2.1    Definitions for cache routines */
+/* Cache.h    Definitions for cache routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -38,8 +38,8 @@ struct CACHE {
 
 void cache_show(void);
 int cache_refcount(struct CACHE *cacheobj);
-struct CACHE *cache_delete(struct CACHE *cacheobj);
-void cache_purge(void);
+void cache_delete(struct CACHE *cacheobj);
+void cache_purge(int all);
 void cache_flush(void);
 void cache_remove(struct CACHE *cacheobj);
 void cache_touch(struct CACHE * cacheobj);

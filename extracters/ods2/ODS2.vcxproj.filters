@@ -51,6 +51,69 @@
     <ClCompile Include="phyvirt.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="initvol.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="debug.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vhd\libvhd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vhd\relative-path.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="phyvhd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="copycmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="createcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="deletecmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="diffcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dircmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dismountcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="extendcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="helpcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="importcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="initialcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mountcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="searchcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="setcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="showcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="spawncmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="typecmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="access.h">
@@ -99,6 +162,39 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="phyvirt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="initvol.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="f11def.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ods2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="phyvhd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stsdef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\blk_uuid.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\libvhd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\relative-path.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\vhd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cmddef.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

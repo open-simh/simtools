@@ -1,4 +1,4 @@
-/* Cache.c V2.1   Caching control routines */
+/* Cache.c   Caching control routines */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -46,23 +46,25 @@
     about ODS2 objects or structures....
 */
 
+#if !defined( DEBUG ) && defined( DEBUG_CACHE )
+#define DEBUG DEBUG_CACHE
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
+
+/* *** TEMP TODO ***/
+#undef DEBUG
+#define DEBUG 1
+
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "cache.h"
+#include "ods2.h"
 #include "ssdef.h"
-
-#ifndef TRUE
-#define TRUE ( 0 == 0 )
-#endif
-#ifndef FALSE
-#define FALSE ( 0 != 0 )
-#endif
-
-#ifndef DEBUG
-#define DEBUG
-#endif
 
 #define IMBALANCE 5             /* Tree imbalance limit */
 #define CACHELIM  256           /* Free object limit */
@@ -79,6 +81,8 @@ static int cachedeletes = 0;
 static int cachedeleteing = FALSE;         /* Cache deletion in progress... */
 
 struct CACHE lrulist = {&lrulist,&lrulist,NULL,NULL,NULL,NULL,0,0,1,0};
+
+static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj );
 
 /*************************************************************** cache_show() */
 
@@ -118,26 +122,40 @@ int cache_refcount(struct CACHE *cacheobj)
 /* cache_delete() - blow away item from cache - allow item to select a proxy (!)
    and adjust 'the tree' containing the item. */
 
-struct CACHE *cache_delete(struct CACHE *cacheobj)
+void cache_delete( struct CACHE *cacheobj )
 {
+    cache_deleter( cacheobj, NULL );
+}
+
+/* Internal routine that does the work.  Optionally returns the address of the
+ * object actually deleted, which allows pointers to be adjusted correctly.
+ */
+static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj ) {
     while (cacheobj->objmanager != NULL) {
         register struct CACHE *proxyobj;
         cachedeleteing = TRUE;
         proxyobj = (*cacheobj->objmanager) (cacheobj,FALSE);
         cachedeleteing = FALSE;
-        if (proxyobj == NULL) return NULL;
+        if( proxyobj == NULL ) {
+            if( actualobj != NULL )
+                *actualobj = NULL;
+            return;
+        }
         if (proxyobj == cacheobj) break;
         cacheobj = proxyobj;
     }
-#ifdef DEBUG
+#if DEBUG
     if (cachedeleteing) printf("CACHE deletion while delete in progress\n");
 #endif
     if (cacheobj->refcount != 0) {
-#ifdef DEBUG
+#if DEBUG
         printf("CACHE attempt to delete referenced object %d:%d\n",
                 cacheobj->objtype,cacheobj->hashval);
 #endif
-        return NULL;
+        abort();
+        if( actualobj != NULL )
+            *actualobj = NULL;
+        return;
     }
     cacheobj->lastlru->nextlru = cacheobj->nextlru;
     cacheobj->nextlru->lastlru = cacheobj->lastlru;
@@ -173,7 +191,7 @@ struct CACHE *cache_delete(struct CACHE *cacheobj)
     cachecount--;
     cachefreecount--;
     cachedeletes++;
-#ifdef DEBUG
+#if DEBUG
     cacheobj->nextlru = NULL;
     cacheobj->lastlru = NULL;
     cacheobj->left = NULL;
@@ -184,22 +202,25 @@ struct CACHE *cache_delete(struct CACHE *cacheobj)
     cacheobj->balance = 0;
     cacheobj->refcount = 0;
 #endif
-    free(cacheobj);
-    return cacheobj;
+    if( actualobj != NULL ) /* The returned value is used as a flag.  It will not be dereferenced. */
+        *actualobj = cacheobj;
+
+    free(cacheobj);  /* This may be the supplied object, or it may have been replaced by a proxy. */
+    return; 
 }
 
 /************************************************************** cache_purge() */
 
 /* cache_purge() - trim size of free list */
 
-void cache_purge(void)
+void cache_purge(int all)
 {
     if (!cachedeleteing) {
         register struct CACHE *cacheobj = lrulist.lastlru;
         cachepurges++;
-        while (cachefreecount > CACHEGOAL && cacheobj != &lrulist) {
+        while ( (all || cachefreecount > CACHEGOAL) && cacheobj != &lrulist) {
             register struct CACHE *lastobj = cacheobj->lastlru;
-#ifdef DEBUG
+#if DEBUG
             if (cacheobj->lastlru->nextlru != cacheobj ||
                 cacheobj->nextlru->lastlru != cacheobj ||
                 *(cacheobj->parent) != cacheobj) {
@@ -207,7 +228,9 @@ void cache_purge(void)
             }
 #endif
             if (cacheobj->refcount == 0) {
-                if (cache_delete(cacheobj) != lastobj) cacheobj = lastobj;
+                struct CACHE *actualobj;
+                cache_deleter( cacheobj, &actualobj );
+                if (actualobj != lastobj) cacheobj = lastobj;
             } else {
                 cacheobj = lastobj;
             }
@@ -242,7 +265,7 @@ void cache_remove(struct CACHE *cacheobj)
         if (cacheobj->refcount == 0) {
             struct CACHE *delobj;
             do {
-                delobj = cache_delete(cacheobj);
+                cache_deleter(cacheobj, &delobj);
             } while (delobj != NULL && delobj != cacheobj);
         }
     }
@@ -255,9 +278,10 @@ void cache_remove(struct CACHE *cacheobj)
 void cache_touch(struct CACHE *cacheobj)
 {
     if (cacheobj->refcount++ == 0) {
-#ifdef DEBUG
+#if DEBUG
         if (cacheobj->nextlru == NULL || cacheobj->lastlru == NULL) {
             printf("CACHE LRU pointers corrupt!\n");
+            abort();
         }
 #endif
         cacheobj->nextlru->lastlru = cacheobj->lastlru;
@@ -276,8 +300,8 @@ void cache_untouch(struct CACHE *cacheobj,int recycle)
 {
     if (cacheobj->refcount > 0) {
         if (--cacheobj->refcount == 0) {
-            if (++cachefreecount >= CACHELIM) cache_purge();
-#ifdef DEBUG
+            if (++cachefreecount >= CACHELIM) cache_purge(FALSE);
+#if DEBUG
             if (cacheobj->nextlru != NULL || cacheobj->lastlru != NULL) {
                 printf("CACHE LRU pointers corrupt\n");
             }
@@ -294,10 +318,11 @@ void cache_untouch(struct CACHE *cacheobj,int recycle)
                 lrulist.lastlru = cacheobj;
             }
         }
-#ifdef DEBUG
     } else {
+#if DEBUG
         printf("CACHE untouch limit exceeded\n");
 #endif
+        abort();
     }
 }
 
@@ -325,7 +350,7 @@ void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
     cachefinds++;
     while ((cacheobj = *parent) != NULL) {
         register int cmp = hashval - cacheobj->hashval;
-#ifdef DEBUG
+#if DEBUG
         if (cacheobj->parent != parent) {
             printf("CACHE Parent pointer is corrupt\n");
         }

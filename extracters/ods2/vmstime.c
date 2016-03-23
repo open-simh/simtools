@@ -1,6 +1,6 @@
 /*
 
-        Vmstime.c  V2.1
+        Vmstime.c 
 
         Author: Paul Nankervis
 
@@ -56,6 +56,13 @@
 
 */
 
+#if !defined( DEBUG ) && defined( DEBUG_VMSTIME )
+#define DEBUG DEBUG_VMSTIME
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
 
 #include <stdio.h>
 #include <ctype.h>
@@ -750,15 +757,16 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
 
             /* Generate two digit day... */
 
-            if (chrptr < endptr) {
-                if ((timval = timvec[2]) / 10 == 0) {
+            if( chrptr < endptr ) {
+                if( (timval = timvec[2]) / 10 == 0 ) {
                     *chrptr++ = ' ';
                 } else {
                     *chrptr++ = vmstime_digits[timval / 10];
                 }
-            }
-            if (chrptr < endptr) {
-                *chrptr++ = vmstime_digits[timval % 10];
+
+                if( chrptr < endptr ) {
+                    *chrptr++ = vmstime_digits[timval % 10];
+                }
             }
             /* Add month name with hyphen separators... */
 

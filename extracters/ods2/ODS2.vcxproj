@@ -46,17 +46,18 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions> HOME_SKIP=1 ;HOME_LOG;USE_VLD;DEBUG_BUILD;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_VLD;DEBUG_BUILD;USE_VHD;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>vhd\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <DelayLoadDLLs>
       </DelayLoadDLLs>
     </Link>
@@ -80,10 +81,11 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_VHD;WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>vhd\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <TargetMachine>MachineX86</TargetMachine>
@@ -91,7 +93,7 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Rpcrt4.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -108,31 +110,65 @@
     <ClCompile Include="access.c" />
     <ClCompile Include="cache.c" />
     <ClCompile Include="compat.c" />
+    <ClCompile Include="copycmd.c" />
+    <ClCompile Include="createcmd.c" />
+    <ClCompile Include="debug.c">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="deletecmd.c" />
     <ClCompile Include="device.c" />
+    <ClCompile Include="diffcmd.c" />
+    <ClCompile Include="dircmd.c" />
     <ClCompile Include="direct.c" />
+    <ClCompile Include="dismountcmd.c" />
+    <ClCompile Include="extendcmd.c" />
+    <ClCompile Include="helpcmd.c" />
+    <ClCompile Include="importcmd.c" />
+    <ClCompile Include="initialcmd.c" />
+    <ClCompile Include="initvol.c" />
+    <ClCompile Include="mountcmd.c" />
     <ClCompile Include="ods2.c" />
     <ClCompile Include="phynt.c" />
+    <ClCompile Include="phyvhd.c" />
     <ClCompile Include="phyvirt.c" />
     <ClCompile Include="rms.c" />
+    <ClCompile Include="searchcmd.c" />
+    <ClCompile Include="setcmd.c" />
+    <ClCompile Include="showcmd.c" />
+    <ClCompile Include="spawncmd.c" />
     <ClCompile Include="sysmsg.c" />
+    <ClCompile Include="typecmd.c" />
     <ClCompile Include="update.c" />
+    <ClCompile Include="vhd\libvhd.c" />
+    <ClCompile Include="vhd\relative-path.c" />
     <ClCompile Include="vmstime.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="access.h" />
     <ClInclude Include="cache.h" />
+    <ClInclude Include="cmddef.h" />
     <ClInclude Include="compat.h" />
+    <ClInclude Include="debug.h" />
     <ClInclude Include="descrip.h" />
     <ClInclude Include="direct.h" />
+    <ClInclude Include="f11def.h" />
     <ClInclude Include="fibdef.h" />
+    <ClInclude Include="initvol.h" />
+    <ClInclude Include="ods2.h" />
     <ClInclude Include="phyio.h" />
+    <ClInclude Include="phyvhd.h" />
     <ClInclude Include="phyvirt.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="rms.h" />
     <ClInclude Include="scsidefs.h" />
     <ClInclude Include="ssdef.h" />
+    <ClInclude Include="stsdef.h" />
     <ClInclude Include="sysmsg.h" />
     <ClInclude Include="version.h" />
+    <ClInclude Include="vhd\blk_uuid.h" />
+    <ClInclude Include="vhd\libvhd.h" />
+    <ClInclude Include="vhd\relative-path.h" />
+    <ClInclude Include="vhd\vhd.h" />
     <ClInclude Include="vmstime.h" />
     <ClInclude Include="wnaspi32.h" />
   </ItemGroup>

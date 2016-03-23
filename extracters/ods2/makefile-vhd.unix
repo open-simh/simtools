@@ -1,0 +1,19 @@
+# -*- Makefile -*-
+
+# Include file for VHD format image file support on
+# Unix OSs that support it
+
+# Enable VHD static library, disable syslog so errors go
+# to stderr.
+DEFS += -DUSE_VHD -Ivhd -D_GNU_SOURCE -DLIBVHD_HAS_SYSLOG=0
+LDLIBS += -luuid
+VHDLIB = phyvhd.c vhd/libvhd.c vhd/relative-path.c
+
+# Enable VHD sharable library
+# Not recommended, as it logs to syslog.  Used for testing
+# against unmodified Xen libraries.  A modified sharable image
+# can also be built - see the vhdtools makefile.
+#
+#DEFS += -DUSE_VHD -DUSE_LIBVHD="libvhd.so" -Ivhd -D_GNU_SOURCE
+#LDLIBS += -ldl
+#VHDLIB = phyvhd.c

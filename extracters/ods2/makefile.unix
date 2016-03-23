@@ -1,5 +1,10 @@
+# -*- Makefile -*-
+
 # Makefile for most Unix distributions
 #
+
+# Special defines, e.g.
+# DEFS="-DDEBUG_RMS -DDEBUG_BUILD -D_FILE_OFFSET_BITS=32"
 
 CCFLAGS = -O4 -g
 #-O0 -g -DUSE_READLINE -Wall -pedantic
@@ -9,16 +14,28 @@ CCFLAGS = -O4 -g
 # Include readline support
 
 DEFS = -DUSE_READLINE
-LDFLAGS = -lreadline -ltermcap
+LDLIBS = -lreadline -ltermcap
+
+# Include VHD format image file support
+
+VHDOPTS = makefile-vhd.unix
 
 # Object file extension
 OBJ = .o
 
+EXE =
+
+DELETE = rm -f
+
 # Physical I/O module
 PHYSIO = phyunix
-PHYSIOH =
+
+TOPMAKE = makefile.unix
+
+all:
+
+clean:
+	rm -f ods2$(EXE) $(OBJS)
 
 include makefile.generic
 
-clean:
-	rm -f ods2 ods2i $(OBJS)

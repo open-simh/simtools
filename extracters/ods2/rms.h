@@ -1,4 +1,4 @@
-/* RMS.h V2.1   RMS routine definitions */
+/* RMS.h   RMS routine definitions */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -282,10 +282,11 @@ struct FAB {
     int fab$b_rfm;
     int fab$b_fac;
     void *fab$l_xab;
+    unsigned short fab__w_verlimit;
 };
 
 #ifdef RMS$INITIALIZE
-struct FAB cc$rms_fab = {NULL,0,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,0,0,NULL};
+struct FAB cc$rms_fab = {NULL,0,NULL,NULL,0,0,0,0,0,0,0,0,0,0,0,0,0,NULL,0};
 #else
 extern struct FAB cc$rms_fab;
 #endif

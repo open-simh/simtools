@@ -1,6 +1,6 @@
 /*
 
-       Vmstime.h  V2.1
+       Vmstime.h 
 
        Author: Paul Nankervis
 

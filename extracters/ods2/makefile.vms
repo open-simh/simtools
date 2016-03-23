@@ -1,0 +1,32 @@
+# -*- Makefile -*-
+
+# Used to generate descrip.mms
+# In theory should build under VMS with GNU tools.
+# But that's just a theory...
+
+# Special defines, e.g.
+# DEFS="-DDEBUG_RMS -DDEBUG_BUILD -D_FILE_OFFSET_BITS=32"
+
+CCFLAGS = -O4 -g
+
+#LDLIBS = -lreadline -ltermcap
+
+# Object file extension
+OBJ = .OBJ
+
+EXE = .EXE
+
+DELETE = DELETE
+GEN = ";*"
+
+# Physical I/O module
+PHYSIO = phyvms
+
+TOPMAKE = makefile.vms
+
+all:
+
+clean:
+	$(DELETE) *.$(OBJ)$(GEN),*.$(EXE)$(GEN)
+
+include makefile.generic

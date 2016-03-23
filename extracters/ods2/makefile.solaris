@@ -1,3 +1,5 @@
+# -*- Makefile -*-
+
 # Makefile for solaris OS
 
 # Use gcc
@@ -9,14 +11,24 @@ CCFLAGS = -O4 -g
 DEFS = -DUSE_READLINE
 LDFLAGS = -lreadline -ltermcap
 
+# Include VHD format image file support
+
+VHDOPTS = makefile-vhd.unix
+
 # Object file extension
 OBJ = .o
+
+DELETE  = "rm -f"
 
 # Physical I/O module
 PHYSIO = phyunix
 PHYSIOH =
 
-include makefile.generic
+TOPMAKE = makefile.solaris
+
+all:
 
 clean:
 	rm -f ods2 $(OBJS)
+
+include makefile.generic

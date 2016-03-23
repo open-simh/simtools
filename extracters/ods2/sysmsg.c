@@ -1,15 +1,29 @@
-/* Timothe Litt litt _at_ acm _ddot_ org */
-/*
-        This is part of ODS2 written by Paul Nankervis,
-        email address:  Paulnank@au1.ibm.com
+/* Timothe Litt March 2016
+ * Copyright (C) 2016 Timothe litt
+ *   litt at acm dot org
+ *
+ * Free for use with the ODS2 package.  All other rights reserved.
+ */
 
-        ODS2 is distributed freely for all members of the
-        VMS community to use. However all derived works
-        must maintain comments in their source to acknowledge
-        the contibution of the original author.
-*/
+/*
+ *       This is distributed as part of ODS2, originally  written by
+ *       Paul Nankervis, email address:  Paulnank@au1.ibm.com
+ *
+ *       ODS2 is distributed freely for all members of the
+ *       VMS community to use. However all derived works
+ *       must maintain comments in their source to acknowledge
+ *       the contibution of the original author.
+ */
 
 /* Message code translations for non-VMS systems */
+
+#if !defined( DEBUG ) && defined( DEBUG_SYSMSG )
+#define DEBUG DEBUG_SYSMSG
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
 
 #include <errno.h>
 #include <stdarg.h>
@@ -36,6 +50,8 @@ const struct VMSFAC {
 } fac2text[] = {
     { SYSTEM$_FACILITY, "SYSTEM" },
     { RMS$_FACILITY, "RMS" },
+    { COPY$_FACILITY, "COPY" },
+    { DELETE$_FACILITY,  "DELETE" },
     { 0, NULL },
     { 0, "NONAME" }
 };
@@ -58,6 +74,10 @@ const struct VMSMSG {
     const char *const txtcode;
     char *text;
 } vms2text[] = {
+    MSG(DELETE$_DELVER, "explicit version number or wild card required")
+
+    MSG(COPY$_OPENIN, " error opening %s as input")
+
     MSG(RMS$_BUG, "fatal RMS condition detected, process deleted")
     MSG(RMS$_DIR, "error in directory name")
     MSG(RMS$_DNF, "directory not found")
@@ -79,6 +99,8 @@ const struct VMSMSG {
     MSG(SS$_BADPARAM, "bad parameter value")
     MSG(SS$_BUGCHECK, "internal consistency failure")
     MSG(SS$_DATACHECK, "write check error")
+    MSG(SS$_DEVALLOC, "device already allocated to another user")
+    MSG(SS$_DEVASSIGN, "device has channels assigned" )
     MSG(SS$_DEVICEFULL, "device full - allocation failure")
     MSG(SS$_DEVMOUNT, "device is already mounted")
     MSG(SS$_DEVNOTALLOC, "device not allocated")
@@ -87,6 +109,7 @@ const struct VMSMSG {
     MSG(SS$_DUPFILENAME, "duplicate file name")
     MSG(SS$_DUPLICATE, "duplicate name")
     MSG(SS$_ENDOFFILE, "end of file")
+    MSG(SS$_ILLBLKNUM, "illegal logical block number")
     MSG(SS$_FILELOCKED, "file is deaccess locked")
     MSG(SS$_FILESEQCHK, "file identification sequence number check")
     MSG(SS$_ILLEFC, "illegal event flag cluster")
@@ -94,6 +117,7 @@ const struct VMSMSG {
     MSG(SS$_ITEMNOTFOUND, "requested item cannot be returned")
     MSG(SS$_NOMOREDEV, "no more devices")
     MSG(SS$_IVCHAN, "invalid I/O channel")
+    MSG(SS$_DEVOFFLINE, "device is not in configuration or not available")
     MSG(SS$_IVDEVNAM, "invalid device name")
     MSG(SS$_NOIOCHAN, "no I/O channel available")
     MSG(SS$_NOMOREFILES, "no more files")
@@ -238,7 +262,7 @@ const char *getmsg( unsigned int vmscode, unsigned int flags, ... ) {
             fp = fac2text + (sizeof(fac2text)/sizeof(fac2text[0])) -1;
 
         mp = vms2text + (sizeof(vms2text)/sizeof(vms2text[0])) -1;
-        snprintf( notext, sizeof(notext), nofmt, vmscode );
+        (void) snprintf( notext, sizeof(notext), nofmt, vmscode );
     }
 }
 

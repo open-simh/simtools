@@ -1,0 +1,11 @@
+# -*- Makefile -*-
+
+# Include file for VHD format image file support on
+# Unix OSs that support it
+
+# Enable VHD static library, disable syslog so errors go
+# to stderr.
+DEFS += -DUSE_VHD -Ivhd -DLIBVHD_HAS_SYSLOG=0
+LIBS += Rpcrt4.lib
+VHDLIB = phyvhd.c vhd/libvhd.c vhd/relative-path.c
+

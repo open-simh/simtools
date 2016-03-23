@@ -1,5 +1,5 @@
 /* check for cr - return terminator - update file length */
-/* RMS.c V2.1  RMS components */
+/* RMS.c  RMS components */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
@@ -19,6 +19,14 @@
     file opens, gets, etc...       */
 
 
+#if !defined( DEBUG ) && defined( DEBUG_RMS )
+#define DEBUG DEBUG_RMS
+#else
+#ifndef DEBUG
+#define DEBUG 0
+#endif
+#endif
+
 #define DEBUGx x
 
 #include <ctype.h>
@@ -33,18 +41,12 @@
 #include "device.h"
 #include "direct.h"
 #include "fibdef.h"
+#include "ods2.h"
 #include "rms.h"
 #include "ssdef.h"
 #include "stsdef.h"
 #include "compat.h"
 #include "sysmsg.h"
-
-#ifndef TRUE
-#define TRUE ( 0 == 0 )
-#endif
-#ifndef FALSE
-#define FALSE ( 0 != 0 )
-#endif
 
 
 /*      For file context info we use WCCDIR and WCCFILE structures...
@@ -73,7 +75,7 @@
 struct WCCDIR {
     struct WCCDIR *wcd_next;
     struct WCCDIR *wcd_prev;
-#ifdef DEBUG
+#if DEBUG
     size_t size;
 #endif
     int wcd_status;
@@ -186,7 +188,7 @@ unsigned name_delim(char *str,int len,int size[5])
     } else {
         size[4] = 0;
     }
-#ifdef DEBUG
+#if DEBUG
     printf("Name delim %d %d %d %d %d\n",
            size[0],size[1],size[2],size[3],size[4]);
 #endif
@@ -268,13 +270,13 @@ void cleanup_wcf(struct WCCFILE **wccfilep)
             struct WCCDIR *next = wcc->wcd_next;
             wcc->wcd_next = NULL;
             wcc->wcd_prev = NULL;
-#ifdef DEBUG
+#if DEBUG
             memset(wcc,0,wcc->size);
 #endif
             free(wcc);
             wcc = next;
         }
-#ifdef DEBUG
+#if DEBUG
         memset(wccfile,0,WCFALLOC_SIZE);
 #endif
         free(wccfile);
@@ -297,13 +299,14 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
 
     /* if first time through position at top directory... WCCDIR */
 
-    while ((wcc->wcd_status & STATUS_INIT) == 0 && wcc->wcd_next != NULL) {
+    while( !(wcc->wcd_status & STATUS_INIT) && wcc->wcd_next != NULL) {
         wcc = wcc->wcd_next;
     }
     fibdsc.dsc_w_length = sizeof(struct fibdef);
     fibdsc.dsc_a_pointer = (char *) &fibblk;
+    fab->fab__w_verlimit = 0;
     while (TRUE) {
-        if ((wcc->wcd_status & STATUS_INIT) == 0 || wcc->wcd_wcc != 0) {
+        if( !(wcc->wcd_status & STATUS_INIT) || wcc->wcd_wcc != 0) {
             wcc->wcd_status |= STATUS_INIT;
             resdsc.dsc_w_length = 256 - wcc->wcd_prelen;
             resdsc.dsc_a_pointer = wccfile->wcf_result + wcc->wcd_prelen;
@@ -315,7 +318,7 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
             fibblk.fib$b_fid_rvn = 0;
             fibblk.fib$b_fid_nmx = 0;
             fibblk.fib$l_wcc = wcc->wcd_wcc;
-#ifdef DEBUG
+#if DEBUG
             wcc->wcd_sernam[wcc->wcd_serdsc.dsc_w_length] = '\0';
             wccfile->wcf_result[wcc->wcd_prelen + wcc->wcd_reslen] = '\0';
             printf("Ser: '%s' (%d,%d,%d) WCC: %d Prelen: %d '%s'\n",
@@ -331,7 +334,8 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
             sts = SS$_NOMOREFILES;
         }
         if (sts & STS$M_SUCCESS) {
-#ifdef DEBUG
+            fab->fab__w_verlimit = fibblk.fib$w_verlimit; /* Nees a better mechanism** */
+#if DEBUG
             wccfile->wcf_result[wcc->wcd_prelen + wcc->wcd_reslen] = '\0';
             printf("Fnd: '%s'  (%d,%d,%d) WCC: %d\n",
                    wccfile->wcf_result + wcc->wcd_prelen,
@@ -388,12 +392,12 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                 return SS$_NORMAL;
             }
         } else {
-#ifdef DEBUG
-            printf("Err: %d\n",sts);
+#if DEBUG
+            printf("Err: %s\n", getmsg( sts, MSG_TEXT ));
 #endif
             if (sts == SS$_BADIRECTORY) {
                 if (wcc->wcd_next != NULL) {
-                    if (wcc->wcd_next->wcd_status & STATUS_INIT) {
+                    if( wcc->wcd_next->wcd_status & STATUS_INIT ) {
                         sts = SS$_NOMOREFILES;
                     }
                 }
@@ -410,10 +414,10 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                     if (wcc->wcd_prev != NULL) {
                         wcc->wcd_prev->wcd_next = wcc->wcd_next;
                     }
-                    wcc = wcc->wcd_next;
+                    wcc = wcc->wcd_next; /* 6 lines back, this can be null, so how can we reference ->prelen ->reslen?? */
                     memcpy(wccfile->wcf_result + wcc->wcd_prelen +
                                wcc->wcd_reslen - 6,".DIR;1",6);
-#ifdef DEBUG
+#if DEBUG
                     memset(savwcc, 0, savwcc->size);
 #endif
                     free(savwcc);
@@ -425,7 +429,7 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                         if ( newwcc == NULL ) {
                             return SS$_INSFMEM;
                         }
-#ifdef DEBUG
+#if DEBUG
                         newwcc->size = WCDALLOC_SIZE(8);
 #endif
                         newwcc->wcd_next = wcc->wcd_next;
@@ -446,7 +450,7 @@ unsigned do_search(struct FAB *fab,struct WCCFILE *wccfile)
                         wcc = newwcc;
                     } else {
                         if (wcc->wcd_next != NULL) {
-#ifdef DEBUG
+#if DEBUG
                             if (wcc->wcd_next->wcd_prev != wcc) {
                                 printf("wcd_NEXT corruption\n");
                             }
@@ -664,10 +668,11 @@ unsigned do_parse(struct FAB *fab,struct WCCFILE **wccret)
         struct WCCDIR *wcc;
         struct DEV *dev;
         sts = device_lookup(fna_size[0],wccfile->wcf_result,FALSE,&dev);
-        if ((sts & STS$M_SUCCESS) == 0) {
+        if( !(sts & STS$M_SUCCESS) ) {
             /** cleanup_wcf(&wccfile); **/
             return sts;
         }
+        device_done(dev);
         if ((wccfile->wcf_vcb = dev->vcb) == NULL) {
             /** cleanup_wcf(&wccfile); **/
             return SS$_DEVNOTMOUNT;
@@ -713,7 +718,7 @@ unsigned do_parse(struct FAB *fab,struct WCCFILE **wccret)
             if ( wcd == NULL ) {
                 return SS$_INSFMEM;
             }
-#ifdef DEBUG
+#if DEBUG
             wcd->size = WCDALLOC_SIZE(seglen + 8);
 #endif
 /* calloc()
@@ -746,10 +751,11 @@ unsigned do_parse(struct FAB *fab,struct WCCFILE **wccret)
         }
         memcpy(wcc->wcd_sernam,wccfile->wcf_result + fna_size[0] + fna_size[1],
                wcc->wcd_serdsc.dsc_w_length);
-#ifdef DEBUG
+#if DEBUG
         wcc->wcd_sernam[wcc->wcd_serdsc.dsc_w_length] = '\0';
         printf("Parse spec is %s\n",wccfile->wcf_wcd.wcd_sernam);
-        for (dirsiz = 0; dirsiz < 5; dirsiz++) printf("  %d",fna_size[dirsiz]);
+        for (dirsiz = 0; dirsiz < 5; dirsiz++)
+            printf( "  %d",fna_size[dirsiz] );
         printf("\n");
 #endif
     }
@@ -874,134 +880,162 @@ unsigned sys_get(struct RAB *rab)
     unsigned delim,rfm,sts;
     struct VIOC *vioc;
     struct FCB *fcb = ifi_table[rab->rab$l_fab->fab$w_ifi]->wcf_fcb;
+    int span;
 
     reclen = rab->rab$w_usz;
     recbuff = rab->rab$l_ubf;
-    delim = 0;
-    switch (rfm = rab->rab$l_fab->fab$b_rfm) {
-        case FAB$C_STMLF:
-            delim = 1;
-            break;
-        case FAB$C_STMCR:
-            delim = 2;
-            break;
-        case FAB$C_STM:
-            delim = 3;
-            break;
-        case FAB$C_VFC:
-            reclen += rab->rab$l_fab->fab$b_fsz;
-            break;
-        case FAB$C_FIX:
-            if (reclen < rab->rab$l_fab->fab$w_mrs)
-                return RMS$_RTB;
-            reclen = rab->rab$l_fab->fab$w_mrs;
-            break;
-    }
 
     offset = rab->rab$w_rfa[2] % 512;
     block = (rab->rab$w_rfa[1] << 16) + rab->rab$w_rfa[0];
     if (block == 0)
         block = 1;
-    {
-        unsigned eofblk = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
-        if (block > eofblk || (block == eofblk &&
-            offset >= VMSWORD(fcb->head->fh2$w_recattr.fat$w_ffbyte))) {
-                return RMS$_EOF;
-            }
-    }
 
-    sts = accesschunk(fcb,block,&vioc,&buffer,&blocks,0);
-    if (!(sts & STS$M_SUCCESS)) {
-        if (sts == SS$_ENDOFFILE) sts = RMS$_EOF;
-        return sts;
-    }
+    span = (rab->rab$l_fab->fab$b_rat & FAB$M_BLK) == 0;
 
-    if (rfm == FAB$C_VAR || rfm == FAB$C_VFC) {
-        vmsword *lenptr = (vmsword *) (buffer + offset);
-        reclen = VMSWORD(*lenptr);
-        offset += 2;
-        if (reclen > rab->rab$w_usz) {
-            sts = deaccesschunk(vioc,0,0,FALSE);
+    delim = 0;
+    switch( rfm = rab->rab$l_fab->fab$b_rfm ) {
+    case FAB$C_STMLF:
+        delim = 1;
+        span = 1;
+        break;
+    case FAB$C_STMCR:
+        delim = 2;
+        span = 1;
+        break;
+    case FAB$C_STM:
+        delim = 3;
+        span = 1;
+        break;
+    case FAB$C_VFC:
+        reclen += rab->rab$l_fab->fab$b_fsz;
+        break;
+    case FAB$C_FIX:
+        if (reclen < rab->rab$l_fab->fab$w_mrs)
             return RMS$_RTB;
-        } 
+        reclen = rab->rab$l_fab->fab$w_mrs;
+        break;
     }
+
+    do {
+        unsigned eofblk = F11SWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
+        if (block > eofblk || (block == eofblk &&
+                               offset >= F11WORD(fcb->head->fh2$w_recattr.fat$w_ffbyte))) {
+            return RMS$_EOF;
+        }
+
+        sts = accesschunk( fcb, block, &vioc, &buffer, &blocks, 0 );
+        if( !(sts & STS$M_SUCCESS) ) {
+            if (sts == SS$_ENDOFFILE) sts = RMS$_EOF;
+            return sts;
+        }
+
+        if( rfm == FAB$C_VAR || rfm == FAB$C_VFC ) {
+            do {
+                f11word *lenptr = (f11word *) (buffer + offset);
+
+                reclen = F11WORD(*lenptr);
+                offset += 2;
+                if( !span && offset + reclen > 510 ) { /* N.B. Length words 0xFFFF are used for fill */
+                    block++;
+                    offset = 0;
+                    blocks--;
+                    buffer += 512;
+                } else
+                    span = 1;
+            } while( !span && blocks > 0 &&
+                     (block < eofblk ||
+                      (block == eofblk && fcb->head->fh2$w_recattr.fat$w_ffbyte > 0))  );
+            if( !span ) {
+                sts = deaccesschunk( vioc, 0, 0, FALSE );
+                continue;
+            }
+            if( reclen > rab->rab$w_usz ) {
+                sts = deaccesschunk(vioc,0,0,FALSE);
+                return RMS$_RTB;
+            }
+        }
+    } while( !span );
 
     cpylen = 0;
     while (TRUE) {
         int dellen = 0;
         unsigned int seglen = blocks * 512 - offset;
-        if (delim) {
-            if (delim >= 3) {
-                char *ptr = buffer + offset;
-                if (dellen == 1 && *ptr != '\n') {
-                    if (cpylen >= reclen) {
-                        seglen = 0;
-                        sts = RMS$_RTB;
-                    } else {
-                        *recbuff++ = '\r';
-                        cpylen++;
-                    }
-                }
-                while (seglen-- > 0) {
-                    char ch = *ptr++;
-                    if (ch == '\n' || ch == '\f' || ch == '\v') {
-                        if (ch == '\n') {
-                            dellen++;
+
+        if( seglen > 0 ) {
+            if (delim) {
+                if (delim >= 3) {
+                    char *ptr = buffer + offset;
+                    if (dellen == 1 && *ptr != '\n') {
+                        if (cpylen >= reclen) {
+                            seglen = 0;
+                            sts = RMS$_RTB;
                         } else {
-                            dellen = 0;
+                            *recbuff++ = '\r';
+                            cpylen++;
                         }
-                        delim = 99;
-                        break; 
                     }
-                    dellen = 0;
-                    if (ch == '\r') dellen = 1;
+                    while (seglen-- > 0) {
+                        char ch = *ptr++;
+                        if (ch == '\n' || ch == '\f' || ch == '\v') {
+                            if (ch == '\n') {
+                                dellen++;
+                            } else {
+                                dellen = 0;
+                            }
+                            delim = 99;
+                            break;
+                        }
+                        dellen = 0;
+                        if (ch == '\r') dellen = 1;
+                    }
+                    seglen = ptr - (buffer + offset) - dellen;
+                } else {
+                    char *ptr = buffer + offset;
+                    char term = '\r';
+                    if (delim == 1)
+                        term = '\n';
+                    while (seglen-- > 0) {
+                        if (*ptr++ == term) {
+                            dellen = 1;
+                            delim = 99;
+                            break;
+                        }
+                    }
+                    seglen = ptr - (buffer + offset) - dellen;
                 }
-                seglen = ptr - (buffer + offset) - dellen;;
             } else {
-                char *ptr = buffer + offset;
-                char term = '\r';
-                if (delim == 1)
-                    term = '\n';
-                while (seglen-- > 0) {
-                    if (*ptr++ == term) {
-                        dellen = 1;
-                        delim = 99;
-                        break;
-                    }
+                if (seglen > reclen - cpylen)
+                    seglen = reclen - cpylen;
+                if (rfm == FAB$C_VFC && cpylen < rab->rab$l_fab->fab$b_fsz) {
+                    unsigned fsz = rab->rab$l_fab->fab$b_fsz - cpylen;
+                    if (fsz > seglen)
+                        if (rab->rab$l_rhb) {
+                            memcpy(rab->rab$l_rhb + cpylen,buffer + offset,fsz);
+                        }
+                    cpylen += fsz;
+                    offset += fsz;
+                    seglen -= fsz;
                 }
-                seglen = ptr - (buffer + offset) - dellen;;
             }
-        } else {
-            if (seglen > reclen - cpylen)
-                seglen = reclen - cpylen;
-            if (rfm == FAB$C_VFC && cpylen < rab->rab$l_fab->fab$b_fsz) {
-                unsigned fsz = rab->rab$l_fab->fab$b_fsz - cpylen;
-                if (fsz > seglen)
-                if (rab->rab$l_rhb) {
-                    memcpy(rab->rab$l_rhb + cpylen,buffer + offset,fsz);
+            if (seglen) {
+                if (cpylen + seglen > reclen) {
+                    seglen = reclen - cpylen;
+                    sts = RMS$_RTB;
                 }
-                cpylen += fsz;
-                offset += fsz;
-                seglen -= fsz;
+                memcpy(recbuff,buffer + offset,seglen);
+                recbuff += seglen;
+                cpylen += seglen;
             }
+            offset += seglen + dellen;
+            if ((offset & 1) && (rfm == FAB$C_VAR || rfm == FAB$C_VFC)) offset++;
         }
-        if (seglen) {
-            if (cpylen + seglen > reclen) {
-                seglen = reclen - cpylen;
-                sts = RMS$_RTB;
-            }
-            memcpy(recbuff,buffer + offset,seglen);
-            recbuff += seglen;
-            cpylen += seglen;
-        }
-        offset += seglen + dellen;
-        if ((offset & 1) && (rfm == FAB$C_VAR || rfm == FAB$C_VFC)) offset++;
-/* ??? This was missing the "sts = ". Assumed to be an error. (LMB) ??? */
-         { unsigned sts2;
+
+        { unsigned sts2;
             sts2 = deaccesschunk(vioc,0,0,TRUE);
             if( (sts & STS$M_SUCCESS) ) sts = sts2;
         }
-        if (!(sts & STS$M_SUCCESS)) return sts;
+        if( !(sts & STS$M_SUCCESS) )
+            return sts;
         block += offset / 512;
         offset %= 512;
         if ((delim == 0 && cpylen >= reclen) || delim == 99) {
@@ -1073,15 +1107,15 @@ unsigned sys_put(struct RAB *rab)
         break;
     }
 
-    block = VMSSWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
-    offset = VMSWORD(fcb->head->fh2$w_recattr.fat$w_ffbyte);
+    block = F11SWAP(fcb->head->fh2$w_recattr.fat$l_efblk);
+    offset = F11WORD(fcb->head->fh2$w_recattr.fat$w_ffbyte);
 
     sts = accesschunk(fcb,block,&vioc,&buffer,&blocks,1);
     if (!(sts & STS$M_SUCCESS)) return sts;
 
     if (rfm == FAB$C_VAR || rfm == FAB$C_VFC) {
-        vmsword *lenptr = (vmsword *) (buffer + offset);
-        *lenptr = VMSWORD(reclen);
+        f11word *lenptr = (f11word *) (buffer + offset);
+        *lenptr = F11WORD(reclen);
         offset += 2;
     }
 
@@ -1115,11 +1149,11 @@ unsigned sys_put(struct RAB *rab)
             case 1:
                 *buffer = '\n';
                 delim = 0;
-                break;	
+                break;
             case 2:
                 *buffer = '\r';
                 delim = 0;
-                break;	
+                break;
             case 3:
                 *buffer = '\r';
                 if (offset < blocks * 512) {
@@ -1147,8 +1181,8 @@ unsigned sys_put(struct RAB *rab)
     if ((offset & 1) && (rfm == FAB$C_VAR || rfm == FAB$C_VFC)) offset++;
     block += offset / 512;
     offset %= 512;
-    fcb->head->fh2$w_recattr.fat$l_efblk = VMSSWAP(block);
-    fcb->head->fh2$w_recattr.fat$w_ffbyte = VMSWORD(offset);
+    fcb->head->fh2$w_recattr.fat$l_efblk = F11SWAP(block);
+    fcb->head->fh2$w_recattr.fat$w_ffbyte = F11WORD(offset);
     rab->rab$w_rfa[0] = block & 0xffff;
     rab->rab$w_rfa[1] = block >> 16;
     rab->rab$w_rfa[2] = offset;
@@ -1170,15 +1204,16 @@ unsigned sys_display(struct FAB *fab)
     int ifi_no = fab->fab$w_ifi;
     if (ifi_no == 0 || ifi_no >= IFI_MAX)
         return RMS$_IFI;
-    fab->fab$l_alq = VMSSWAP(head->fh2$w_recattr.fat$l_hiblk);
+    fab->fab$l_alq = F11SWAP(head->fh2$w_recattr.fat$l_hiblk);
     fab->fab$b_bks = head->fh2$w_recattr.fat$b_bktsize;
-    fab->fab$w_deq = VMSWORD(head->fh2$w_recattr.fat$w_defext);
+    fab->fab$w_deq = F11WORD(head->fh2$w_recattr.fat$w_defext);
     fab->fab$b_fsz = head->fh2$w_recattr.fat$b_vfcsize;
-    fab->fab$w_gbc = VMSWORD(head->fh2$w_recattr.fat$w_gbc);
-    fab->fab$w_mrs = VMSWORD(head->fh2$w_recattr.fat$w_maxrec);
+    fab->fab$w_gbc = F11WORD(head->fh2$w_recattr.fat$w_gbc);
+    fab->fab$w_mrs = F11WORD(head->fh2$w_recattr.fat$w_maxrec);
     fab->fab$b_org = head->fh2$w_recattr.fat$b_rtype & 0xf0;
     fab->fab$b_rfm = head->fh2$w_recattr.fat$b_rtype & 0x0f;
     fab->fab$b_rat = head->fh2$w_recattr.fat$b_rattrib;
+
     while (xab != NULL) {
         switch (xab->xab$b_cod) {
             case XAB$C_DAT:
@@ -1196,31 +1231,31 @@ unsigned sys_display(struct FAB *fab)
             struct XABFHC *fhc = (struct XABFHC *) xab;
             fhc->xab$b_atr = head->fh2$w_recattr.fat$b_rattrib;
             fhc->xab$b_bkz = head->fh2$w_recattr.fat$b_bktsize;
-            fhc->xab$w_dxq = VMSWORD(head->fh2$w_recattr.fat$w_defext);
-            fhc->xab$l_ebk = VMSSWAP(head->fh2$w_recattr.fat$l_efblk);
-            fhc->xab$w_ffb = VMSWORD(head->fh2$w_recattr.fat$w_ffbyte);
+            fhc->xab$w_dxq = F11WORD(head->fh2$w_recattr.fat$w_defext);
+            fhc->xab$l_ebk = F11SWAP(head->fh2$w_recattr.fat$l_efblk);
+            fhc->xab$w_ffb = F11WORD(head->fh2$w_recattr.fat$w_ffbyte);
             if (fhc->xab$l_ebk == 0) {
                 fhc->xab$l_ebk = fab->fab$l_alq;
                 if (fhc->xab$w_ffb == 0) fhc->xab$l_ebk++;
             }
-            fhc->xab$w_gbc = VMSWORD(head->fh2$w_recattr.fat$w_gbc);
-            fhc->xab$l_hbk = VMSSWAP(head->fh2$w_recattr.fat$l_hiblk);
+            fhc->xab$w_gbc = F11WORD(head->fh2$w_recattr.fat$w_gbc);
+            fhc->xab$l_hbk = F11SWAP(head->fh2$w_recattr.fat$l_hiblk);
             fhc->xab$b_hsz = head->fh2$w_recattr.fat$b_vfcsize;
-            fhc->xab$w_lrl = VMSWORD(head->fh2$w_recattr.fat$w_maxrec);
-                    fhc->xab$w_verlimit =
-                        VMSWORD(head->fh2$w_recattr.fat$w_versions);
-                       }
-                       break;
+            fhc->xab$w_lrl = F11WORD(head->fh2$w_recattr.fat$w_maxrec);
+            fhc->xab$w_verlimit = (F11LONG( head->fh2$l_filechar ) & FH2$M_DIRECTORY)?
+                                   F11WORD(head->fh2$w_recattr.fat$w_versions): fab->fab__w_verlimit;
+        }
+            break;
         case XAB$C_PRO:{
             struct XABPRO *pro = (struct XABPRO *) xab;
-            pro->xab$w_pro = VMSWORD(head->fh2$w_fileprot);
+            pro->xab$w_pro = F11WORD(head->fh2$w_fileprot);
             memcpy(&pro->xab$l_uic,&head->fh2$l_fileowner,4);
-                       }
-                       break;
+        }
+            break;
         case XAB$C_ITM:{
             struct XABITM *itm = (struct XABITM *) xab;
             struct item_list *list;
-            vmslong fch = VMSLONG( head->fh2$l_filechar );
+            f11long fch = F11LONG( head->fh2$l_filechar );
 
             if( itm->xab$b_mode != XAB$K_SENSEMODE )
                 break;
@@ -1275,6 +1310,7 @@ unsigned sys_close(struct FAB *fab)
         fab->fab$w_ifi = 0;
         ifi_table[ifi_no] = NULL;
     }
+    cache_flush(); /* Excessive, but seems safe... */
     return sts;
 }
 
@@ -1309,7 +1345,7 @@ unsigned sys_open(struct FAB *fab)
                 sts = RMS$_WLD;
             } else {
                 sts = do_search(fab,wccfile);
-                if ((sts & 1) == 0)
+                if( !(sts & STS$M_SUCCESS) )
                     wcc_flag = 0;
             }
             wccfile->wcf_status |= STATUS_TMPWCC;
@@ -1350,21 +1386,24 @@ unsigned sys_erase(struct FAB *fab)
     int wcc_flag = FALSE;
     struct WCCFILE *wccfile = NULL;
     struct NAM *nam = fab->fab$l_nam;
-    if (fab->fab$w_ifi != 0) return RMS$_IFI;
-    while (ifi_table[ifi_no] != NULL && ifi_no < IFI_MAX) ifi_no++;
-    if (ifi_no >= IFI_MAX) return RMS$_IFI;
-    if (nam != NULL) {
+
+    if( fab->fab$w_ifi != 0 )
+        return RMS$_IFI;
+    while( ifi_table[ifi_no] != NULL && ifi_no < IFI_MAX ) ifi_no++;
+    if( ifi_no >= IFI_MAX ) return RMS$_IFI;
+
+    if( nam != NULL ) {
         wccfile = (struct WCCFILE *) fab->fab$l_nam->nam$l_wcc;
     }
     if (wccfile == NULL) {
         sts = do_parse(fab,&wccfile);
-        if (sts & STS$M_SUCCESS) {
+        if( sts & STS$M_SUCCESS ) {
             wcc_flag = TRUE;
-            if (wccfile->wcf_status & STATUS_WILDCARD) {
+            if( wccfile->wcf_status & STATUS_WILDCARD ) {
                 sts = RMS$_WLD;
             } else {
-                sts = do_search(fab,wccfile);
-                if ((sts & 1) == 0)
+                sts = do_search( fab,wccfile );
+                if( !(sts & STS$M_SUCCESS) )
                     wcc_flag = 0;
             }
         }
@@ -1374,13 +1413,15 @@ unsigned sys_erase(struct FAB *fab)
     if (sts & STS$M_SUCCESS) {
         struct fibdef fibblk;
         struct dsc_descriptor fibdsc,serdsc;
+
         fibdsc.dsc_w_length = sizeof(struct fibdef);
         fibdsc.dsc_a_pointer = (char *) &fibblk;
         serdsc.dsc_w_length = wccfile->wcf_wcd.wcd_reslen;
         serdsc.dsc_a_pointer = wccfile->wcf_result +
                                wccfile->wcf_wcd.wcd_prelen;
-        memcpy(&fibblk.fib$w_did_num,&wccfile->wcf_wcd.wcd_dirid,
-               sizeof(struct fiddef));
+
+        memcpy( &fibblk.fib$w_did_num, &wccfile->wcf_wcd.wcd_dirid,
+                sizeof(struct fiddef));
         fibblk.fib$w_nmctl = 0;
         fibblk.fib$l_acctl = 0;
         fibblk.fib$w_fid_num = 0;
@@ -1388,15 +1429,17 @@ unsigned sys_erase(struct FAB *fab)
         fibblk.fib$b_fid_rvn = 0;
         fibblk.fib$b_fid_nmx = 0;
         fibblk.fib$l_wcc = 0;
-        sts = direct(wccfile->wcf_vcb,&fibdsc,&serdsc,NULL,NULL,TRUE);
+
+        sts = direct( wccfile->wcf_vcb, &fibdsc, &serdsc,
+                      NULL, NULL, DIRECT_DELETE ) ;
         if (sts & STS$M_SUCCESS) {
-            sts = accesserase(wccfile->wcf_vcb,&wccfile->wcf_fid);
+            sts = accesserase( wccfile->wcf_vcb, &wccfile->wcf_fid );
 	} else {
-	    printf("Direct status is %d\n",sts);
+	    printf( "%%ODS2-E-DIRENT, failed to remove directory entry: %sn", getmsg( sts, MSG_TEXT ) );
 	}
     }
-    if (wcc_flag) {
-        cleanup_wcf(&wccfile);
+    if( wcc_flag ) {
+        cleanup_wcf( &wccfile );
         if (nam != NULL) {
             nam->nam$l_wcc = NULL;
         }
@@ -1494,6 +1537,8 @@ static void sys_rundown( void ) {
     access_rundown();
 
     sysmsg_rundown();
+
+    cache_purge(TRUE);
 }
 
 /*************************************************************** sys_initialize() */

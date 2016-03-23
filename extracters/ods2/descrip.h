@@ -1,4 +1,4 @@
-/* Descrip.h V2.1    Definitions for descriptors */
+/* Descrip.h    Definitions for descriptors */
 
 /*
         This is part of ODS2 written by Paul Nankervis,
