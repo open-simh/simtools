@@ -35,15 +35,25 @@
 
 #define MAX_NAME_LEN 1000
 
+#if defined(_WIN32) && defined(LIBVHD_DLL)
+#ifdef LIBVHD_EXPORTS
+#define LIBVHD_API __declspec(dllexport)
+#else
+#define LIBVHD_API __declspec(dllimport)
+#endif
+#else
+#define LIBVHD_API
+#endif
+
 /*
  * returns a relative path from @src to @dest
  * result should be freed
  */
-char *relative_path_to(char *src, char *dest, int *err);
+LIBVHD_API char *relative_path_to(char *src, char *dest, int *err);
 
 #ifdef _WIN32
-char *realpath( const char *path, char *resolved );
-int asprintf( char **result, const char *fmt, ... );
+LIBVHD_API char *realpath( const char *path, char *resolved );
+LIBVHD_API int asprintf( char **result, const char *fmt, ... );
 #endif
 
 #endif

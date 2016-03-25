@@ -79,7 +79,7 @@ do {                       \
 } while (0)
 
 #ifdef _WIN32
-char *realpath( const char *path, char *resolved ) {
+LIBVHD_API char *realpath( const char *path, char *resolved ) {
     char *p;
     DWORD len;
 
@@ -122,7 +122,7 @@ char *realpath( const char *path, char *resolved ) {
     }
     return resolved;
 }
-int asprintf( char **result, const char *fmt, ... ) {
+LIBVHD_API int asprintf( char **result, const char *fmt, ... ) {
     int len;
     va_list ap;
     char *np;
@@ -314,6 +314,7 @@ node_offset(char *from, int offset)
  * return a relative path from @from to @to
  * result should be freed
  */
+LIBVHD_API
 char *
 relative_path_to(char *from, char *to, int *err)
 {

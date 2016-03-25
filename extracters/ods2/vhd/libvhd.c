@@ -45,7 +45,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <io.h>
 #define strdup _strdup
 #define open _open
@@ -157,6 +157,7 @@ static void vhd_log_error( const char *func, const char *fmt, ... )
  }
 
 #ifdef _WIN32
+LIBVHD_API
 char *dirname( char *path ) {
     static char buf[MAX_PATH + 1];
     char *p, *d;
@@ -193,6 +194,7 @@ char *dirname( char *path ) {
         *p = '\0';
     return buf;
 }
+LIBVHD_API
 char *basename( char *path ) {
     static char buf[MAX_PATH + 1];
     char *p, *d;
@@ -580,6 +582,7 @@ static size_t iconv( iconv_t cd,
 #define BIT_MASK 0x80
 
 #ifdef ENABLE_FAILURE_TESTING
+LIBVHD_API
 const char* ENV_VAR_FAIL[NUM_FAIL_TESTS] = {
 	"VHD_UTIL_TEST_FAIL_REPARENT_BEGIN",
 	"VHD_UTIL_TEST_FAIL_REPARENT_LOCATOR",
@@ -589,6 +592,7 @@ const char* ENV_VAR_FAIL[NUM_FAIL_TESTS] = {
 	"VHD_UTIL_TEST_FAIL_RESIZE_METADATA_MOVED",
 	"VHD_UTIL_TEST_FAIL_RESIZE_END"
 };
+LIBVHD_API
 int TEST_FAIL[NUM_FAIL_TESTS];
 #endif /* ENABLE_FAILURE_TESTING */
 
@@ -1261,7 +1265,7 @@ vhd_time_to_string(uint32_t timestamp, char *target)
 	t2 = t1 + (time_t)timestamp;
 #ifdef _WIN32
     t3 = (__time32_t)t2;
-    _ctime32_s( target, 27, &t3 );
+    _ctime32_s( target, 26, &t3 );
 #else
     ctime_r(&t2, target);
 #endif
@@ -1835,7 +1839,7 @@ vhd_test_file_fixed(const char *file, int *is_block)
 int
 vhd_find_parent(vhd_context_t *ctx, const char *parent, char **_location)
 {
-	int err;
+	int err, isabs = 0, isrd = 0;
 	char *location, *cpath, *cdir, *path;
 
 	err        = 0;
@@ -1847,58 +1851,65 @@ vhd_find_parent(vhd_context_t *ctx, const char *parent, char **_location)
 	if (!parent)
 		return -EINVAL;
 
-	if (parent[0] == '/') {
-        int ok;
 #ifdef _WIN32
-        int fd;
-
-        if( (fd = _open( parent, _O_RDONLY | _O_BINARY )) != -1 ) {
-            _close( fd );
-            ok = 1;
-        } else
-            ok = 0;
-#else
-        ok = !access( parent, R_OK );
-#endif
-        if( ok) {
-            path = strdup( parent );
-            if( !path )
-                return -ENOMEM;
-            *_location = path;
-            return 0;
+        if( parent[0] == '/' )
+            isabs = 1;
+        else {
+            const char *p;
+            for( p = parent; *p && *p != '/' && *p != ':'; p++ )
+                ;
+            isabs = ( *p == ':' );
         }
+
+        if( isabs ) {
+            if( (isrd = _open( parent, _O_RDONLY | _O_BINARY )) == -1 )
+                goto errout;
+            else {
+                _close( isrd );
+                isrd = 1;
+            }
+        }
+#else
+        if (parent[0] == '/') {
+            isabs = 1;
+            isrd = !access( parent, R_OK );
+        }
+#endif
+        if( isabs ) {
+            if( isrd ) {
+                path = strdup( parent );
+                if( !path )
+                    return -ENOMEM;
+                *_location = path;
+                return 0;
+            }
+            goto errout;
 	}
 
 	/* check parent path relative to child's directory */
 	cpath = realpath(ctx->file, NULL);
-	if (!cpath) {
-		err = -errno;
-		goto out;
-	}
+	if (!cpath)
+		goto errout;
 #ifdef _WIN32
-    cdir = dirname( cpath + 1 );
+	cdir = dirname( cpath + 1 );
 #else
-    cdir = dirname( cpath );
+	cdir = dirname( cpath );
 #endif
 	if (asprintf(&location, "%s/%s", cdir, parent) == -1) {
-		err = -errno;
 		location = NULL;
-		goto out;
+		goto errout;
 	}
-    {
-        int ok;
 #ifdef _WIN32
-        int fd;
-
-        if( (fd = _open( location, _O_RDONLY | _O_BINARY )) != -1 ) {
-            _close( fd );
-            ok = 1;
-        } else
-            ok = 0;
+        if( (isrd = _open( location, _O_RDONLY | _O_BINARY )) == -1 )
+            isrd = 0;
+ 	else {
+            _close( isrd );
+            isrd = 1;
+        }
 #else
-        ok = !access( location, R_OK );
+	isrd = !access( location, R_OK );
 #endif
-        if( ok ) {
+	if( isrd ) {
             path = realpath( location, NULL );
             if( path ) {
 #ifdef _WIN32
@@ -1912,16 +1923,15 @@ vhd_find_parent(vhd_context_t *ctx, const char *parent, char **_location)
                 return 0;
             }
         }
-    }
-	err = -errno;
 
-out:
+errout:
+	err = -errno;
 	free(location);
 	free(cpath);
 	return err;
 }
 
-static int 
+static int
 vhd_macx_encode_location(char *name, char **out, size_t *outlen)
 {
 	iconv_t cd;
@@ -1938,7 +1948,7 @@ vhd_macx_encode_location(char *name, char **out, size_t *outlen)
 	len     = strlen(name) + strlen("file://");
 
 	ibl     = len;
-	obl     = len;
+	obl     = len * 2;
 
 	urip = uri = malloc(ibl + 1);
 	uri_utf8 = uri_utf8p = malloc(obl);
@@ -1959,11 +1969,11 @@ vhd_macx_encode_location(char *name, char **out, size_t *outlen)
 	    (char **)
 #endif
 	    &urip, &ibl, &uri_utf8p, &obl) == (size_t)-1 ||
-	    ibl || obl) {
+	    ibl) {
 		err = (errno ? -errno : -EIO);
 		goto out;
 	}
-
+        len = (size_t)(uri_utf8p - uri_utf8);
 	ret = malloc(len);
 	if (!ret) {
 		err = -ENOMEM;
@@ -2030,7 +2040,7 @@ vhd_w2u_encode_location(char *name, char **out, size_t *outlen)
 
 	len  = strlen(uri);
 	ibl  = len;
-	obl  = len * 2;
+	obl  = len * 4;
 	urip = uri;
 
 	uri_utf16 = uri_utf16p = malloc(obl);
@@ -2054,12 +2064,12 @@ vhd_w2u_encode_location(char *name, char **out, size_t *outlen)
 	    (char **)
 #endif
 	    &urip, &ibl, &uri_utf16p, &obl) == (size_t)-1 ||
-	    ibl || obl) {
+	    ibl) {
 		err = (errno ? -errno : -EIO);
 		goto out;
 	}
 
-	len = len * 2;
+	len = (size_t)(uri_utf16p - uri_utf16);
 	ret = malloc(len);
 	if (!ret) {
 		err = -ENOMEM;
@@ -2123,15 +2133,17 @@ vhd_w2u_decode_location(const char *in, char *out, int len, char *utf_type)
 	ibl = obl  = len;
 
 	cd = iconv_open("ASCII", utf_type);
-	if (cd == (iconv_t)-1) 
+	if (cd == (iconv_t)-1)
 		return NULL;
 
 	if (iconv(cd,
 #ifdef __linux__
 		(char **)
 #endif
-		&in, &ibl, &out, &obl) == (size_t)-1 || ibl)
-		return NULL;
+                  &in, &ibl, &out, &obl) == (size_t)-1 || ibl) {
+            iconv_close(cd);
+            return NULL;
+        }
 
 	iconv_close(cd);
 	*out = '\0';
@@ -2145,14 +2157,13 @@ vhd_w2u_decode_location(const char *in, char *out, int len, char *utf_type)
 
 	if (strstr(name, "C:") == name || strstr(name, "c:") == name)
 		name += strlen("c:");
-
 	return strdup(name);
 }
 
 int
 vhd_header_decode_parent(vhd_context_t *ctx, vhd_header_t *header, char **buf)
 {
-	char *code, out[512];
+	char *code, out[512+1];
 
 	if (vhd_creator_tapdisk(ctx) &&
 	    ctx->footer.crtr_ver == VHD_VERSION(0, 1))
@@ -3289,7 +3300,7 @@ vhd_initialize_header(vhd_context_t *ctx, const char *parent_path,
 		err = vhd_open(&parent, parent_path, VHD_OPEN_RDONLY);
 		if (err)
 			return err;
-
+
 		ctx->header.prt_ts = vhd_time(stats.st_mtime);
 		blk_uuid_copy(&ctx->header.prt_uuid, &parent.footer.uuid);
 		if (!size)
@@ -3347,7 +3358,7 @@ vhd_write_parent_locators(vhd_context_t *ctx, const char *parent)
 }
 
 int
-vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
+vhd_change_parent(vhd_context_t *child, char *parent_path, int flags)
 {
 	int i, err;
 	char *ppath;
@@ -3360,7 +3371,9 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 		       parent_path, child->file, errno));
 		return -errno;
 	}
-
+#ifdef _WIN32
+        ppath++;
+#endif
 	err = stat(ppath, &stats);
 	if (err == -1) {
 		err = -errno;
@@ -3380,7 +3393,7 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 	}
 #endif
 
-	if (raw) {
+	if (flags & 1) {
 		blk_uuid_clear(&child->header.prt_uuid);
 	} else {
 		err = vhd_open(&parent, ppath, VHD_OPEN_RDONLY);
@@ -3389,7 +3402,18 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 			       ppath, child->file, err));
 			goto out;
 		}
-		blk_uuid_copy(&child->header.prt_uuid, &parent.footer.uuid);
+                /* Extension */
+                if( flags & 2 ) {
+                    if( blk_uuid_compare(&child->header.prt_uuid,
+                                         &parent.footer.uuid) != 0 ) {
+			VHDLOG((FN,"new parent %s for %s: parent UUID doesn't match child\n",
+			       ppath, child->file));
+                        vhd_close(&parent);
+                        err = -EINVAL;
+                        goto out;
+                    }
+                } else
+		    blk_uuid_copy(&child->header.prt_uuid, &parent.footer.uuid);
 		vhd_close(&parent);
 	}
 
@@ -3430,7 +3454,11 @@ vhd_change_parent(vhd_context_t *child, char *parent_path, int raw)
 	err = 0;
 
 out:
+#ifdef _WIN32
+        free(ppath -1);
+#else
 	free(ppath);
+#endif
 	return err;
 }
 

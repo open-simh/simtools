@@ -59,6 +59,16 @@
 #define O_LARGEFILE	0
 #endif
 
+#if defined(_WIN32) && defined(LIBVHD_DLL)
+#ifdef LIBVHD_EXPORTS
+#define LIBVHD_API __declspec(dllexport)
+#else
+#define LIBVHD_API __declspec(dllimport)
+#endif
+#else
+#define LIBVHD_API
+#endif
+
 #if BYTE_ORDER == LITTLE_ENDIAN
 #if defined(__linux__) || defined(_WIN32)
   #define BE16_IN(foo)             (*(foo)) = bswap_16(*(foo))
@@ -109,7 +119,9 @@
 #define vhd_flag_test(word, flag)        ((word) & (flag))
 
 
-#define ENABLE_FAILURE_TESTING
+#ifndef _WIN32x
+#define ENABLE_FAILURE_TESTING 1
+#endif
 #define FAIL_REPARENT_BEGIN        0
 #define FAIL_REPARENT_LOCATOR      1
 #define FAIL_REPARENT_END          2
@@ -123,9 +135,15 @@
 #define TEST_FAIL_AT(point) \
 	if (TEST_FAIL[point]) { \
 		printf("Failing at %s\n", ENV_VAR_FAIL[point]); exit(EINVAL); }
+#ifdef _WIN32
 #define TEST_FAIL_EXTERN_VARS              \
-	extern const char* ENV_VAR_FAIL[]; \
-	extern int TEST_FAIL[];
+LIBVHD_API	extern const char* ENV_VAR_FAIL[]; \
+LIBVHD_API	extern int TEST_FAIL[];
+#else
+#define TEST_FAIL_EXTERN_VARS              \
+extern const char* ENV_VAR_FAIL[]; \
+extern int TEST_FAIL[];
+#endif
 #else
 #define TEST_FAIL_AT(point)
 #define TEST_FAIL_EXTERN_VARS
@@ -238,108 +256,108 @@ vhd_parent_raw(vhd_context_t *ctx)
 	return blk_uuid_is_nil(&ctx->header.prt_uuid);
 }
 
-void libvhd_set_log_level(int);
+LIBVHD_API void libvhd_set_log_level(int);
 
-int vhd_test_file_fixed(const char *, int *);
+LIBVHD_API int vhd_test_file_fixed(const char *, int *);
 
-uint32_t vhd_time(time_t time);
-size_t vhd_time_to_string(uint32_t timestamp, char *target);
-uint32_t vhd_chs(uint64_t size);
+LIBVHD_API uint32_t vhd_time(time_t time);
+LIBVHD_API size_t vhd_time_to_string(uint32_t timestamp, char *target);
+LIBVHD_API uint32_t vhd_chs(uint64_t size);
 
-uint32_t vhd_checksum_footer(vhd_footer_t *);
-uint32_t vhd_checksum_header(vhd_header_t *);
-uint32_t vhd_checksum_batmap(vhd_batmap_t *);
+LIBVHD_API uint32_t vhd_checksum_footer(vhd_footer_t *);
+LIBVHD_API uint32_t vhd_checksum_header(vhd_header_t *);
+LIBVHD_API uint32_t vhd_checksum_batmap(vhd_batmap_t *);
 
-void vhd_footer_in(vhd_footer_t *);
-void vhd_footer_out(vhd_footer_t *);
-void vhd_header_in(vhd_header_t *);
-void vhd_header_out(vhd_header_t *);
-void vhd_bat_in(vhd_bat_t *);
-void vhd_bat_out(vhd_bat_t *);
-void vhd_batmap_header_in(vhd_batmap_t *);
-void vhd_batmap_header_out(vhd_batmap_t *);
+LIBVHD_API void vhd_footer_in(vhd_footer_t *);
+LIBVHD_API void vhd_footer_out(vhd_footer_t *);
+LIBVHD_API void vhd_header_in(vhd_header_t *);
+LIBVHD_API void vhd_header_out(vhd_header_t *);
+LIBVHD_API void vhd_bat_in(vhd_bat_t *);
+LIBVHD_API void vhd_bat_out(vhd_bat_t *);
+LIBVHD_API void vhd_batmap_header_in(vhd_batmap_t *);
+LIBVHD_API void vhd_batmap_header_out(vhd_batmap_t *);
 
-int vhd_validate_footer(vhd_footer_t *footer);
-int vhd_validate_header(vhd_header_t *header);
-int vhd_validate_batmap_header(vhd_batmap_t *batmap);
-int vhd_validate_batmap(vhd_batmap_t *batmap);
-int vhd_validate_platform_code(uint32_t code);
+LIBVHD_API int vhd_validate_footer(vhd_footer_t *footer);
+LIBVHD_API int vhd_validate_header(vhd_header_t *header);
+LIBVHD_API int vhd_validate_batmap_header(vhd_batmap_t *batmap);
+LIBVHD_API int vhd_validate_batmap(vhd_batmap_t *batmap);
+LIBVHD_API int vhd_validate_platform_code(uint32_t code);
 
-int vhd_open(vhd_context_t *, const char *file, int flags);
-void vhd_close(vhd_context_t *);
-int vhd_create(const char *name, uint64_t bytes, int type, vhd_flag_creat_t);
+LIBVHD_API int vhd_open(vhd_context_t *, const char *file, int flags);
+LIBVHD_API void vhd_close(vhd_context_t *);
+LIBVHD_API int vhd_create(const char *name, uint64_t bytes, int type, vhd_flag_creat_t);
 /* vhd_snapshot: the bytes parameter is optional and can be 0 if the snapshot 
  * is to have the same size as the (first non-empty) parent */
-int vhd_snapshot(const char *snapshot, uint64_t bytes, const char *parent,
+LIBVHD_API int vhd_snapshot(const char *snapshot, uint64_t bytes, const char *parent,
 		vhd_flag_creat_t);
 
-int vhd_hidden(vhd_context_t *, int *);
-int vhd_chain_depth(vhd_context_t *, int *);
+LIBVHD_API int vhd_hidden(vhd_context_t *, int *);
+LIBVHD_API int vhd_chain_depth(vhd_context_t *, int *);
 
-off_t vhd_position(vhd_context_t *);
-int vhd_seek(vhd_context_t *, off_t, int);
-int vhd_read(vhd_context_t *, void *, size_t);
-int vhd_write(vhd_context_t *, void *, size_t);
+LIBVHD_API off_t vhd_position(vhd_context_t *);
+LIBVHD_API int vhd_seek(vhd_context_t *, off_t, int);
+LIBVHD_API int vhd_read(vhd_context_t *, void *, size_t);
+LIBVHD_API int vhd_write(vhd_context_t *, void *, size_t);
 
-int vhd_offset(vhd_context_t *, uint32_t, uint32_t *);
+LIBVHD_API int vhd_offset(vhd_context_t *, uint32_t, uint32_t *);
 
-int vhd_end_of_headers(vhd_context_t *ctx, off_t *off);
-int vhd_end_of_data(vhd_context_t *ctx, off_t *off);
-int vhd_batmap_header_offset(vhd_context_t *ctx, off_t *off);
+LIBVHD_API int vhd_end_of_headers(vhd_context_t *ctx, off_t *off);
+LIBVHD_API int vhd_end_of_data(vhd_context_t *ctx, off_t *off);
+LIBVHD_API int vhd_batmap_header_offset(vhd_context_t *ctx, off_t *off);
 
-int vhd_get_header(vhd_context_t *);
-int vhd_get_footer(vhd_context_t *);
-int vhd_get_bat(vhd_context_t *);
-int vhd_get_batmap(vhd_context_t *);
+LIBVHD_API int vhd_get_header(vhd_context_t *);
+LIBVHD_API int vhd_get_footer(vhd_context_t *);
+LIBVHD_API int vhd_get_bat(vhd_context_t *);
+LIBVHD_API int vhd_get_batmap(vhd_context_t *);
 
-void vhd_put_header(vhd_context_t *);
-void vhd_put_footer(vhd_context_t *);
-void vhd_put_bat(vhd_context_t *);
-void vhd_put_batmap(vhd_context_t *);
+LIBVHD_API void vhd_put_header(vhd_context_t *);
+LIBVHD_API void vhd_put_footer(vhd_context_t *);
+LIBVHD_API void vhd_put_bat(vhd_context_t *);
+LIBVHD_API void vhd_put_batmap(vhd_context_t *);
 
-int vhd_has_batmap(vhd_context_t *);
-int vhd_batmap_test(vhd_context_t *, vhd_batmap_t *, uint32_t);
-void vhd_batmap_set(vhd_context_t *, vhd_batmap_t *, uint32_t);
-void vhd_batmap_clear(vhd_context_t *, vhd_batmap_t *, uint32_t);
+LIBVHD_API int vhd_has_batmap(vhd_context_t *);
+LIBVHD_API int vhd_batmap_test(vhd_context_t *, vhd_batmap_t *, uint32_t);
+LIBVHD_API void vhd_batmap_set(vhd_context_t *, vhd_batmap_t *, uint32_t);
+LIBVHD_API void vhd_batmap_clear(vhd_context_t *, vhd_batmap_t *, uint32_t);
 
-int vhd_get_phys_size(vhd_context_t *, off_t *);
-int vhd_set_phys_size(vhd_context_t *, off_t);
+LIBVHD_API int vhd_get_phys_size(vhd_context_t *, off_t *);
+LIBVHD_API int vhd_set_phys_size(vhd_context_t *, off_t);
 
-int vhd_bitmap_test(vhd_context_t *, char *, uint32_t);
-void vhd_bitmap_set(vhd_context_t *, char *, uint32_t);
-void vhd_bitmap_clear(vhd_context_t *, char *, uint32_t);
+LIBVHD_API int vhd_bitmap_test(vhd_context_t *, char *, uint32_t);
+LIBVHD_API void vhd_bitmap_set(vhd_context_t *, char *, uint32_t);
+LIBVHD_API void vhd_bitmap_clear(vhd_context_t *, char *, uint32_t);
 
-int vhd_parent_locator_count(vhd_context_t *);
-int vhd_parent_locator_get(vhd_context_t *, char **);
-int vhd_parent_locator_read(vhd_context_t *, vhd_parent_locator_t *, char **);
-int vhd_find_parent(vhd_context_t *, const char *, char **);
-int vhd_parent_locator_write_at(vhd_context_t *, const char *,
+LIBVHD_API int vhd_parent_locator_count(vhd_context_t *);
+LIBVHD_API int vhd_parent_locator_get(vhd_context_t *, char **);
+LIBVHD_API int vhd_parent_locator_read(vhd_context_t *, vhd_parent_locator_t *, char **);
+LIBVHD_API int vhd_find_parent(vhd_context_t *, const char *, char **);
+LIBVHD_API int vhd_parent_locator_write_at(vhd_context_t *, const char *,
 				off_t, uint32_t, size_t,
 				vhd_parent_locator_t *);
 
-int vhd_header_decode_parent(vhd_context_t *, vhd_header_t *, char **);
-int vhd_change_parent(vhd_context_t *, char *parent_path, int raw);
+LIBVHD_API int vhd_header_decode_parent(vhd_context_t *, vhd_header_t *, char **);
+LIBVHD_API int vhd_change_parent(vhd_context_t *, char *parent_path, int raw);
 
-int vhd_read_footer(vhd_context_t *, vhd_footer_t *);
-int vhd_read_footer_at(vhd_context_t *, vhd_footer_t *, off_t);
-int vhd_read_footer_strict(vhd_context_t *, vhd_footer_t *);
-int vhd_read_header(vhd_context_t *, vhd_header_t *);
-int vhd_read_header_at(vhd_context_t *, vhd_header_t *, off_t);
-int vhd_read_bat(vhd_context_t *, vhd_bat_t *);
-int vhd_read_batmap(vhd_context_t *, vhd_batmap_t *);
-int vhd_read_bitmap(vhd_context_t *, uint32_t block, char **bufp);
-int vhd_read_block(vhd_context_t *, uint32_t block, char **bufp);
+LIBVHD_API int vhd_read_footer(vhd_context_t *, vhd_footer_t *);
+LIBVHD_API int vhd_read_footer_at(vhd_context_t *, vhd_footer_t *, off_t);
+LIBVHD_API int vhd_read_footer_strict(vhd_context_t *, vhd_footer_t *);
+LIBVHD_API int vhd_read_header(vhd_context_t *, vhd_header_t *);
+LIBVHD_API int vhd_read_header_at(vhd_context_t *, vhd_header_t *, off_t);
+LIBVHD_API int vhd_read_bat(vhd_context_t *, vhd_bat_t *);
+LIBVHD_API int vhd_read_batmap(vhd_context_t *, vhd_batmap_t *);
+LIBVHD_API int vhd_read_bitmap(vhd_context_t *, uint32_t block, char **bufp);
+LIBVHD_API int vhd_read_block(vhd_context_t *, uint32_t block, char **bufp);
 
-int vhd_write_footer(vhd_context_t *, vhd_footer_t *);
-int vhd_write_footer_at(vhd_context_t *, vhd_footer_t *, off_t);
-int vhd_write_header(vhd_context_t *, vhd_header_t *);
-int vhd_write_header_at(vhd_context_t *, vhd_header_t *, off_t);
-int vhd_write_bat(vhd_context_t *, vhd_bat_t *);
-int vhd_write_batmap(vhd_context_t *, vhd_batmap_t *);
-int vhd_write_bitmap(vhd_context_t *, uint32_t block, char *bitmap);
-int vhd_write_block(vhd_context_t *, uint32_t block, char *data);
+LIBVHD_API int vhd_write_footer(vhd_context_t *, vhd_footer_t *);
+LIBVHD_API int vhd_write_footer_at(vhd_context_t *, vhd_footer_t *, off_t);
+LIBVHD_API int vhd_write_header(vhd_context_t *, vhd_header_t *);
+LIBVHD_API int vhd_write_header_at(vhd_context_t *, vhd_header_t *, off_t);
+LIBVHD_API int vhd_write_bat(vhd_context_t *, vhd_bat_t *);
+LIBVHD_API int vhd_write_batmap(vhd_context_t *, vhd_batmap_t *);
+LIBVHD_API int vhd_write_bitmap(vhd_context_t *, uint32_t block, char *bitmap);
+LIBVHD_API int vhd_write_block(vhd_context_t *, uint32_t block, char *data);
 
-int vhd_io_read(vhd_context_t *, char *, uint64_t, uint32_t);
-int vhd_io_write(vhd_context_t *, char *, uint64_t, uint32_t);
+LIBVHD_API int vhd_io_read(vhd_context_t *, char *, uint64_t, uint32_t);
+LIBVHD_API int vhd_io_write(vhd_context_t *, char *, uint64_t, uint32_t);
 
 #endif
