@@ -1,0 +1,31 @@
+This is a port of the Xen vhd-util tool and the libvhd library to windows.
+
+It still works (with minor enhancements) on Unix.
+
+The distribution kit includes prebuilt executables for Linux and Windows.
+
+There are two components:
+      libvhd - library for VHD file access
+      vhd-util - tool for managing VHD files.
+
+Each has a directory, which should be at the same level.
+
+On Unix:
+   cd vhd-util && make && make install
+
+   cd vhd-util && make PREFIX=/usr && make PREFIX=/usr
+   To place somewhere else.
+
+   This creates a sharable library (libvhd) and the vhd-util command.
+
+On Windows:
+   Builds under microsoft Visual Studio (2015), free edition.
+
+   Open libvhd/libvhd.sln and build it.
+
+On Windows, a DLL is NOT created as the API doesn't support it.
+(The DLL allocates memory that the client must free, but doesn't
+ provide routines to do this.  On windows, the pools are different.)
+
+Licensing is described in COPYING.
+
