@@ -114,16 +114,54 @@ f2  = %2
         addf    #^O41040,F2     ; taken literally
         addf    #1,ac1          ;       as float
         addf    #1.,ac1         ;       as float
+        addf    #1.0,ac1        ;       as float
         addf    #^D1,ac1        ;       literally
+        subf    #<1>,ac0        ;       literally
         addf    #<1+1>,ac1      ;       literally
+        subf    #<1.0>,ac0      ; error
         addf    #1.5,ac1        ;       as float
         addd    #-1.4,ac1       ;       as float
+        subf    #<^F 1.0>,ac0   ;       as float
+        subf    #<^D 1.0>,ac0   ; error
+        subf    #<^D 1>,ac0     ;       literally
+        subf    #^D<1+1>,ac0    ;       literally
+        subf    #^D 1+1 ,ac0    ;       literally
+        subf    #1e3,ac0        ;       as float
+        subf    #1e 3,ac0       ; TODO: accepted by MACRO11 as 1E3 (but not 1 e3, 1 e 3)
+a = 1
+e3 = 3
+        subf    #a,ac0          ; a interpreted as bit pattern
+        subf    #<a>,ac0        ; a interpreted as bit pattern
+        subf    #e3,ac0         ; e3 is the label
+        subf    #<1e3>,ac0      ; error N
 
-                                ; TODO: let parser check for junk at end of line
         absf    #2.5            ; bad: operand is destination
         tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
         stf     ac0,#2.5        ; bad: junk at end of line
         stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
 
+        ; Test immediate source argument for instructions that have one (src or fsrc)
+
+        addd    #1,ac0          ; float
+        addf    #1,ac0          ; float
+        cmpd    #1,ac0          ; float
+        cmpf    #1,ac0          ; float
+        divd    #1,ac0          ; float
+        divf    #1,ac0          ; float
+        ldcdf   #1,ac0          ; float
+        ldcfd   #1,ac0          ; float
+        ldcid   #1,ac0          ; integer
+        ldcif   #1,ac0          ; integer
+        ldcld   #1,ac0          ; integer
+        ldclf   #1,ac0          ; integer
+        ldd     #1,ac0          ; float
+        ldf     #1,ac0          ; float
+        ldexp   #1,ac0          ; integer
+        modd    #1,ac0          ; float
+        modf    #1,ac0          ; float
+        muld    #1,ac0          ; float
+        mulf    #1,ac0          ; float
+        subd    #1,ac0          ; float
+        subf    #1,ac0          ; float
 
         .end

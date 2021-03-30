@@ -137,31 +137,74 @@
      114 000370 172227  041040                  addf    #^O41040,F2     ; taken literally
      115 000374 172127  040200                  addf    #1,ac1          ;       as float
      116 000400 172127  040200                  addf    #1.,ac1         ;       as float
-     117 000404 172127  000001                  addf    #^D1,ac1        ;       literally
-     118 000410 172127  000002                  addf    #<1+1>,ac1      ;       literally
-     119 000414 172127  040300                  addf    #1.5,ac1        ;       as float
-     120 000420 172127  140263                  addd    #-1.4,ac1       ;       as float
-     121                                
-     122                                                                ; TODO: let parser check for junk at end of line
-test-float.mac:123: ***ERROR Junk at end of line ('5            ; bad: ')
-     123 000424 170627  000002                  absf    #2.5            ; bad: operand is destination
-test-float.mac:124: ***ERROR Junk at end of line ('5            ; bad: ')
-     124 000430 170527  000002                  tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
-test-float.mac:125: ***ERROR Junk at end of line ('5        ; bad: junk')
-     125 000434 174027  000002                  stf     ac0,#2.5        ; bad: junk at end of line
-     126 000440 174027  000002                  stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
-     127                                
-     128                                
-     129                                        .end
-     129                                
+     117 000404 172127  040200                  addf    #1.0,ac1        ;       as float
+     118 000410 172127  000001                  addf    #^D1,ac1        ;       literally
+     119 000414 173027  000001                  subf    #<1>,ac0        ;       literally
+     120 000420 172127  000002                  addf    #<1+1>,ac1      ;       literally
+test-float.mac:121: ***ERROR Invalid addressing mode (1st operand, fsrc)
+     121                                        subf    #<1.0>,ac0      ; error
+     122 000424 172127  040300                  addf    #1.5,ac1        ;       as float
+     123 000430 172127  140263                  addd    #-1.4,ac1       ;       as float
+     124 000434 173027  040200                  subf    #<^F 1.0>,ac0   ;       as float
+test-float.mac:125: ***ERROR Invalid addressing mode (1st operand, fsrc)
+     125                                        subf    #<^D 1.0>,ac0   ; error
+     126 000440 173027  000001                  subf    #<^D 1>,ac0     ;       literally
+     127 000444 173027  000002                  subf    #^D<1+1>,ac0    ;       literally
+     128 000450 173027  000002                  subf    #^D 1+1 ,ac0    ;       literally
+     129 000454 173027  042572                  subf    #1e3,ac0        ;       as float
+test-float.mac:130: ***ERROR Invalid syntax (comma expected)
+     130                                        subf    #1e 3,ac0       ; TODO: accepted by MACRO11 as 1E3 (but not 1 e3, 1 e 3)
+     131        000001                  a = 1
+     132        000003                  e3 = 3
+     133 000460 173027  000001                  subf    #a,ac0          ; a interpreted as bit pattern
+     134 000464 173027  000001                  subf    #<a>,ac0        ; a interpreted as bit pattern
+     135 000470 173027  000003                  subf    #e3,ac0         ; e3 is the label
+test-float.mac:136: ***ERROR Invalid addressing mode (1st operand, fsrc)
+     136                                        subf    #<1e3>,ac0      ; error N
+     137                                
+test-float.mac:138: ***ERROR Junk at end of line ('5            ; bad: ')
+     138 000474 170627  000002                  absf    #2.5            ; bad: operand is destination
+test-float.mac:139: ***ERROR Junk at end of line ('5            ; bad: ')
+     139 000500 170527  000002                  tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
+test-float.mac:140: ***ERROR Junk at end of line ('5        ; bad: junk')
+     140 000504 174027  000002                  stf     ac0,#2.5        ; bad: junk at end of line
+     141 000510 174027  000002                  stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
+     142                                
+     143                                        ; Test immediate source argument for instructions that have one (src or fsrc)
+     144                                
+     145 000514 172027  040200                  addd    #1,ac0          ; float
+     146 000520 172027  040200                  addf    #1,ac0          ; float
+     147 000524 173427  040200                  cmpd    #1,ac0          ; float
+     148 000530 173427  040200                  cmpf    #1,ac0          ; float
+     149 000534 174427  040200                  divd    #1,ac0          ; float
+     150 000540 174427  040200                  divf    #1,ac0          ; float
+     151 000544 177427  040200                  ldcdf   #1,ac0          ; float
+     152 000550 177427  040200                  ldcfd   #1,ac0          ; float
+     153 000554 177027  000001                  ldcid   #1,ac0          ; integer
+     154 000560 177027  000001                  ldcif   #1,ac0          ; integer
+     155 000564 177027  000001                  ldcld   #1,ac0          ; integer
+     156 000570 177027  000001                  ldclf   #1,ac0          ; integer
+     157 000574 172427  040200                  ldd     #1,ac0          ; float
+     158 000600 172427  040200                  ldf     #1,ac0          ; float
+     159 000604 176427  000001                  ldexp   #1,ac0          ; integer
+     160 000610 171427  040200                  modd    #1,ac0          ; float
+     161 000614 171427  040200                  modf    #1,ac0          ; float
+     162 000620 171027  040200                  muld    #1,ac0          ; float
+     163 000624 171027  040200                  mulf    #1,ac0          ; float
+     164 000630 173027  040200                  subd    #1,ac0          ; float
+     165 000634 173027  040200                  subf    #1,ac0          ; float
+     166                                
+     167                                        .end
+     167                                
 
 
 Symbol table
 
-.       ******R      001 AC0   =%000000           AC1   =%000001           F2    =%000002           
+.       ******R      001 AC0   =%000000           E3    = 000003           
+A     = 000001           AC1   =%000001           F2    =%000002           
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000444    001   (RW,I,LCL,REL,CON,NOSAV)
+        000640    001   (RW,I,LCL,REL,CON,NOSAV)

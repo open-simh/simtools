@@ -312,19 +312,22 @@ enum operand_codes { OC_MASK = 0xff00,
     /* FADD, FSUB, FMUL, FDIV, RTS */
     OC_SOB = 0x0800,
     /* SOB */
-    OC_FPPGENAC = 0x0900,
-    /* FPP (gen, floating ac 0-3) */
-    OC_FPPACGEN = 0x0a00,
-    /* FPP (floating ac 0-3, gen) */
-    OC_FPPSRC = 0x0b00,
-    /* FPP fp source: immediate or gen */
-    OC_FPPDST = OC_1GEN,
-    /* FPP general destination */
-    OC_CIS2 = 0x0c00,
+    OC_FPP_FSRCAC = 0x0900,
+    /* FPP (fsrc gen, floating ac 0-3) */
+    OC_FPP_SRCAC = 0x0a00,
+    /* FPP (src gen, floating ac 0-3) */
+    OC_FPP_ACFDST = 0x0b00,
+    OC_FPP_ACDST = OC_FPP_ACFDST,
+    /* FPP (floating ac 0-3, fdst gen) */
+    /* OC_FPP_FSRC = 0x0c00, */
+    /* FPP fp source: immediate or fsrc gen */
+    OC_FPP_FDST = OC_1GEN,
+    /* FPP fdst general destination */
+    OC_CIS2 = 0x0d00,
     /* CIS with 2 parameter words */
-    OC_CIS3 = 0x0d00,
+    OC_CIS3 = 0x0e00,
     /* CIS with 3 parameter words */
-    OC_CIS4 = 0x0e00,
+    OC_CIS4 = 0x0f00,
     /* CIS with 4 parameter words */
     OC__LAST = 0xff00
 };

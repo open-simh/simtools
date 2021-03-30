@@ -118,9 +118,9 @@ test-operands.mac:75: ***ERROR Invalid addressing mode (2nd operand: register ex
 test-operands.mac:86: ***ERROR Junk at end of line (',ac1    ; bad
 ')
       86 000112 171111                          mulf    (r1),ac1,ac1    ; bad
-test-operands.mac:87: ***ERROR Invalid addressing mode (1st operand)
+test-operands.mac:87: ***ERROR Invalid addressing mode (1st operand, fsrc)
       87                                        mulf                    ; bad
-test-operands.mac:88: ***ERROR Invalid addressing mode (1st operand)
+test-operands.mac:88: ***ERROR Invalid addressing mode (1st operand, fsrc)
       88                                        mulf    (               ; bad
 test-operands.mac:89: ***ERROR Invalid syntax (comma expected)
       89                                        mulf    (r1)            ; bad

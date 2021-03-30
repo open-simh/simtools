@@ -1626,7 +1626,7 @@ static int assemble(
  * Handbook describes it as a destination, and MACRO11 V05.05 doesn't
  * allow a FP literal argument.
  */
-                    case OC_FPPSRC:
+                    case OC_FPP_FSRC:
                         /* One fp immediate or a general addressing mode */  {
                             ADDR_MODE       mode;
                             unsigned        word;
@@ -1644,16 +1644,24 @@ static int assemble(
                         return CHECK_EOL;
 #endif
 
-                    case OC_FPPGENAC:
+                    case OC_FPP_SRCAC:
+                    case OC_FPP_FSRCAC:
                         /* One gen and one reg 0-3 */  {
                             ADDR_MODE       mode;
                             EX_TREE        *value;
                             unsigned        reg;
                             unsigned        word;
 
-                            if (!get_fp_src_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Invalid addressing mode (1st operand)\n");
-                                return 0;
+                            if ((op->flags & OC_MASK) == OC_FPP_FSRCAC) {
+                                if (!get_fp_src_mode(cp, &cp, &mode)) {
+                                    report(stack->top, "Invalid addressing mode (1st operand, fsrc)\n");
+                                    return 0;
+                                }
+                            } else {
+                                if (!get_mode(cp, &cp, &mode)) {
+                                    report(stack->top, "Invalid addressing mode (1st operand)\n");
+                                    return 0;
+                                }
                             }
 
                             cp = skipwhite(cp);
@@ -1684,8 +1692,8 @@ static int assemble(
                         }
                         return CHECK_EOL;
 
-                    case OC_FPPACGEN:
-                        /* One reg 0-3 and one gen */  {
+                    case OC_FPP_ACFDST:
+                        /* One reg 0-3 and one fdst */  {
                             ADDR_MODE       mode;
                             EX_TREE        *value;
                             unsigned        reg;
