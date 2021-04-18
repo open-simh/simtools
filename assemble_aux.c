@@ -194,7 +194,8 @@ unsigned get_register(
 
 /*
   implicit_gbl is a self-recursive routine that adds undefined symbols
-  to the "implicit globals" symbol table.
+  to the "implicit globals" symbol table, or alternatively adds the
+  symbol as an UNDEFINED symbol.
 */
 
 void implicit_gbl(
@@ -203,15 +204,18 @@ void implicit_gbl(
     if (pass)
         return;                        /* Only do this in first pass */
 
-    if (!enabl_gbl)
-        return;                        /* Option not enabled, don't do it. */
-
     switch (value->type) {
     case EX_UNDEFINED_SYM:
         {
             if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {      /* Unless it's a
                                                                            local symbol, */
-                add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL, &absolute_section, &implicit_st);
+                if (enabl_gbl) {
+                    /* Either make the undefined symbol into an implicit global */
+                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL, &absolute_section, &implicit_st);
+                } else {
+                    /* or add it to the symbol table, purely for listing purposes. */
+                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED, &absolute_section, &symbol_st);
+                }
             }
         }
         break;
@@ -322,6 +326,11 @@ int complex_tree(
     case EX_SYM:
         {
             SYMBOL         *sym = tree->data.symbol;
+
+            /* This check may not be needed; so far it made no difference. */
+            if (sym->flags & SYMBOLFLAG_UNDEFINED) {
+                return 0;
+            }
 
             if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
                 text_complex_global(tx, sym->label);

@@ -1,0 +1,26 @@
+       1                                ;;;;
+       2                                ;
+       3                                ; Test that .dsabl gbl at the end of the source does not carry
+       4                                ; over to the beginning of the next pass.
+       5                                ; This is actually guaranteed automatically, since it is used in pass 1 only.
+       6                                ; The symbol should however be entered into the symbol table as UNKNOWN.
+       7                                ;
+       8                                
+       9 000000 012700  000000G                 mov     #lab1,r0        ; ok: implicitly global (imported)
+      10                                        .dsabl  gbl
+test-gbl.mac:11: ***ERROR Invalid expression (complex relocation)
+      11 000004 012700  000000                  mov     #lab2,r0        ; error: undefined
+      12                                
+      13                                        .end
+      13                                
+
+
+Symbol table
+
+.       ******R      001 LAB1  = ****** GX        LAB2  = ******           
+
+
+Program sections:
+
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
+        000010    001   (RW,I,LCL,REL,CON,NOSAV)

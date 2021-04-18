@@ -208,7 +208,10 @@ SYMBOL         *add_sym(
         if ((sym->flags & SYMBOLFLAG_UNDEFINED) && !(flags & SYMBOLFLAG_UNDEFINED)) {
             sym->flags &= ~(SYMBOLFLAG_PERMANENT | SYMBOLFLAG_UNDEFINED);
         }
-
+        else if (!(sym->flags & SYMBOLFLAG_UNDEFINED) && (flags & SYMBOLFLAG_UNDEFINED)) {
+            report(NULL, "INTERNAL ERROR: Turning defined symbol '%s' into undefined\n", label);
+            return sym;
+        }
         /* Check for compatible definition */
         else if (sym->section == section && sym->value == value) {
             sym->flags |= flags;       /* Merge flags quietly */

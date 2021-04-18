@@ -281,7 +281,7 @@ EX_TREE        *evaluate(
 
             /* Change some symbols to "undefined" */
 
-            if (flags & EVALUATE_UNDEF) { 
+            if (flags & EVALUATE_DEFINEDNESS) {
                 int             change = 0;
 
                 /* I'd prefer this behavior, but MACRO.SAV is a bit too primitive. */
@@ -294,6 +294,10 @@ EX_TREE        *evaluate(
                 /* A global symbol with no assignment is "undefined." */
                 /* Go figure. */
                 if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL)
+                    change = 1;
+
+                /* A symbol marked as undefined is undefined */
+                if (sym->flags & SYMBOLFLAG_UNDEFINED)
                     change = 1;
 
                 if (change) {

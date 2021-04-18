@@ -205,6 +205,7 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
     enabl_lcm = 0;
     enabl_lsb = 0;
     enabl_ama = opt_enabl_ama;
+    enabl_gbl = 1;
 }
 
 int main(

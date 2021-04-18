@@ -69,6 +69,6 @@ EX_TREE        *evaluate(
     EX_TREE *tp,
     int flags);
 
-#define EVALUATE_UNDEF                  1
+#define EVALUATE_DEFINEDNESS                  1
 
 #endif

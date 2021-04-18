@@ -1133,7 +1133,7 @@ EX_TREE        *parse_unary(
             sym = lookup_sym(label, &system_st);
         }
 
-        if (sym != NULL) {
+        if (sym != NULL && !(sym->flags & SYMBOLFLAG_UNDEFINED)) {
             tp = new_ex_tree();
             tp->cp = cp;
             tp->type = EX_SYM;
@@ -1144,7 +1144,11 @@ EX_TREE        *parse_unary(
         }
 
         /* The symbol was not found. Create an "undefined symbol"
-           reference. */
+           reference. These symbols are freed in free_tree(),
+           in contrast to the symbol used in EX_SYM.
+           implicit_gbl() will either make it an implicit global,
+           or an undefined non-global symbol.
+         */
         sym = memcheck(malloc(sizeof(SYMBOL)));
         sym->label = label;
         sym->flags = SYMBOLFLAG_UNDEFINED | local;

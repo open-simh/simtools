@@ -1,0 +1,13 @@
+;;;;
+;
+; Test that .dsabl gbl at the end of the source does not carry
+; over to the beginning of the next pass.
+; This is actually guaranteed automatically, since it is used in pass 1 only.
+; The symbol should however be entered into the symbol table as UNKNOWN.
+;
+
+        mov     #lab1,r0        ; ok: implicitly global (imported)
+        .dsabl  gbl
+        mov     #lab2,r0        ; error: undefined
+
+        .end

@@ -16,6 +16,7 @@ TESTS="test-asciz \
     test-enabl-lcm \
     test-endm \
     test-float \
+    test-gbl \
     test-if \
     test-impword \
     test-include \
