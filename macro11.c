@@ -203,6 +203,7 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
     suppressed = 0;
     enabl_lc = 1;
     enabl_lcm = 0;
+    enabl_lsb = 0;
     enabl_ama = opt_enabl_ama;
 }
 

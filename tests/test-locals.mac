@@ -31,3 +31,14 @@ lab4:   beq     1$
 2$:     beq     3$
 3$:     beq     4$
 4$:     beq     lab4
+
+; -- test if next pass sets this back to default (off)
+;    also test that normal labels don't delimit local ones
+
+	.enabl	lsb
+
+1$:     bne     2$
+2$:     beq     3$
+lab5:   beq     1$
+3$:     beq     4$
+4$:     beq     lab5
