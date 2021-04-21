@@ -798,12 +798,12 @@ static int assemble(
                         if (!label) {
                             report(stack->top, "Missing .(I)IF condition\n");
                         } else if (strcmp(label, "DF") == 0) {
-                            value = parse_expr(cp, 1);
+                            value = parse_expr(cp, EVALUATE_UNDEF);
                             cp = value->cp;
                             ok = eval_defined(value);
                             free_tree(value);
                         } else if (strcmp(label, "NDF") == 0) {
-                            value = parse_expr(cp, 1);
+                            value = parse_expr(cp, EVALUATE_UNDEF);
                             cp = value->cp;
                             ok = eval_undefined(value);
                             free_tree(value);

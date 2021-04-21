@@ -269,7 +269,7 @@ EX_TREE *dup_tree(
    constant value, else a symbol plus an offset.  */
 EX_TREE        *evaluate(
     EX_TREE *tp,
-    int undef)
+    int flags)
 {
     EX_TREE        *res;
     char           *cp = tp->cp;
@@ -281,7 +281,7 @@ EX_TREE        *evaluate(
 
             /* Change some symbols to "undefined" */
 
-            if (undef) {
+            if (flags & EVALUATE_UNDEF) { 
                 int             change = 0;
 
                 /* I'd prefer this behavior, but MACRO.SAV is a bit too primitive. */
@@ -338,7 +338,7 @@ EX_TREE        *evaluate(
 
     case EX_COM:
         /* Complement */
-        tp = evaluate(tp->data.child.left, undef);
+        tp = evaluate(tp->data.child.left, flags);
         if (tp->type == EX_LIT) {
             /* Complement the literal */
             res = new_ex_lit(~tp->data.lit);
@@ -354,7 +354,7 @@ EX_TREE        *evaluate(
         break;
 
     case EX_NEG:
-        tp = evaluate(tp->data.child.left, undef);
+        tp = evaluate(tp->data.child.left, flags);
         if (tp->type == EX_LIT) {
             /* negate literal */
             res = new_ex_lit((unsigned) -(int) tp->data.lit);
@@ -387,8 +387,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Both literals?  Sum them and return result. */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -463,8 +463,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Both literals?  Subtract them and return a lit. */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -539,8 +539,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Can only multiply if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -601,8 +601,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Can only divide if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -629,8 +629,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -674,8 +674,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -719,8 +719,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate(tp->data.child.left, flags);
+            right = evaluate(tp->data.child.right, flags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {

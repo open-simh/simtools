@@ -67,7 +67,8 @@ EX_TREE        *new_ex_bin(
 
 EX_TREE        *evaluate(
     EX_TREE *tp,
-    int undef);
+    int flags);
 
+#define EVALUATE_UNDEF                  1
 
 #endif
