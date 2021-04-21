@@ -10,7 +10,7 @@ set_ok() {
 
     if [ -e "$t".objd.ok ]
     then
-        cp "$t".objd "$t".objd.okd
+        cp "$t".objd "$t".objd.ok
     fi
 }
 
