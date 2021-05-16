@@ -1,7 +1,12 @@
+xx.xx.202x: Rhialto
+        version 0.7.x:
+
 16.05.2021: Rhialto
         version 0.7.1:
         - Fixed immediate source operand of LDEXP, LD[IL][FD]
           which is an integer, unlike several other FPP instructions.
+          (gitlab issue #7)
+        - Start each pass with .DSABL LSB (gitlab issue #8)
 
 19.03.2021: Rhialto
         version 0.7:

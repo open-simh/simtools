@@ -3,12 +3,12 @@
 
 #include "git-info.h"
 
-#define BASE_VERSION "0.7.1"
+#define BASE_VERSION "0.8wip"
 
 #if defined(GIT_VERSION)
 #define VERSIONSTR BASE_VERSION" ("GIT_VERSION"\n\t"GIT_AUTHOR_DATE")"
 #else
-#define VERSIONSTR BASE_VERSION" (16 May 2021)"
+#define VERSIONSTR BASE_VERSION" (xx Xxx 2021)"
 /*#define VERSIONSTR "0.3 (April 21, 2009)" */
 /*#define VERSIONSTR "0.2   July 15, 2001"  */
 #endif
