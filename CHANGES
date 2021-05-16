@@ -1,5 +1,5 @@
-xx.xx.20xx: Rhialto
-        version 0.8:
+16.05.2021: Rhialto
+        version 0.7.1:
         - Fixed immediate source operand of LDEXP, LD[IL][FD]
           which is an integer, unlike several other FPP instructions.
 
