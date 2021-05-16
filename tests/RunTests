@@ -38,9 +38,10 @@ TESTS="test-asciz \
 status=0
 
 assemble() {
-    t="$1"
+    fmt="$1"
+    t="$2"
 
-    ../macro11 -l "$t".lst -o "$t".obj "$t".mac 2>/dev/null
+    ../macro11 $fmt -l "$t".lst -o "$t".obj "$t".mac 2>/dev/null
 
     # Ignore error status and messages from the assembler.
     # We check the listing file to see what we expect.
@@ -53,15 +54,23 @@ assemble() {
 
     if [ -e "$t".objd.ok ]
     then
-        ../dumpobj "$t".obj >"$t".objd
+        ../dumpobj $fmt "$t".obj >"$t".objd
         diff -u "$t".objd.ok "$t".objd
 	status=$((status + $?))
     fi
 }
 
+assemble_both() {
+    t=$1
+
+    assemble -rsx "$t"
+    assemble -rt11 "$t"
+}
+
+
 for t in $TESTS
 do
-    assemble "$t"
+    assemble_both "$t"
 done
 
 for t in 2.11BSD/m11/*.m11
@@ -78,7 +87,7 @@ debug	=	1
 	.include "${t}"
 EOF
     
-    assemble "$fn"
+    assemble_both "$fn"
 done
 
 exit $status
