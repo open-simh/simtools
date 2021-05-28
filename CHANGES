@@ -1,5 +1,7 @@
 xx.xx.202x: Rhialto
         version 0.7.x:
+        - Improved error messages for bad addressing modes
+          (due to gitlab issue #10)
 
 16.05.2021: Rhialto
         version 0.7.1:
