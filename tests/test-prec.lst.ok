@@ -61,7 +61,7 @@
       61 000124 000007                  	.word	1 + ^! 2 * 3 !	; 1 + 6 = 7
       62 000126 000007                  	.word	1 + ^/ 2 * 3 /	; 1 + 6 = 7
       63 000130 000007                  	.word	1 + ^$ 2 * 3 $	; 1 + 6 = 7
-test-prec.mac:64: ***ERROR Invalid expression
+test-prec.mac:64: ***ERROR Invalid expression (complex relocation)
       64 000132 000003  000000          	.word	1 + ^* 2 * 3 *	; Invalid expression
       65                                
       66                                ;;;;;
