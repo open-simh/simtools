@@ -413,7 +413,7 @@ static void store_complex(
     text_complex_begin(&tx);           /* Open complex expression */
 
     if (!complex_tree(&tx, value)) {   /* Translate */
-        report(refstr, "Invalid expression\n");
+        report(refstr, "Invalid expression (complex relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
@@ -439,7 +439,7 @@ static void store_complex_displaced(
     text_complex_begin(&tx);
 
     if (!complex_tree(&tx, value)) {
-        report(refstr, "Invalid expression\n");
+        report(refstr, "Invalid expression (complex displaced relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
