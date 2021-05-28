@@ -39,11 +39,11 @@ test-operands.mac:27: ***ERROR Instruction requires simple literal operand
 test-operands.mac:32: ***ERROR Junk at end of line (',(r0)         ; bad
 ')
       32 000042 005700                          tst     r0,(r0)         ; bad
-test-operands.mac:33: ***ERROR Invalid addressing mode
+test-operands.mac:33: ***ERROR Invalid addressing mode (Invalid expression)
       33                                        tst     @               ; bad
-test-operands.mac:34: ***ERROR Invalid addressing mode
+test-operands.mac:34: ***ERROR Invalid addressing mode (Invalid expression)
       34                                        tst     %77             ; bad
-test-operands.mac:35: ***ERROR Invalid addressing mode
+test-operands.mac:35: ***ERROR Invalid addressing mode (Invalid expression)
       35                                        tst     <>              ; bad
       36                                
       37                                ; OC_2GEN
@@ -52,11 +52,11 @@ test-operands.mac:35: ***ERROR Invalid addressing mode
 test-operands.mac:40: ***ERROR Junk at end of line (',r2        ; bad
 ')
       40 000046 060001                          add     r0,r1,r2        ; bad
-test-operands.mac:41: ***ERROR Invalid addressing mode (1st operand)
+test-operands.mac:41: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
       41                                        add     @               ; bad
 test-operands.mac:42: ***ERROR Invalid syntax (comma expected)
       42                                        add     r0 r1           ; bad
-test-operands.mac:43: ***ERROR Invalid addressing mode (2nd operand)
+test-operands.mac:43: ***ERROR Invalid addressing mode (2nd operand: Invalid expression)
       43                                        add     r0,@            ; bad
       44                                
       45                                ; OC_BR
@@ -97,7 +97,7 @@ test-operands.mac:65: ***ERROR Invalid addressing mode (register expected)
 test-operands.mac:71: ***ERROR Junk at end of line (',r1        ; bad
 ')
       71 000102 072027  000003                  ash     #3,r0,r1        ; bad
-test-operands.mac:72: ***ERROR Invalid addressing mode (1st operand)
+test-operands.mac:72: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
       72                                        ash                     ; bad
 test-operands.mac:73: ***ERROR Invalid syntax (comma expected)
       73                                        ash     #3              ; bad
@@ -118,9 +118,9 @@ test-operands.mac:75: ***ERROR Invalid addressing mode (2nd operand: register ex
 test-operands.mac:86: ***ERROR Junk at end of line (',ac1    ; bad
 ')
       86 000112 171111                          mulf    (r1),ac1,ac1    ; bad
-test-operands.mac:87: ***ERROR Invalid addressing mode (1st operand, fsrc)
+test-operands.mac:87: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression)
       87                                        mulf                    ; bad
-test-operands.mac:88: ***ERROR Invalid addressing mode (1st operand, fsrc)
+test-operands.mac:88: ***ERROR Invalid addressing mode (1st operand, fsrc: Register expected after '(')
       88                                        mulf    (               ; bad
 test-operands.mac:89: ***ERROR Invalid syntax (comma expected)
       89                                        mulf    (r1)            ; bad

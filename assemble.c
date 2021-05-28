@@ -450,6 +450,7 @@ static int assemble(
                     {
                         ADDR_MODE       mode;
                         int             islocal;
+                        char           *error;
 
                         label = get_symbol(cp, &cp, &islocal);
                         if (label == NULL) {
@@ -459,8 +460,9 @@ static int assemble(
 
                         cp = skipdelim(cp);
 
-                        if (!get_mode(cp, &cp, &mode)) {
-                            report(stack->top, "Bad .NTYPE addressing mode\n");
+                        if (!get_mode(cp, &cp, &mode, &error)) {
+                            report(stack->top,
+                                   "Bad .NTYPE addressing mode (%s)\n", error);
                             free(label);
                             return 0;
                         }
@@ -1349,9 +1351,11 @@ static int assemble(
                         /* One general addressing mode */  {
                             ADDR_MODE       mode;
                             unsigned        word;
+                            char           *error;
 
-                            if (!get_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Invalid addressing mode\n");
+                            if (!get_mode(cp, &cp, &mode, &error)) {
+                                report(stack->top,
+                                       "Invalid addressing mode (%s)\n", error);
                                 return 0;
                             }
 
@@ -1372,9 +1376,12 @@ static int assemble(
                             ADDR_MODE       left,
                                             right;
                             unsigned        word;
+                            char           *error;
 
-                            if (!get_mode(cp, &cp, &left)) {
-                                report(stack->top, "Invalid addressing mode (1st operand)\n");
+                            if (!get_mode(cp, &cp, &left, &error)) {
+                                report(stack->top,
+                                       "Invalid addressing mode (1st operand: %s)\n",
+                                       error);
                                 return 0;
                             }
 
@@ -1385,8 +1392,10 @@ static int assemble(
                                 return 0;
                             }
 
-                            if (!get_mode(cp, &cp, &right)) {
-                                report(stack->top, "Invalid addressing mode (2nd operand)\n");
+                            if (!get_mode(cp, &cp, &right, &error)) {
+                                report(stack->top,
+                                       "Invalid addressing mode (2nd operand: %s)\n",
+                                       error);
                                 free_addr_mode(&left);
                                 return 0;
                             }
@@ -1529,9 +1538,12 @@ static int assemble(
                             EX_TREE        *value;
                             unsigned        reg;
                             unsigned        word;
+                            char           *error;
 
-                            if (!get_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Invalid addressing mode (1st operand)\n");
+                            if (!get_mode(cp, &cp, &mode, &error)) {
+                                report(stack->top,
+                                       "Invalid addressing mode (1st operand: %s)\n",
+                                       error);
                                 return 0;
                             }
 
@@ -1566,6 +1578,7 @@ static int assemble(
                             EX_TREE        *value;
                             unsigned        reg;
                             unsigned        word;
+                            char           *error;
 
                             value = parse_expr(cp, 0);
                             cp = value->cp;
@@ -1583,8 +1596,10 @@ static int assemble(
                                 return 0;
                             }
 
-                            if (!get_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Invalid addressing mode (2nd operand)\n");
+                            if (!get_mode(cp, &cp, &mode, &error)) {
+                                report(stack->top,
+                                       "Invalid addressing mode (2nd operand: %s)\n",
+                                       error);
                                 free_tree(value);
                                 return 0;
                             }
@@ -1651,15 +1666,20 @@ static int assemble(
                             EX_TREE        *value;
                             unsigned        reg;
                             unsigned        word;
+                            char           *error;
 
                             if ((op->flags & OC_MASK) == OC_FPP_FSRCAC) {
-                                if (!get_fp_src_mode(cp, &cp, &mode)) {
-                                    report(stack->top, "Invalid addressing mode (1st operand, fsrc)\n");
+                                if (!get_fp_src_mode(cp, &cp, &mode, &error)) {
+                                    report(stack->top,
+                                           "Invalid addressing mode (1st operand, fsrc: %s)\n",
+                                           error);
                                     return 0;
                                 }
                             } else {
-                                if (!get_mode(cp, &cp, &mode)) {
-                                    report(stack->top, "Invalid addressing mode (1st operand)\n");
+                                if (!get_mode(cp, &cp, &mode, &error)) {
+                                    report(stack->top,
+                                           "Invalid addressing mode (1st operand: %s)\n",
+                                           error);
                                     return 0;
                                 }
                             }
@@ -1698,6 +1718,7 @@ static int assemble(
                             EX_TREE        *value;
                             unsigned        reg;
                             unsigned        word;
+                            char           *error;
 
                             value = parse_expr(cp, 0);
                             cp = value->cp;
@@ -1715,8 +1736,10 @@ static int assemble(
                                 return 0;
                             }
 
-                            if (!get_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Invalid addressing mode (2nd operand)\n");
+                            if (!get_mode(cp, &cp, &mode, &error)) {
+                                report(stack->top,
+                                       "Invalid addressing mode (2nd operand: %s)\n",
+                                       error);
                                 free_tree(value);
                                 return 0;
                             }

@@ -39,11 +39,13 @@ char           *get_symbol(
 int             get_mode(
     char *cp,
     char **endp,
-    ADDR_MODE *mode);
+    ADDR_MODE *mode,
+    char **error);
 int             get_fp_src_mode(
     char *cp,
     char **endp,
-    ADDR_MODE *mode);
+    ADDR_MODE *mode,
+    char **error);
 
 EX_TREE        *parse_expr(
     char *cp,

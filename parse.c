@@ -188,7 +188,8 @@ SYMBOL         *get_op(
 int get_mode(
     char *cp,
     char **endp,
-    ADDR_MODE *mode)
+    ADDR_MODE *mode,
+    char **error)
 {
     EX_TREE        *value;
 
@@ -211,7 +212,11 @@ int get_mode(
         mode->offset = parse_expr(cp, 0);
         if (endp)
             *endp = mode->offset->cp;
-        return expr_ok(mode->offset);
+        int ok = expr_ok(mode->offset);
+        if (!ok) {
+            *error = "Invalid expression after '#'";
+        }
+        return ok;
     }
 
     /* Check for -(Rn) */
@@ -225,7 +230,13 @@ int get_mode(
             /* It's -(Rn) */
             value = parse_expr(tcp, 0);
             reg = get_register(value);
-            if (reg == NO_REG || (tcp = skipwhite(value->cp), *tcp++ != ')')) {
+            if (reg == NO_REG) {
+                *error = "Register expected after '-('";
+                free_tree(value);
+                return FALSE;
+            }
+            if (tcp = skipwhite(value->cp), *tcp++ != ')') {
+                *error = "')' expected after register";
                 free_tree(value);
                 return FALSE;
             }
@@ -245,7 +256,13 @@ int get_mode(
         value = parse_expr(cp + 1, 0);
         reg = get_register(value);
 
-        if (reg == NO_REG || (tcp = skipwhite(value->cp), *tcp++ != ')')) {
+        if (reg == NO_REG) {
+            *error = "Register expected after '('";
+            free_tree(value);
+            return FALSE;
+        }
+        if (tcp = skipwhite(value->cp), *tcp++ != ')') {
+            *error = "')' expected after register";
             free_tree(value);
             return FALSE;
         }
@@ -281,8 +298,10 @@ int get_mode(
 
     mode->offset = parse_expr(cp, 0);
 
-    if (!expr_ok(mode->offset))
+    if (!expr_ok(mode->offset)) {
+        *error = "Invalid expression";
         return FALSE;
+    }
 
     cp = skipwhite(mode->offset->cp);
 
@@ -292,7 +311,13 @@ int get_mode(
         /* indirect register plus offset */
         value = parse_expr(cp + 1, 0);
         reg = get_register(value);
-        if (reg == NO_REG || (cp = skipwhite(value->cp), *cp++ != ')')) {
+        if (reg == NO_REG) {
+            *error = "Register expected after 'offset('";
+            free_tree(value);
+            return FALSE;              /* Syntax error in addressing mode */
+        }
+        if (cp = skipwhite(value->cp), *cp++ != ')') {
+            *error = "')' expected after 'offset(register'";
             free_tree(value);
             return FALSE;              /* Syntax error in addressing mode */
         }
@@ -345,7 +370,8 @@ int get_mode(
 int get_fp_src_mode(
     char *cp,
     char **endp,
-    ADDR_MODE *mode)
+    ADDR_MODE *mode,
+    char **error)
 {
     cp = skipwhite(cp);
 
@@ -374,7 +400,7 @@ int get_fp_src_mode(
         }
     }
 
-    int ret = get_mode(savecp, endp, mode);
+    int ret = get_mode(savecp, endp, mode, error);
 
     return ret;
 }

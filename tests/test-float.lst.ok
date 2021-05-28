@@ -141,12 +141,12 @@
      118 000410 172127  000001                  addf    #^D1,ac1        ;       literally
      119 000414 173027  000001                  subf    #<1>,ac0        ;       literally
      120 000420 172127  000002                  addf    #<1+1>,ac1      ;       literally
-test-float.mac:121: ***ERROR Invalid addressing mode (1st operand, fsrc)
+test-float.mac:121: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
      121                                        subf    #<1.0>,ac0      ; error
      122 000424 172127  040300                  addf    #1.5,ac1        ;       as float
      123 000430 172127  140263                  addd    #-1.4,ac1       ;       as float
      124 000434 173027  040200                  subf    #<^F 1.0>,ac0   ;       as float
-test-float.mac:125: ***ERROR Invalid addressing mode (1st operand, fsrc)
+test-float.mac:125: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
      125                                        subf    #<^D 1.0>,ac0   ; error
      126 000440 173027  000001                  subf    #<^D 1>,ac0     ;       literally
      127 000444 173027  000002                  subf    #^D<1+1>,ac0    ;       literally
@@ -159,7 +159,7 @@ test-float.mac:130: ***ERROR Invalid syntax (comma expected)
      133 000460 173027  000001                  subf    #a,ac0          ; a interpreted as bit pattern
      134 000464 173027  000001                  subf    #<a>,ac0        ; a interpreted as bit pattern
      135 000470 173027  000003                  subf    #e3,ac0         ; e3 is the label
-test-float.mac:136: ***ERROR Invalid addressing mode (1st operand, fsrc)
+test-float.mac:136: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
      136                                        subf    #<1e3>,ac0      ; error N
      137                                
 test-float.mac:138: ***ERROR Junk at end of line ('5            ; bad: ')
