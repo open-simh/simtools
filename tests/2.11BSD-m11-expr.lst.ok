@@ -1702,7 +1702,7 @@
 Symbol table
 
 $TIMDF  = 000007           ABSERX    001236R      002 ERN1    = ****** G         PDPV45  = 000000           
-.         ******R      002 ABSEXP    001142RG     002 ERN2    = ****** G         PSTROL  = ****** G         
+.         003150R      002 ABSEXP    001142RG     002 ERN2    = ****** G         PSTROL  = ****** G         
 ..Z     = ****** G         ABSTRM    001134RG     002 ERN3    = ****** G         R50DOT  = ****** G         
 ..ZBUF  = ****** G         ABSTST    001146RG     002 ERN4    = ****** G         R50GCH    002616R      002 
 1$0       000034R  L   002 B.IDF   = 000001           ERN5    = ****** G         R50PRC    002662R      002 

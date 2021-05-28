@@ -25,6 +25,8 @@ typedef struct section {
     unsigned        sector;     /* Used for complex relocation, and naught else */
 } SECTION;
 
+#define SYM_IS_IMPORTED(sym) ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL)
+
 /* Symbol table entries */
 
 typedef struct symbol {

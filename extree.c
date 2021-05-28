@@ -282,25 +282,25 @@ EX_TREE        *evaluate(
             /* Change some symbols to "undefined" */
 
             if (flags & EVALUATE_DEFINEDNESS) {
-                int             change = 0;
+                int             is_undefined = 0;
 
                 /* I'd prefer this behavior, but MACRO.SAV is a bit too primitive. */
 #if 0
                 /* A temporary symbol defined later is "undefined." */
                 if (!(sym->flags & PERMANENT) && sym->stmtno > stmtno)
-                    change = 1;
+                    is_undefined = 1;
 #endif
 
                 /* A global symbol with no assignment is "undefined." */
                 /* Go figure. */
-                if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL)
-                    change = 1;
+                if (SYM_IS_IMPORTED(sym))
+                    is_undefined = 1;
 
                 /* A symbol marked as undefined is undefined */
                 if (sym->flags & SYMBOLFLAG_UNDEFINED)
-                    change = 1;
+                    is_undefined = 1;
 
-                if (change) {
+                if (is_undefined) {
                     res = new_temp_sym(tp->data.symbol->label, tp->data.symbol->section,
                                        tp->data.symbol->value);
                     res->type = EX_UNDEFINED_SYM;
@@ -310,7 +310,7 @@ EX_TREE        *evaluate(
 
             /* Turn defined absolute symbol to a literal */
             if (!(sym->section->flags & PSECT_REL)
-                && (sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) != SYMBOLFLAG_GLOBAL
+                && !SYM_IS_IMPORTED(sym)
                 && sym->section->type != SECTION_REGISTER) {
                 res = new_ex_lit(sym->value);
                 break;

@@ -49,7 +49,7 @@ test-asciz.mac:22: ***ERROR Invalid expression in .WORD
 
 Symbol table
 
-.       ******R      001 .ASCIZ  000076R      001 CR    = 000015           LF    = 000012           SOH   = 000001           
+.       000104R      001 .ASCIZ  000076R      001 CR    = 000015           LF    = 000012           SOH   = 000001           
 
 
 Program sections:

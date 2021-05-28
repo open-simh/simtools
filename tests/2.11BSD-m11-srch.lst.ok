@@ -947,7 +947,7 @@ $BRKAD= ****** G         2$5     000556R  L   002 CR    = 000015           ROLND
 $BRKSY= ****** G         2$6     000762R  L   002 DEBUG = 000000           ROLPNT  000006R      006 SYMBOT  000014RG     006 
 $SBRK = ****** GX        3$1     000232R  L   002 DUMROL= ****** G         ROLUPD  000010RG     006 SYMHP = ****** G         
 $TIMDF= 000007           3$4     000432R  L   002 ED.REG= ****** G         RSX11D= 000000           SYMLP = ****** G         
-.       ******R      002 3$6     001004R  L   002 EDMASK= ****** G         SAVREG= ****** G         SYMOVF= ****** G         
+.       001150R      002 3$6     001004R  L   002 EDMASK= ****** G         SAVREG= ****** G         SYMOVF= ****** G         
 1$0     000004R  L   002 30$6    001052R  L   002 FF    = 000014           SCAN    000334RG     002 SYMROL= ****** G         
 1$1     000162R  L   002 4$5     000562R  L   002 FT.ID = 000001           SCANC   000320RG     002 TAB   = 000011           
 1$2     000300R  L   002 5$1     000242R  L   002 FT.UNX= 000001           SCANF   000340R      002 UPBOMB  000002RG     006 

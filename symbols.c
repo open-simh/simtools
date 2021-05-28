@@ -33,6 +33,96 @@ SYMBOL_TABLE    implicit_st;    /* The symbols which may be implicit globals */
 
 void list_section(SECTION *sec);
 
+static void
+dump_sym(SYMBOL *sym)
+{
+    report(NULL, "'%s': %06o, stmt %d, flags %o:%s%s%s%s%s%s\n",
+            sym->label,
+            sym->value,
+            sym->stmtno,
+            sym->flags,
+            ((sym->flags & SYMBOLFLAG_PERMANENT)? " PERMANENT" : ""),
+            ((sym->flags & SYMBOLFLAG_GLOBAL)? " GLOBAL" : ""),
+            ((sym->flags & SYMBOLFLAG_WEAK)? " WEAK" : ""),
+            ((sym->flags & SYMBOLFLAG_DEFINITION)? " DEFINITION" : ""),
+            ((sym->flags & SYMBOLFLAG_UNDEFINED)? " UNDEFINED" : ""),
+            ((sym->flags & SYMBOLFLAG_LOCAL)? " LOCAL" : ""),
+            ((sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL)? " IMPLICIT_GLOBAL" : ""));
+}
+
+void
+check_sym_invariants(SYMBOL *sym, char *file, int line)
+{
+    int dump = 0;
+
+    if (sym->section == &instruction_section) {
+        /* The instructions use the flags field differently */
+        if ((sym->flags & ~OC_MASK) != 0) {
+            report(NULL, "%s %d: Instruction symbol %s has wrong flags\n", file, line, sym->label);
+            dump_sym(sym);
+        }
+        return;
+    }
+
+    /*
+     * A symbol is GLOBAL if it appears in the object file's symbol table.
+     * It can be either exported (if defined) or imported (if not defined).
+     *
+     * A common test like this
+     *
+     *  if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL)
+     *
+     * tests if a symbol is imported.
+     */
+
+    switch (sym->flags & (SYMBOLFLAG_PERMANENT|SYMBOLFLAG_GLOBAL|SYMBOLFLAG_DEFINITION|SYMBOLFLAG_UNDEFINED)) {
+        /* A DEFINITION can independently be PERMANENT and/or GLOBAL */
+        case SYMBOLFLAG_PERMANENT|SYMBOLFLAG_GLOBAL|SYMBOLFLAG_DEFINITION:
+        case                      SYMBOLFLAG_GLOBAL|SYMBOLFLAG_DEFINITION:
+        case SYMBOLFLAG_PERMANENT|                  SYMBOLFLAG_DEFINITION:
+        case                                        SYMBOLFLAG_DEFINITION:
+            break;
+        /* A GLOBAL can also be undefined, but then it's still usable */
+        case                      SYMBOLFLAG_GLOBAL:
+            break;
+        /* A truly UNDEFINED symbol is an error to use */
+        /* (this seems logically equivalent to all of these flags cleared) */
+        case SYMBOLFLAG_UNDEFINED:
+            break;
+        default:
+            report(NULL, "%s %d: Symbol %s definedness is inconsistent\n", file, line, sym->label);
+            dump++;
+    }
+
+    if ( (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) &&
+        !(sym->flags & SYMBOLFLAG_GLOBAL)) {
+        report(NULL, "%s %d: Symbol %s globalness is inconsistent\n", file, line, sym->label);
+        dump++;
+    }
+
+    if ( (sym->flags & SYMBOLFLAG_LOCAL) &&
+         (sym->flags & SYMBOLFLAG_GLOBAL)) {
+        report(NULL, "%s %d: Symbol %s is local and global\n", file, line, sym->label);
+        dump++;
+    }
+
+    if ( (sym->flags & SYMBOLFLAG_PERMANENT) &&
+        !(sym->flags & SYMBOLFLAG_DEFINITION)) {
+        report(NULL, "%s %d: Symbol %s is permanent without definition\n", file, line, sym->label);
+        dump++;
+    }
+
+    if ( (sym->flags & SYMBOLFLAG_WEAK) &&
+        !(sym->flags & SYMBOLFLAG_GLOBAL)) {
+        report(NULL, "%s %d: Symbol %s weak/global is inconsistent\n", file, line, sym->label);
+        dump++;
+    }
+
+    if (dump) {
+        dump_sym(sym);
+    }
+}
+
 /* hash_name hashes a name into a value from 0-HASH_SIZE */
 
 int hash_name(
@@ -91,6 +181,7 @@ void free_sym(
     SYMBOL *sym)
 {
     if (sym->label) {
+        check_sym_invariants(sym, __FILE__, __LINE__);
         free(sym->label);
         sym->label = NULL;
     }
@@ -107,6 +198,7 @@ void remove_sym(
                    *symp;
     int             hash;
 
+    check_sym_invariants(sym, __FILE__, __LINE__);
     hash = hash_name(sym->label);
     prevp = &table->hash[hash];
     while (symp = *prevp, symp != NULL && symp != sym)
@@ -131,6 +223,9 @@ SYMBOL         *lookup_sym(
     while (sym && strcmp(sym->label, label) != 0)
         sym = sym->next;
 
+    if (sym) {
+        check_sym_invariants(sym, __FILE__, __LINE__);
+    }
     return sym;
 }
 
@@ -176,6 +271,7 @@ void add_table(
 
     sym->next = table->hash[hash];
     table->hash[hash] = sym;
+    check_sym_invariants(sym, __FILE__, __LINE__);
 }
 
 /* add_sym - used throughout to add or update symbols in a symbol
@@ -204,6 +300,8 @@ SYMBOL         *add_sym(
     sym = lookup_sym(label, table);
     if (sym != NULL) {
         // A symbol registered as "undefined" can be changed.
+        //
+        check_sym_invariants(sym, __FILE__, __LINE__);
 
         if ((sym->flags & SYMBOLFLAG_UNDEFINED) && !(flags & SYMBOLFLAG_UNDEFINED)) {
             sym->flags &= ~(SYMBOLFLAG_PERMANENT | SYMBOLFLAG_UNDEFINED);
@@ -215,6 +313,7 @@ SYMBOL         *add_sym(
         /* Check for compatible definition */
         else if (sym->section == section && sym->value == value) {
             sym->flags |= flags;       /* Merge flags quietly */
+            check_sym_invariants(sym, __FILE__, __LINE__);
             return sym;                /* 's okay */
         }
 
@@ -223,6 +322,7 @@ SYMBOL         *add_sym(
             sym->value = value;
             sym->flags |= flags;
             sym->section = section;
+            check_sym_invariants(sym, __FILE__, __LINE__);
             return sym;
         }
 
@@ -245,73 +345,78 @@ SYMBOL         *add_sym(
 void add_symbols(
     SECTION *current_section)
 {
-    current_pc = add_sym(".", 0, 0, current_section, &symbol_st);
+    current_pc = add_sym(".", 0, SYMBOLFLAG_DEFINITION, current_section, &symbol_st);
 
-    reg_sym[0] = add_sym("R0", 0, 0, &register_section, &system_st);
-    reg_sym[1] = add_sym("R1", 1, 0, &register_section, &system_st);
-    reg_sym[2] = add_sym("R2", 2, 0, &register_section, &system_st);
-    reg_sym[3] = add_sym("R3", 3, 0, &register_section, &system_st);
-    reg_sym[4] = add_sym("R4", 4, 0, &register_section, &system_st);
-    reg_sym[5] = add_sym("R5", 5, 0, &register_section, &system_st);
-    reg_sym[6] = add_sym("SP", 6, 0, &register_section, &system_st);
-    reg_sym[7] = add_sym("PC", 7, 0, &register_section, &system_st);
+#define S (SYMBOLFLAG_PERMANENT | SYMBOLFLAG_DEFINITION)
+
+    reg_sym[0] = add_sym("R0", 0, S, &register_section, &system_st);
+    reg_sym[1] = add_sym("R1", 1, S, &register_section, &system_st);
+    reg_sym[2] = add_sym("R2", 2, S, &register_section, &system_st);
+    reg_sym[3] = add_sym("R3", 3, S, &register_section, &system_st);
+    reg_sym[4] = add_sym("R4", 4, S, &register_section, &system_st);
+    reg_sym[5] = add_sym("R5", 5, S, &register_section, &system_st);
+    reg_sym[6] = add_sym("SP", 6, S, &register_section, &system_st);
+    reg_sym[7] = add_sym("PC", 7, S, &register_section, &system_st);
 
     //JH: symbols longer than current SYMMAX will be truncated. SYMMAX=6 is minimum!
-    add_sym(".ASCII", P_ASCII, 0, &pseudo_section, &system_st);
-    add_sym(".ASCIZ", P_ASCIZ, 0, &pseudo_section, &system_st);
-    add_sym(".ASECT", P_ASECT, 0, &pseudo_section, &system_st);
-    add_sym(".BLKB", P_BLKB, 0, &pseudo_section, &system_st);
-    add_sym(".BLKW", P_BLKW, 0, &pseudo_section, &system_st);
-    add_sym(".BYTE", P_BYTE, 0, &pseudo_section, &system_st);
-    add_sym(".CSECT", P_CSECT, 0, &pseudo_section, &system_st);
-    add_sym(".DSABL", P_DSABL, 0, &pseudo_section, &system_st);
-    add_sym(".ENABL", P_ENABL, 0, &pseudo_section, &system_st);
-    add_sym(".END", P_END, 0, &pseudo_section, &system_st);
-    add_sym(".ENDC", P_ENDC, 0, &pseudo_section, &system_st);
-    add_sym(".ENDM", P_ENDM, 0, &pseudo_section, &system_st);
-    add_sym(".ENDR", P_ENDR, 0, &pseudo_section, &system_st);
-    add_sym(".EOT", P_EOT, 0, &pseudo_section, &system_st);
-    add_sym(".ERROR", P_ERROR, 0, &pseudo_section, &system_st);
-    add_sym(".EVEN", P_EVEN, 0, &pseudo_section, &system_st);
-    add_sym(".FLT2", P_FLT2, 0, &pseudo_section, &system_st);
-    add_sym(".FLT4", P_FLT4, 0, &pseudo_section, &system_st);
-    add_sym(".GLOBL", P_GLOBL, 0, &pseudo_section, &system_st);
-    add_sym(".IDENT", P_IDENT, 0, &pseudo_section, &system_st);
-    add_sym(".IF", P_IF, 0, &pseudo_section, &system_st);
-    add_sym(".IFDF", P_IFDF, 0, &pseudo_section, &system_st);
-    add_sym(".IFNDF", P_IFDF, 0, &pseudo_section, &system_st);
-    add_sym(".IFF", P_IFF, 0, &pseudo_section, &system_st);
-    add_sym(".IFT", P_IFT, 0, &pseudo_section, &system_st);
-    add_sym(".IFTF", P_IFTF, 0, &pseudo_section, &system_st);
-    add_sym(".IIF", P_IIF, 0, &pseudo_section, &system_st);
-    add_sym(".INCLUDE", P_INCLUDE, 0, &pseudo_section, &system_st);
-    add_sym(".IRP", P_IRP, 0, &pseudo_section, &system_st);
-    add_sym(".IRPC", P_IRPC, 0, &pseudo_section, &system_st);
-    add_sym(".LIBRARY", P_LIBRARY, 0, &pseudo_section, &system_st);
-    add_sym(".LIMIT", P_LIMIT, 0, &pseudo_section, &system_st);
-    add_sym(".LIST", P_LIST, 0, &pseudo_section, &system_st);
-    add_sym(".MCALL", P_MCALL, 0, &pseudo_section, &system_st);
-    add_sym(".MEXIT", P_MEXIT, 0, &pseudo_section, &system_st);
-    add_sym(".NARG", P_NARG, 0, &pseudo_section, &system_st);
-    add_sym(".NCHR", P_NCHR, 0, &pseudo_section, &system_st);
-    add_sym(".NLIST", P_NLIST, 0, &pseudo_section, &system_st);
-    add_sym(".NTYPE", P_NTYPE, 0, &pseudo_section, &system_st);
-    add_sym(".ODD", P_ODD, 0, &pseudo_section, &system_st);
-    add_sym(".PACKED", P_PACKED, 0, &pseudo_section, &system_st);
-    add_sym(".PAGE", P_PAGE, 0, &pseudo_section, &system_st);
-    add_sym(".PRINT", P_PRINT, 0, &pseudo_section, &system_st);
-    add_sym(".PSECT", P_PSECT, 0, &pseudo_section, &system_st);
-    add_sym(".RADIX", P_RADIX, 0, &pseudo_section, &system_st);
-    add_sym(".RAD50", P_RAD50, 0, &pseudo_section, &system_st);
-    add_sym(".REM", P_REM, 0, &pseudo_section, &system_st);
-    add_sym(".REPT", P_REPT, 0, &pseudo_section, &system_st);
-    add_sym(".RESTORE", P_RESTORE, 0, &pseudo_section, &system_st);
-    add_sym(".SAVE", P_SAVE, 0, &pseudo_section, &system_st);
-    add_sym(".SBTTL", P_SBTTL, 0, &pseudo_section, &system_st);
-    add_sym(".TITLE", P_TITLE, 0, &pseudo_section, &system_st);
-    add_sym(".WORD", P_WORD, 0, &pseudo_section, &system_st);
-    add_sym(".MACRO", P_MACRO, 0, &pseudo_section, &system_st);
-    add_sym(".WEAK", P_WEAK, 0, &pseudo_section, &system_st);
+
+    add_sym(".ASCII", P_ASCII, S, &pseudo_section, &system_st);
+    add_sym(".ASCIZ", P_ASCIZ, S, &pseudo_section, &system_st);
+    add_sym(".ASECT", P_ASECT, S, &pseudo_section, &system_st);
+    add_sym(".BLKB", P_BLKB, S, &pseudo_section, &system_st);
+    add_sym(".BLKW", P_BLKW, S, &pseudo_section, &system_st);
+    add_sym(".BYTE", P_BYTE, S, &pseudo_section, &system_st);
+    add_sym(".CSECT", P_CSECT, S, &pseudo_section, &system_st);
+    add_sym(".DSABL", P_DSABL, S, &pseudo_section, &system_st);
+    add_sym(".ENABL", P_ENABL, S, &pseudo_section, &system_st);
+    add_sym(".END", P_END, S, &pseudo_section, &system_st);
+    add_sym(".ENDC", P_ENDC, S, &pseudo_section, &system_st);
+    add_sym(".ENDM", P_ENDM, S, &pseudo_section, &system_st);
+    add_sym(".ENDR", P_ENDR, S, &pseudo_section, &system_st);
+    add_sym(".EOT", P_EOT, S, &pseudo_section, &system_st);
+    add_sym(".ERROR", P_ERROR, S, &pseudo_section, &system_st);
+    add_sym(".EVEN", P_EVEN, S, &pseudo_section, &system_st);
+    add_sym(".FLT2", P_FLT2, S, &pseudo_section, &system_st);
+    add_sym(".FLT4", P_FLT4, S, &pseudo_section, &system_st);
+    add_sym(".GLOBL", P_GLOBL, S, &pseudo_section, &system_st);
+    add_sym(".IDENT", P_IDENT, S, &pseudo_section, &system_st);
+    add_sym(".IF", P_IF, S, &pseudo_section, &system_st);
+    add_sym(".IFDF", P_IFDF, S, &pseudo_section, &system_st);
+    add_sym(".IFNDF", P_IFDF, S, &pseudo_section, &system_st);
+    add_sym(".IFF", P_IFF, S, &pseudo_section, &system_st);
+    add_sym(".IFT", P_IFT, S, &pseudo_section, &system_st);
+    add_sym(".IFTF", P_IFTF, S, &pseudo_section, &system_st);
+    add_sym(".IIF", P_IIF, S, &pseudo_section, &system_st);
+    add_sym(".INCLUDE", P_INCLUDE, S, &pseudo_section, &system_st);
+    add_sym(".IRP", P_IRP, S, &pseudo_section, &system_st);
+    add_sym(".IRPC", P_IRPC, S, &pseudo_section, &system_st);
+    add_sym(".LIBRARY", P_LIBRARY, S, &pseudo_section, &system_st);
+    add_sym(".LIMIT", P_LIMIT, S, &pseudo_section, &system_st);
+    add_sym(".LIST", P_LIST, S, &pseudo_section, &system_st);
+    add_sym(".MCALL", P_MCALL, S, &pseudo_section, &system_st);
+    add_sym(".MEXIT", P_MEXIT, S, &pseudo_section, &system_st);
+    add_sym(".NARG", P_NARG, S, &pseudo_section, &system_st);
+    add_sym(".NCHR", P_NCHR, S, &pseudo_section, &system_st);
+    add_sym(".NLIST", P_NLIST, S, &pseudo_section, &system_st);
+    add_sym(".NTYPE", P_NTYPE, S, &pseudo_section, &system_st);
+    add_sym(".ODD", P_ODD, S, &pseudo_section, &system_st);
+    add_sym(".PACKED", P_PACKED, S, &pseudo_section, &system_st);
+    add_sym(".PAGE", P_PAGE, S, &pseudo_section, &system_st);
+    add_sym(".PRINT", P_PRINT, S, &pseudo_section, &system_st);
+    add_sym(".PSECT", P_PSECT, S, &pseudo_section, &system_st);
+    add_sym(".RADIX", P_RADIX, S, &pseudo_section, &system_st);
+    add_sym(".RAD50", P_RAD50, S, &pseudo_section, &system_st);
+    add_sym(".REM", P_REM, S, &pseudo_section, &system_st);
+    add_sym(".REPT", P_REPT, S, &pseudo_section, &system_st);
+    add_sym(".RESTORE", P_RESTORE, S, &pseudo_section, &system_st);
+    add_sym(".SAVE", P_SAVE, S, &pseudo_section, &system_st);
+    add_sym(".SBTTL", P_SBTTL, S, &pseudo_section, &system_st);
+    add_sym(".TITLE", P_TITLE, S, &pseudo_section, &system_st);
+    add_sym(".WORD", P_WORD, S, &pseudo_section, &system_st);
+    add_sym(".MACRO", P_MACRO, S, &pseudo_section, &system_st);
+    add_sym(".WEAK", P_WEAK, S, &pseudo_section, &system_st);
+
+#undef S
 
     add_sym("ADC", I_ADC, OC_1GEN, &instruction_section, &system_st);
     add_sym("ADCB", I_ADCB, OC_1GEN, &instruction_section, &system_st);
@@ -630,6 +735,7 @@ void list_symbol_table(
         int i;
         for (i = line; i < nsyms; i += nlines) {
             sym = symbols[i];
+            check_sym_invariants(sym, __FILE__, __LINE__);
 
             fprintf(lstfile,"%-*s", longest_symbol, sym->label);
             fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? ' ' : '=');

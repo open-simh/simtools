@@ -1190,7 +1190,7 @@
 Symbol table
 
 $TIMDF = 000007           4$3      000360R  L   002 CH.SMC = 000073           ERR.XX = ****** G         PDPV45 = 000000           
-.        ******R      002 4$4      000504R  L   002 CH.SUB = 000055           ERRBTS = ****** G         R50UNP   000150RG     002 
+.        001062R      002 4$4      000504R  L   002 CH.SUB = 000055           ERRBTS = ****** G         R50UNP   000150RG     002 
 ..Z    = ****** G         5$3      000364R  L   002 CH.UAR = 000136           ERRREF = ****** G         RSX11D = 000000           
 ..ZBUF = ****** G         5$4      000510R  L   002 CH.XCL = 000047           FF     = 000014           SAVREG   000754RG     002 
 1$0      000072R  L   002 9$5      000566R  L   002 CHRPNT   000000RG     008 FT.ID  = 000001           SDEBUG = ****** G         

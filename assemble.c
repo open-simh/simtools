@@ -194,7 +194,7 @@ static int assemble(
 
                     if (!express_sym_offset(value, &symb, &offset)) {
                         report(stack->top, "Illegal ORG (for relocatable section)\n");
-                    } else if ((symb->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+                    } else if (SYM_IS_IMPORTED(symb)) {
                         report(stack->top, "Can't ORG to external location\n");
                     } else if (symb->flags & SYMBOLFLAG_UNDEFINED) {
                         report(stack->top, "Can't ORG to undefined sym\n");
@@ -1040,7 +1040,7 @@ static int assemble(
                             sect->size = 0;
                             sect->type = SECTION_USER;
                             sections[sector++] = sect;
-                            sectsym = add_sym(label, 0, 0, sect, &section_st);
+                            sectsym = add_sym(label, 0, SYMBOLFLAG_DEFINITION, sect, &section_st);
 
                             /* page 6-41 table 6-5 */
                             if (op->value == P_PSECT) {

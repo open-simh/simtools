@@ -127,7 +127,7 @@ test-prec.mac:100: ***ERROR Invalid expression in .WORD
 Symbol table
 
 $     = ****** GX        .1    = ****** GX        .3    = ****** GX        FIVE  = 000005           
-.       ******R      001 .2    = ****** GX        A       000030R      001 NAME  = ****** G         
+.       000164R      001 .2    = ****** GX        A       000030R      001 NAME  = ****** G         
 
 
 Program sections:

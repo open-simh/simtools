@@ -108,7 +108,7 @@ test-jmp.mac:86: ***ERROR Invalid addressing mode (register expected)
 
 Symbol table
 
-.       ******R      003 REIGHT  000010R      003 RZERO   000000R      003 THIRD   000116R      001 
+.       000012R      003 REIGHT  000010R      003 RZERO   000000R      003 THIRD   000116R      001 
 EIGHT = 000010       002 RFOUR   000004R      003 SECND   000046R      001 THREE = 000003           
 FOUR  = 000004       002 RSIX    000006R      003 SIX   = 000006       002 TWO   = 000002       002 
 LABEL   000166R      001 RTWO    000002R      003 START   000000R      001 ZERO  = 000000       002 

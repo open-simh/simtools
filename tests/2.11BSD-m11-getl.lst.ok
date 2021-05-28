@@ -1543,7 +1543,7 @@
 Symbol table
 
 $TIMDF = 000007           BSSFLG = 000004           ED.LSB = ****** G         IFNDF    001016RG     002 MK.SYM = 000001           
-.        ******R      002 CATTRS = 000170           EDMASK = ****** G         IFNE     001016RG     002 MODE   = ****** G         
+.        002036R      002 CATTRS = 000170           EDMASK = ****** G         IFNE     001016RG     002 MODE   = ****** G         
 ..Z    = ****** G         CDRSAV = ****** G         ENDC     001122RG     002 IFNZ     001016RG     002 MSBMRP = ****** G         
 ..ZBUF = ****** G         CH.ADD = 000053           ENDCX    001140R      002 IFOER1   001254R      002 OVRFLG = 000020           
 1$10     001766R  L   002 CH.AND = 000046           ENDFLG   000000RG     009 IFOERR   001174R      002 PAGEXT   000010RG     009 

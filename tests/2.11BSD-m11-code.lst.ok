@@ -1232,7 +1232,7 @@
 Symbol table
 
 $TIMDF= 000007           4$6     001322R  L   002 CLCLOC= ****** G         LBLFLG= 000002           RLDTMP  000024R      008 
-.       ******R      002 40$9    002014R  L   002 CLCNAM= ****** G         LF    = 000012           ROLUPD= ****** G         
+.       002056R      002 40$9    002014R  L   002 CLCNAM= ****** G         LF    = 000012           ROLUPD= ****** G         
 ..Z   = ****** G         5$3     000464R  L   002 CLCSEC= ****** G         LIMIT   000210RG     002 RSX11D= 000000           
 1$0     000164R  L   002 6$3     000542R  L   002 CNTTBL= ****** G         LOCDMP  001512R      002 SAVREG= ****** G         
 1$1     000214R  L   002 7$5     001216R  L   002 CODROL= ****** G         LSYROL= ****** G         SECROL= ****** G         

@@ -1278,7 +1278,7 @@
 Symbol table
 
 $TIMDF= 000007           CH.MUL= 000052           ENDFLG= ****** G         LET.R = 000122           ROLBAS  000000R      018 
-.       ******R      002 CH.PCT= 000045           ENDLIN= ****** G         LET.Z = 000132           ROLUPD= ****** G         
+.       000262R      002 CH.PCT= 000045           ENDLIN= ****** G         LET.Z = 000132           ROLUPD= ****** G         
 2$0     000006R  L   002 CH.QM = 000077           ENDP1   000110RG     002 LF    = 000012           RSX11D= 000000           
 3$1     000062R  L   002 CH.QTM= 000042           ENDP1C= ****** G         LSYROL= 000010 G         SAVREG= ****** G         
 31$2    000134R  L   002 CH.RAB= 000076           ENDP2   000162RG     002 M.IDF = 000007           SCAN  = ****** G         

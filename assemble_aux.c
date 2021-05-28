@@ -332,7 +332,7 @@ int complex_tree(
                 return 0;
             }
 
-            if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+            if (SYM_IS_IMPORTED(sym)) {
                 text_complex_global(tx, sym->label);
             } else {
                 text_complex_psect(tx, sym->section->sector, sym->value);
@@ -490,7 +490,7 @@ void mode_extension(
                                                            value. */
         }
     } else if (express_sym_offset(value, &sym, &offset)) {
-        if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+        if (SYM_IS_IMPORTED(sym)) {
             /* Reference to a global symbol. */
             /* Global symbol plus offset */
             if (mode->rel)
@@ -635,7 +635,7 @@ void store_value(
     } else if (!express_sym_offset(value, &sym, &offset)) {
         store_complex(stack->top, tr, size, value);
     } else {
-        if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+        if (SYM_IS_IMPORTED(sym)) {
             store_global_offset_word(stack->top, tr, size, sym->value + offset, sym->label);
         } else if (sym->section != current_pc->section) {
             store_psect_offset_word(stack->top, tr, size, sym->value + offset, sym->section->label);
@@ -765,11 +765,10 @@ void write_globals(
         while (sym) {
             if ((sym->flags & SYMBOLFLAG_GLOBAL) && sym->section == psect) {
                 gsd_global(&gsd, sym->label,
-                           (sym->
-                            flags & SYMBOLFLAG_DEFINITION ? GLOBAL_DEF : 0) | ((sym->
-                                                                                flags & SYMBOLFLAG_WEAK) ?
-                                                                               GLOBAL_WEAK : 0)
-                           | ((sym->section->flags & PSECT_REL) ? GLOBAL_REL : 0) | 0100,
+                           ((sym->flags & SYMBOLFLAG_DEFINITION) ? GLOBAL_DEF  : 0) |
+                           ((sym->flags & SYMBOLFLAG_WEAK)       ? GLOBAL_WEAK : 0) |
+                           ((sym->section->flags & PSECT_REL)    ? GLOBAL_REL  : 0) |
+                           0100,
                            /* Looks undefined, but add it in anyway */
                            sym->value);
             }

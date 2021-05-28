@@ -4607,7 +4607,7 @@ $WRBFP    000302RG     006 7$26      001702R  L   002 ENDP2   = ****** G        
 $WRCNT    000304RG     006 7$29      002046R  L   002 ERN45   = ****** G         PROP2   = ****** G         
 $WRITE  = ****** G         7$32      002644R  L   002 ERN55   = ****** G         PROSW   = ****** G         
 $WRSYS  = ****** G         7$44      004546R  L   002 ERR.A   = ****** G         PSAROL  = ****** G         
-.         ******R      002 8$2       000534R  L   002 ERR.BY  = ****** G         PSDFLT  = ****** G         
+.         004576R      002 8$2       000534R  L   002 ERR.BY  = ****** G         PSDFLT  = ****** G         
 ..Z     = ****** G         8$35      003210R  L   002 ERR.XX  = ****** G         PSTROL  = ****** G         
 ..ZBUF  = ****** G         8$40      004072R  L   002 ERRBTS  = ****** G         PUTKB   = ****** G         
 1$1       000330R  L   002 8$45      004574R  L   002 ERRCNT  = ****** G         PUTKBL  = ****** G         

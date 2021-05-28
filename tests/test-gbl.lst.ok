@@ -17,7 +17,7 @@ test-gbl.mac:11: ***ERROR Invalid expression (complex relocation)
 
 Symbol table
 
-.       ******R      001 LAB1  = ****** GX        LAB2  = ******           
+.       000010R      001 LAB1  = ****** GX        LAB2  = ******           
 
 
 Program sections:

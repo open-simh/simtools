@@ -3022,7 +3022,7 @@
 Symbol table
 
 $TIMDF= 000007           DSABL = ****** G         IFL   = ****** G         NCHR  = ****** G         PDPV45= 000000           
-.       ******R      002 ENABL = ****** G         IFLE  = ****** G         NLIST = ****** G         PRINT = ****** G         
+.       000000R      002 ENABL = ****** G         IFLE  = ****** G         NLIST = ****** G         PRINT = ****** G         
 AAAA  = 000001           END   = ****** G         IFLT  = ****** G         NTYPE = ****** G         PSECT = ****** G         
 ASCII = ****** G         ENDC  = ****** G         IFNDF = ****** G         ODD   = ****** G         RAD50 = ****** G         
 ASCIZ = ****** G         ENDM  = ****** G         IFNE  = ****** G         OPCERR= ****** G         RADIX = ****** G         

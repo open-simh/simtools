@@ -200,7 +200,7 @@ test-float.mac:140: ***ERROR Junk at end of line ('5        ; bad: junk')
 
 Symbol table
 
-.       ******R      001 AC0   =%000000           E3    = 000003           
+.       000640R      001 AC0   =%000000           E3    = 000003           
 A     = 000001           AC1   =%000001           F2    =%000002           
 
 

@@ -584,7 +584,7 @@ MACRO          *new_macro(
 {
     MACRO          *mac = memcheck(malloc(sizeof(MACRO)));
 
-    mac->sym.flags = 0;
+    mac->sym.flags = SYMBOLFLAG_DEFINITION;
     mac->sym.label = label;
     mac->sym.stmtno = stmtno;
     mac->sym.next = NULL;

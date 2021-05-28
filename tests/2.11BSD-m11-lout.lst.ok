@@ -2549,7 +2549,7 @@
 Symbol table
 
 $TIMDF  = 000007           CH.ADD  = 000053           ERR.T   = 010000 G         MX.ON   = 066307           
-.         ******R      006 CH.AND  = 000046           ERR.U   = 020000 G         MX.PUT    003720R      002 
+.         000062R      006 CH.AND  = 000046           ERR.U   = 020000 G         MX.PUT    003720R      002 
 ..Z     = ****** G         CH.BSL  = 000134           ERR.XX    000002RG     010 MX.PXX    000036R      006 
 ..ZBUF  = ****** G         CH.COL  = 000072           ERR.Z   = 040000 G         MX.SYM    000037RG     006 
 1$10      001464R  L   002 CH.COM  = 000054           ERRBTS    000000RG     010 MX.TMP    000060R      006 

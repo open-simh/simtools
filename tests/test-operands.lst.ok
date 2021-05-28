@@ -252,7 +252,7 @@ test-operands.mac:130: ***ERROR Invalid expression (complex relocation)
 
 Symbol table
 
-.       ******R      001 AC1   =%000001           AC5   =%000005           
+.       000356R      001 AC1   =%000001           AC5   =%000005           
 
 
 Program sections:
