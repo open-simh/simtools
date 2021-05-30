@@ -214,7 +214,9 @@ void implicit_gbl(
                     add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL, &absolute_section, &implicit_st);
                 } else {
                     /* or add it to the undefined symbol table,
-                       purely for listing purposes. */
+                       purely for listing purposes.
+                       It also works to add it to symbol_st,
+                       all code is carefully made for that. */
                     add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED, &absolute_section, &undefined_st);
                 }
             }
