@@ -1131,13 +1131,19 @@ static int assemble(
                 case P_GLOBL:
                     {
                         SYMBOL         *sym;
+                        int             islocal = 0;
 
                         while (!EOL(*cp)) {
                             /* Loop and make definitions for
                                comma-separated symbols */
-                            label = get_symbol(cp, &ncp, NULL);
+                            label = get_symbol(cp, &ncp, &islocal);
                             if (label == NULL) {
                                 report(stack->top, "Illegal .GLOBL/.WEAK syntax\n");
+                                return 0;
+                            }
+
+                            if (islocal) {
+                                report(stack->top, "Local label used in .GLOBL/.WEAK\n");
                                 return 0;
                             }
 

@@ -11,16 +11,22 @@
 test-gbl.mac:11: ***ERROR Invalid expression (complex relocation)
       11 000004 012700  000000                  mov     #lab2,r0        ; error: undefined
       12                                
-      13                                        .end
-      13                                
+test-gbl.mac:13: ***ERROR Local label used in .GLOBL/.WEAK
+      13                                        .globl  1$              ; error: locals can't be globals too
+test-gbl.mac:14: ***ERROR Local label used in .GLOBL/.WEAK
+      14                                        .globl  2$              ; error: locals can't be globals too
+      15 000010 012700  000010'         1$:     mov     #1$,r0
+      16                                
+      17                                        .end
+      17                                
 
 
 Symbol table
 
-.       000010R      001 LAB1  = ****** GX        LAB2  = ******           
+.       000014R      001 1$0     000010R  L   001 LAB1  = ****** GX        LAB2  = ******           
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000010    001   (RW,I,LCL,REL,CON,NOSAV)
+        000014    001   (RW,I,LCL,REL,CON,NOSAV)

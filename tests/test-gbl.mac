@@ -10,4 +10,8 @@
         .dsabl  gbl
         mov     #lab2,r0        ; error: undefined
 
+        .globl  1$              ; error: locals can't be globals too
+        .globl  2$              ; error: locals can't be globals too
+1$:     mov     #1$,r0
+
         .end
