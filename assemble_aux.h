@@ -85,7 +85,7 @@ void            write_globals(
     FILE *obj);
 void            migrate_implicit(
     void);
-
-
+void            migrate_undefined(
+    void);
 
 #endif

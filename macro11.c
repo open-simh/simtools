@@ -417,6 +417,7 @@ int main(
         fprintf(stderr, "%d Errors\n", errcount);
 
     if (lstfile) {
+        migrate_undefined();           /* Migrate the undefined symbols */
         list_symbol_table();
     }
 

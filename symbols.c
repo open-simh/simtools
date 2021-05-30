@@ -30,6 +30,8 @@ SYMBOL_TABLE    macro_st;       /* Macros */
 
 SYMBOL_TABLE    implicit_st;    /* The symbols which may be implicit globals */
 
+SYMBOL_TABLE    undefined_st;   /* The symbols which may be undefined */
+
 
 void list_section(SECTION *sec);
 

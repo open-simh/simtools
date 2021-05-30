@@ -370,6 +370,8 @@ extern SYMBOL_TABLE macro_st;   /* Macros */
 
 extern SYMBOL_TABLE implicit_st;        /* The symbols which may be implicit globals */
 
+extern SYMBOL_TABLE undefined_st;       /* The symbols which may be undefined */
+
 #endif
 
 int             hash_name(

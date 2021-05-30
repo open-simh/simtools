@@ -213,8 +213,9 @@ void implicit_gbl(
                     /* Either make the undefined symbol into an implicit global */
                     add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL, &absolute_section, &implicit_st);
                 } else {
-                    /* or add it to the symbol table, purely for listing purposes. */
-                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED, &absolute_section, &symbol_st);
+                    /* or add it to the undefined symbol table,
+                       purely for listing purposes. */
+                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED, &absolute_section, &undefined_st);
                 }
             }
         }
@@ -261,6 +262,28 @@ void migrate_implicit(
         isym->flags |= SYMBOLFLAG_IMPLICIT_GLOBAL;
         sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
         // Just one other thing - migrate the stmtno
+        sym->stmtno = isym->stmtno;
+    }
+}
+
+/* Done between second pass and listing */
+/* Migrates the symbols from the "undefined" table into the main table. */
+
+void migrate_undefined(
+    void)
+{
+    SYMBOL_ITER     iter;
+    SYMBOL         *isym,
+                   *sym;
+
+    for (isym = first_sym(&undefined_st, &iter); isym != NULL; isym = next_sym(&undefined_st, &iter)) {
+        sym = lookup_sym(isym->label, &symbol_st);
+        if (sym) {
+            continue;                  /* It's already in there.  Great. */
+        }
+        isym->flags |= SYMBOLFLAG_UNDEFINED; /* Just in case */
+        sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
+        /* Just one other thing - migrate the stmtno */
         sym->stmtno = isym->stmtno;
     }
 }
