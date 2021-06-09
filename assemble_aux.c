@@ -207,17 +207,26 @@ void implicit_gbl(
     switch (value->type) {
     case EX_UNDEFINED_SYM:
         {
-            if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {      /* Unless it's a
-                                                                           local symbol, */
+            if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {
+                /* Unless it's a local symbol, */
                 if (enabl_gbl) {
-                    /* Either make the undefined symbol into an implicit global */
-                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL, &absolute_section, &implicit_st);
+                    /* either make the undefined symbol into an
+                       implicit global */
+                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
+                            &absolute_section, &implicit_st);
                 } else {
                     /* or add it to the undefined symbol table,
                        purely for listing purposes.
                        It also works to add it to symbol_st,
                        all code is carefully made for that. */
-                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED, &absolute_section, &undefined_st);
+#define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
+#if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
+                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
+                            &symbol_st, &undefined_st);
+#else
+                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
+                            &absolute_section, &undefined_st);
+#endif
                 }
             }
         }
