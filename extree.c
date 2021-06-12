@@ -185,8 +185,7 @@ static EX_TREE *new_temp_sym(
     sym->section = section;
     sym->value = value;
 
-    tp = new_ex_tree();
-    tp->type = EX_TEMP_SYM;
+    tp = new_ex_tree(EX_TEMP_SYM);
     tp->data.symbol = sym;
 
     return tp;
@@ -222,8 +221,7 @@ EX_TREE *dup_tree(
         return NULL;
     }
 
-    res = new_ex_tree();
-    res->type = tp->type;
+    res = new_ex_tree(tp->type);
     res->cp = tp->cp;
 
     switch (tp->type) {
@@ -349,10 +347,7 @@ EX_TREE        *evaluate(
             free_tree(tp);
         } else {
             /* Copy verbatim. */
-            res = new_ex_tree();
-            res->type = EX_COM;
-            res->cp = tp->cp;
-            res->data.child.left = tp;
+            res = new_ex_una(EX_COM, tp);
         }
 
         break;
@@ -374,10 +369,7 @@ EX_TREE        *evaluate(
             free_tree(tp);
         } else {
             /* Copy verbatim. */
-            res = new_ex_tree();
-            res->type = EX_NEG;
-            res->cp = tp->cp;
-            res->data.child.left = tp;
+            res = new_ex_una(EX_NEG, tp);
         }
         break;
 
@@ -782,9 +774,11 @@ EX_TREE        *evaluate(
 /* Allocate an EX_TREE */
 
 EX_TREE        *new_ex_tree(
-    void)
+    int type)
 {
     EX_TREE        *tr = memcheck(calloc(1, sizeof(EX_TREE)));
+
+    tr->type = type;
 
     return tr;
 }
@@ -798,9 +792,8 @@ EX_TREE        *ex_err(
 {
     EX_TREE        *errtp;
 
-    errtp = new_ex_tree();
+    errtp = new_ex_tree(EX_ERR);
     errtp->cp = cp;
-    errtp->type = EX_ERR;
     errtp->data.child.left = tp;
 
     return errtp;
@@ -813,8 +806,7 @@ EX_TREE        *new_ex_lit(
 {
     EX_TREE        *tp;
 
-    tp = new_ex_tree();
-    tp->type = EX_LIT;
+    tp = new_ex_tree(EX_LIT);
     tp->data.lit = value;
 
     return tp;
@@ -829,10 +821,28 @@ EX_TREE        *new_ex_bin(
 {
     EX_TREE        *tp;
 
-    tp = new_ex_tree();
-    tp->type = type;
+    tp = new_ex_tree(type);
     tp->data.child.left = left;
     tp->data.child.right = right;
+
+    tp->cp = right->cp;
+
+    return tp;
+}
+
+/* Create an EX_TREE representing a unary expression */
+
+EX_TREE        *new_ex_una(
+    int type,
+    EX_TREE *left)
+{
+    EX_TREE        *tp;
+
+    tp = new_ex_tree(type);
+    tp->data.child.left = left;
+    tp->data.child.right = NULL;
+
+    tp->cp = left->cp;
 
     return tp;
 }

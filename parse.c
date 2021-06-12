@@ -657,7 +657,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, ADD_PREC);
             tp = new_ex_bin(EX_ADD, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -667,7 +666,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, ADD_PREC);
             tp = new_ex_bin(EX_SUB, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -677,7 +675,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, MUL_PREC);
             tp = new_ex_bin(EX_MUL, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -687,7 +684,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, MUL_PREC);
             tp = new_ex_bin(EX_DIV, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -697,7 +693,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, OR_PREC);
             tp = new_ex_bin(EX_OR, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -707,7 +702,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, AND_PREC);
             tp = new_ex_bin(EX_AND, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -717,7 +711,6 @@ EX_TREE        *parse_binary(
 
             rightp = parse_binary(cp + 1, term, LSH_PREC);
             tp = new_ex_bin(EX_LSH, leftp, rightp);
-            tp->cp = rightp->cp;
             leftp = tp;
             break;
 
@@ -899,8 +892,7 @@ EX_TREE        *parse_unary(
             return ex_err(NULL, cp);
 
         /* This returns references to the built-in register symbols */
-        tp = new_ex_tree();
-        tp->type = EX_SYM;
+        tp = new_ex_tree(EX_SYM);
         tp->data.symbol = reg_sym[reg];
         tp->cp = cp;
         return tp;
@@ -908,10 +900,7 @@ EX_TREE        *parse_unary(
 
     /* Unary negate */
     if (*cp == '-') {
-        tp = new_ex_tree();
-        tp->type = EX_NEG;
-        tp->data.child.left = parse_unary(cp + 1);
-        tp->cp = tp->data.child.left->cp;
+        tp = new_ex_una(EX_NEG, parse_unary(cp + 1));
         return tp;
     }
 
@@ -925,10 +914,7 @@ EX_TREE        *parse_unary(
         switch (tolower((unsigned char)cp[1])) {
         case 'c':
             /* ^C, ones complement */
-            tp = new_ex_tree();
-            tp->type = EX_COM;
-            tp->data.child.left = parse_unary(cp + 2);
-            tp->cp = tp->data.child.left->cp;
+            tp = new_ex_una(EX_COM, parse_unary(cp + 2));
             return tp;
         case 'b':
             /* ^B, binary radix modifier */
@@ -999,8 +985,7 @@ EX_TREE        *parse_unary(
                 if (sectsym && !islocal) {
                     SECTION *psect = sectsym->section;
 
-                    tp = new_ex_tree();
-                    tp->type = EX_SYM;
+                    tp = new_ex_tree(EX_SYM);
                     tp->data.symbol = sectsym;
                     tp->cp = cp;
 
@@ -1137,9 +1122,8 @@ EX_TREE        *parse_unary(
         }
 
         if (sym != NULL && !(sym->flags & SYMBOLFLAG_UNDEFINED)) {
-            tp = new_ex_tree();
+            tp = new_ex_tree(EX_SYM);
             tp->cp = cp;
-            tp->type = EX_SYM;
             tp->data.symbol = sym;
 
             free(label);
@@ -1160,9 +1144,8 @@ EX_TREE        *parse_unary(
         sym->section = &absolute_section;
         sym->value = 0;
 
-        tp = new_ex_tree();
+        tp = new_ex_tree(EX_UNDEFINED_SYM);
         tp->cp = cp;
-        tp->type = EX_UNDEFINED_SYM;
         tp->data.symbol = sym;
 
         return tp;

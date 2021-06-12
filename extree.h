@@ -51,7 +51,7 @@ typedef struct ex_tree {
 
 
 EX_TREE        *new_ex_tree(
-    void);
+    int type);
 void            free_tree(
     EX_TREE *tp);
 
@@ -64,6 +64,9 @@ EX_TREE        *new_ex_bin(
     int type,
     EX_TREE *left,
     EX_TREE *right);
+EX_TREE        *new_ex_una(
+    int type,
+    EX_TREE *left);
 
 EX_TREE        *evaluate(
     EX_TREE *tp,
