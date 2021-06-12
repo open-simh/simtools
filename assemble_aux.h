@@ -19,6 +19,13 @@ typedef struct addr_mode {
     EX_TREE        *offset;     /* Expression giving the offset */
 } ADDR_MODE;
 
+#define MODE_INDIRECT   010     /* (R0), @(R0)+, @-(R0), @42(R0) */
+#define MODE_REG        000     /* R0 */
+#define MODE_AUTO_INCR  020     /* (R0)+ */
+#define MODE_AUTO_DECR  040     /* -(R0) */
+#define MODE_OFFSET     060     /* 42(R0) */
+#define MODE_PC         007
+
 void            push_cond(
     int ok,
     STREAM *str);

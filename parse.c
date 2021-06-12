@@ -202,13 +202,14 @@ int get_mode(
     /* @ means "indirect," sets bit 3 */
     if (*cp == '@') {
         cp++;
-        mode->type |= 010;
+        mode->type |= MODE_INDIRECT;
     }
 
     /* Immediate modes #imm and @#imm */
     if (*cp == '#') {
         cp++;
-        mode->type |= 027;
+        mode->type |= MODE_AUTO_INCR | MODE_PC;
+
         mode->offset = parse_expr(cp, 0);
         if (endp)
             *endp = mode->offset->cp;
@@ -240,7 +241,7 @@ int get_mode(
                 free_tree(value);
                 return FALSE;
             }
-            mode->type |= 040 | reg;
+            mode->type |= MODE_AUTO_DECR | reg;
             if (endp)
                 *endp = tcp;
             free_tree(value);
@@ -272,22 +273,23 @@ int get_mode(
             tcp++;                     /* It's (Rn)+ */
             if (endp)
                 *endp = tcp;
-            mode->type |= 020 | reg;
+            mode->type |= MODE_AUTO_INCR | reg;
             free_tree(value);
             return TRUE;
         }
 
-        if (mode->type == 010) {       /* For @(Rn) there's an implied 0 offset */
+        if (mode->type == MODE_INDIRECT) { /* For @(Rn) there's an
+                                              implied 0 offset */
             mode->offset = new_ex_lit(0);
-            mode->type |= 060 | reg;
+            mode->type |= MODE_OFFSET | reg;
             free_tree(value);
             if (endp)
                 *endp = tcp;
             return TRUE;
         }
 
-        mode->type |= 010 | reg;       /* Mode 10 is register indirect as
-                                          in (Rn) */
+        mode->type |= MODE_INDIRECT | reg; /* Mode 10 is register indirect
+                                              as in (Rn) */
         free_tree(value);
         if (endp)
             *endp = tcp;
@@ -322,7 +324,7 @@ int get_mode(
             return FALSE;              /* Syntax error in addressing mode */
         }
 
-        mode->type |= 060 | reg;
+        mode->type |= MODE_OFFSET | reg;
 
         free_tree(value);
 
@@ -351,14 +353,15 @@ int get_mode(
     /* It's either 067 (PC-relative) or 037 (absolute) mode, depending */
     /* on user option. */
 
-    if (mode->type & 010) {            /* Have already noted indirection? */
-        mode->type |= 067;             /* If so, then PC-relative is the only
+    if (mode->type & MODE_INDIRECT) {  /* Have already noted indirection? */
+        mode->type |= MODE_OFFSET|MODE_PC;/* If so, then PC-relative is the only
                                           option */
         mode->rel = 1;                 /* Note PC-relative */
     } else if (enabl_ama) {            /* User asked for absolute adressing? */
-        mode->type |= 037;             /* Give it to him. */
+        mode->type |= MODE_INDIRECT|MODE_AUTO_INCR|MODE_PC;
+                                       /* Give it to him. */
     } else {
-        mode->type |= 067;             /* PC-relative */
+        mode->type |= MODE_OFFSET|MODE_PC; /* PC-relative */
         mode->rel = 1;                 /* Note PC-relative */
     }
 
