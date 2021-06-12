@@ -49,10 +49,10 @@ int             get_fp_src_mode(
 
 EX_TREE        *parse_expr(
     char *cp,
-    int undef);
+    int flags);
 EX_TREE        *parse_unary_expr(
     char *cp,
-    int undef);
+    int flags);
 int             expr_ok(
     EX_TREE *expr);
 int             parse_float(

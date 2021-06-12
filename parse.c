@@ -1159,13 +1159,13 @@ EX_TREE        *parse_unary(
 
 EX_TREE        *parse_expr(
     char *cp,
-    int undef)
+    int flags)
 {
     EX_TREE        *expr;
     EX_TREE        *value;
 
     expr = parse_binary(cp, 0, 0);     /* Parse into a tree */
-    value = evaluate(expr, undef);     /* Perform the arithmetic */
+    value = evaluate(expr, flags);     /* Perform the arithmetic */
     value->cp = expr->cp;              /* Pointer to end of text is part of
                                           the rootmost node  */
     free_tree(expr);                   /* Discard parse in favor of
@@ -1182,13 +1182,13 @@ EX_TREE        *parse_expr(
 
 EX_TREE        *parse_unary_expr(
     char *cp,
-    int undef)
+    int flags)
 {
     EX_TREE        *expr;
     EX_TREE        *value;
 
     expr = parse_unary(cp);            /* Parse into a tree */
-    value = evaluate(expr, undef);     /* Perform the arithmetic */
+    value = evaluate(expr, flags);     /* Perform the arithmetic */
     value->cp = expr->cp;              /* Pointer to end of text is part of
                                           the rootmost node  */
     free_tree(expr);                   /* Discard parse in favor of
