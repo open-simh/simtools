@@ -194,8 +194,8 @@ int get_mode(
     EX_TREE        *value;
 
     mode->offset = NULL;
-    mode->rel = 0;
-    mode->type = 0;
+    mode->pcrel = 0;
+    mode->type = MODE_REG;
 
     cp = skipwhite(cp);
 
@@ -356,13 +356,13 @@ int get_mode(
     if (mode->type & MODE_INDIRECT) {  /* Have already noted indirection? */
         mode->type |= MODE_OFFSET|MODE_PC;/* If so, then PC-relative is the only
                                           option */
-        mode->rel = 1;                 /* Note PC-relative */
+        mode->pcrel = 1;               /* Note PC-relative */
     } else if (enabl_ama) {            /* User asked for absolute adressing? */
         mode->type |= MODE_INDIRECT|MODE_AUTO_INCR|MODE_PC;
                                        /* Give it to him. */
     } else {
         mode->type |= MODE_OFFSET|MODE_PC; /* PC-relative */
-        mode->rel = 1;                 /* Note PC-relative */
+        mode->pcrel = 1;               /* Note PC-relative */
     }
 
     return TRUE;
@@ -389,8 +389,8 @@ int get_fp_src_mode(
         int ret = parse_float(cp, &fltendp, 1, flt);
 
         if (ret) {
-            mode->type = 027;
-            mode->rel = 0;
+            mode->type = MODE_AUTO_INCR | MODE_PC;
+            mode->pcrel = 0;
             mode->offset = new_ex_lit(flt[0]);
             mode->offset->cp = fltendp;
 

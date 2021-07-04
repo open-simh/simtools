@@ -15,7 +15,7 @@ typedef struct addr_mode {
     /* bit 3 is indirect */
     /* bits 4:6 are mode, where 0=Rn, 1=(Rn)+,
        2=-(Rn), 3=offset(Rn) */
-    int             rel;        /* the addressing mode is PC-relative */
+    int             pcrel;      /* the addressing mode is PC-relative */
     EX_TREE        *offset;     /* Expression giving the offset */
 } ADDR_MODE;
 

@@ -511,7 +511,7 @@ void mode_extension(
     }
 
     if (value->type == EX_LIT) {
-        if (mode->rel) {              /* PC-relative? */
+        if (mode->pcrel) {            /* PC-relative? */
             if (current_pc->section->flags & PSECT_REL) {
                 store_displaced_word(str, tr, 2, value->data.lit);
             } else {
@@ -527,7 +527,7 @@ void mode_extension(
         if (SYM_IS_IMPORTED(sym)) {
             /* Reference to a global symbol. */
             /* Global symbol plus offset */
-            if (mode->rel)
+            if (mode->pcrel)
                 store_global_displaced_offset_word(str, tr, 2, offset, sym->label);
             else
                 store_global_offset_word(str, tr, 2, offset, sym->label);
@@ -535,14 +535,14 @@ void mode_extension(
             /* Relative to non-external symbol. */
             if (current_pc->section == sym->section) {
                 /* In the same section */
-                if (mode->rel) {
+                if (mode->pcrel) {
                     /* I can compute this myself. */
                     store_word(str, tr, 2, sym->value + offset - DOT - 2);
                 } else
                     store_internal_word(str, tr, 2, sym->value + offset);
             } else {
                 /* In a different section */
-                if (mode->rel)
+                if (mode->pcrel)
                     store_psect_displaced_offset_word(str, tr, 2, sym->value + offset, sym->section->label);
                 else
                     store_psect_offset_word(str, tr, 2, sym->value + offset, sym->section->label);
@@ -551,7 +551,7 @@ void mode_extension(
     } else {
         /* Complex relocation */
 
-        if (mode->rel)
+        if (mode->pcrel)
             store_complex_displaced(str, tr, 2, mode->offset);
         else
             store_complex(str, tr, 2, mode->offset);
