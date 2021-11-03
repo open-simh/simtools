@@ -59,6 +59,19 @@ FILE           *bin = NULL;
 int             badbin = 0;
 int             xferad = 1;
 
+/* memcheck - crash out if a pointer (returned from malloc) is NULL. */
+
+void           *memcheck(
+    void *ptr)
+{
+    if (ptr == NULL) {
+        fprintf(stderr, "Out of memory.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return ptr;
+}
+
 char           *readrec(
     FILE *fp,
     int *len,
@@ -306,11 +319,7 @@ void add_gsdline(
 {
     if (nr_gsds >= gsdsize || all_gsds == NULL) {
         gsdsize += 128;
-        all_gsds = realloc(all_gsds, gsdsize * sizeof(char *));
-        if (all_gsds == NULL) {
-            fprintf(stderr, "Out of memory\n");
-            exit(EXIT_FAILURE);
-        }
+        all_gsds = memcheck(realloc(all_gsds, gsdsize * sizeof(char *)));
     }
 
     all_gsds[nr_gsds++] = line;
@@ -328,11 +337,7 @@ void got_gsd(
         unsigned        value;
         unsigned        flags;
 
-        gsdline = malloc(256);
-        if (gsdline == NULL) {
-            fprintf(stderr, "Out of memory\n");
-            exit(EXIT_FAILURE);
-        }
+        gsdline = memcheck(malloc(256));
 
         unrad50(WORD(cp + i), name);
         unrad50(WORD(cp + i + 2), name + 3);
@@ -373,7 +378,7 @@ void got_gsd(
                     flags & 0100 ? "GBL"  : "LCL",
                     flags & 0200 ? "D"    : "I",
                     flags);
-            psects[psectid] = strdup(name);
+            psects[psectid] = memcheck(strdup(name));
             trim(psects[psectid++]);
             psectid %= NPSECTS;
             break;
@@ -391,7 +396,7 @@ void got_gsd(
             break;
         }
 
-        gsdline = realloc(gsdline, strlen(gsdline) + 1);
+        gsdline = memcheck(realloc(gsdline, strlen(gsdline) + 1));
         add_gsdline(gsdline);
     }
 }
@@ -401,7 +406,7 @@ int compare_gsdlines(
     const void *p2)
 {
     const char     *const *l1 = p1,
-    *const         *l2 = p2;
+                   *const *l2 = p2;
 
     return strcmp(*l1, *l2);
 }
