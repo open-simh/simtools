@@ -769,6 +769,8 @@ void list_symbol_table(
     for (i = 0; i < sector; i++) {
         list_section(sections[i]);
     }
+
+    free(symbols);
 }
 
 void list_section(
