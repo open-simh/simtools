@@ -8,7 +8,8 @@ typedef struct ex_tree {
     enum ex_type { EX_LIT = 1,
         /* Expression is a literal value */
         EX_SYM = 2,
-        /* Expression has a symbol reference */
+        /* Expression has a symbol reference
+         * (symbol from symbol table, so not freed) */
         EX_UNDEFINED_SYM = 3,
         /* Expression is undefined sym reference */
         EX_TEMP_SYM = 4,
@@ -18,22 +19,22 @@ typedef struct ex_tree {
         /* One's complement */
         EX_NEG = 6,
         /* Negate */
-        EX_ERR = 7,
+        EX_ERR = 8,
         /* Expression with an error */
 
-        EX_ADD = 8,
+        EX_ADD = 9,
         /* Add */
-        EX_SUB = 9,
+        EX_SUB = 10,
         /* Subtract */
-        EX_MUL = 10,
+        EX_MUL = 11,
         /* Multiply */
-        EX_DIV = 11,
+        EX_DIV = 12,
         /* Divide */
-        EX_AND = 12,
+        EX_AND = 13,
         /* bitwise and */
-        EX_OR = 13,
+        EX_OR = 14,
         /* bitwise or */
-        EX_LSH = 14
+        EX_LSH = 15,
         /* left shift */
     } type;
 
@@ -67,7 +68,8 @@ EX_TREE        *new_ex_bin(
 EX_TREE        *new_ex_una(
     int type,
     EX_TREE *left);
-
+int num_subtrees(
+    EX_TREE *tp);
 EX_TREE        *evaluate(
     EX_TREE *tp,
     int flags);

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "extree.h"                    /* my own definitions */
 
@@ -130,31 +131,23 @@ void print_tree(
         fputc('\n', printfile);
 }
 
-/* free_tree frees an expression tree. */
+/* num_subtrees tells you how many subtrees this EX_TREE has. */
 
-void free_tree(
+int num_subtrees(
     EX_TREE *tp)
 {
     switch (tp->type) {
     case EX_UNDEFINED_SYM:
     case EX_TEMP_SYM:
-        free(tp->data.symbol->label);
-        free(tp->data.symbol);
-        break;
-
-    case EX_LIT:
     case EX_SYM:
+    case EX_LIT:
+        return 0;
         break;
 
     case EX_COM:
     case EX_NEG:
-        free_tree(tp->data.child.left);
-        break;
-
     case EX_ERR:
-        if (tp->data.child.left)
-            free_tree(tp->data.child.left);
-        break;
+        return 1;
 
     case EX_ADD:
     case EX_SUB:
@@ -163,10 +156,46 @@ void free_tree(
     case EX_AND:
     case EX_OR:
     case EX_LSH:
-        free_tree(tp->data.child.left);
-        free_tree(tp->data.child.right);
-        break;
+        return 2;
     }
+
+    return 0;
+}
+
+/* free_tree frees an expression tree. */
+
+void free_tree(
+    EX_TREE *tp)
+{
+    if (!tp)
+        return;
+
+    switch (num_subtrees(tp)) {
+        case 0:
+            switch (tp->type) {
+            case EX_UNDEFINED_SYM:
+            case EX_TEMP_SYM:
+                free(tp->data.symbol->label);
+                free(tp->data.symbol);
+                break;
+
+            case EX_SYM:
+            case EX_LIT:
+                break;
+
+            default:
+                assert(0);
+                break;
+            }
+        break;
+        case 2:
+            free_tree(tp->data.child.right);
+            /* FALLTHROUGH */
+        case 1:
+            free_tree(tp->data.child.left);
+            break;
+    }
+
     free(tp);
 }
 
@@ -228,37 +257,34 @@ EX_TREE *dup_tree(
     res = new_ex_tree(tp->type);
     res->cp = tp->cp;
 
-    switch (tp->type) {
-    case EX_UNDEFINED_SYM:
-    case EX_TEMP_SYM:
-        res->data.symbol = dup_symbol(tp->data.symbol);
-        break;
+    switch (num_subtrees(tp)) {
+        case 0:
+            switch (tp->type) {
+            case EX_UNDEFINED_SYM:
+            case EX_TEMP_SYM:
+                res->data.symbol = dup_symbol(tp->data.symbol);
+                break;
 
-    /* The symbol reference in EX_SYM is not freed in free_tree() */
-    case EX_SYM:
-        res->data.symbol = tp->data.symbol;
-        break;
+            /* The symbol reference in EX_SYM is not freed in free_tree() */
+            case EX_SYM:
+                res->data.symbol = tp->data.symbol;
+                break;
 
-    case EX_LIT:
-        res->data.lit = tp->data.lit;
-        break;
+            case EX_LIT:
+                res->data.lit = tp->data.lit;
+            break;
 
-    case EX_COM:
-    case EX_NEG:
-    case EX_ERR:
-        res->data.child.left = dup_tree(tp->data.child.left);
+            default:
+                assert(0);
+                break;
+            }
         break;
-
-    case EX_ADD:
-    case EX_SUB:
-    case EX_MUL:
-    case EX_DIV:
-    case EX_AND:
-    case EX_OR:
-    case EX_LSH:
-        res->data.child.left = dup_tree(tp->data.child.left);
-        res->data.child.right = dup_tree(tp->data.child.right);
-        break;
+        case 2:
+            res->data.child.right = dup_tree(tp->data.child.right);
+            /* FALLTHROUGH */
+        case 1:
+            res->data.child.left = dup_tree(tp->data.child.left);
+            break;
     }
 
     return res;

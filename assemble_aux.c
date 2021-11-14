@@ -201,56 +201,51 @@ unsigned get_register(
 void implicit_gbl(
     EX_TREE *value)
 {
-    if (pass)
+    if (pass || !value)
         return;                        /* Only do this in first pass */
 
-    switch (value->type) {
-    case EX_UNDEFINED_SYM:
-        {
-            if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {
-                /* Unless it's a local symbol, */
-                if (enabl_gbl) {
-                    /* either make the undefined symbol into an
-                       implicit global */
-                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
-                            &absolute_section, &implicit_st);
-                } else {
-                    /* or add it to the undefined symbol table,
-                       purely for listing purposes.
-                       It also works to add it to symbol_st,
-                       all code is carefully made for that. */
+    switch (num_subtrees(value)) {
+    case 0:
+        switch (value->type) {
+        case EX_UNDEFINED_SYM:
+            {
+                if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {
+                    /* Unless it's a local symbol, */
+                    if (enabl_gbl) {
+                        /* either make the undefined symbol into an
+                           implicit global */
+                        add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
+                                &absolute_section, &implicit_st);
+                    } else {
+                        /* or add it to the undefined symbol table,
+                           purely for listing purposes.
+                           It also works to add it to symbol_st,
+                           all code is carefully made for that. */
 #define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
 #if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
-                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                            &absolute_section, &symbol_st);
+                        add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
+                                &absolute_section, &symbol_st);
 #else
-                    add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                            &absolute_section, &undefined_st);
+                        add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
+                                &absolute_section, &undefined_st);
 #endif
+                    }
                 }
             }
+            break;
+        case EX_LIT:
+        case EX_SYM:
+        case EX_TEMP_SYM: // Impossible on this pass
+            return;
+        default:
+            break;
         }
         break;
-    case EX_LIT:
-    case EX_SYM:
-    case EX_TEMP_SYM: // Impossible on this pass
-        return;
-    case EX_ADD:
-    case EX_SUB:
-    case EX_MUL:
-    case EX_DIV:
-    case EX_AND:
-    case EX_OR:
-    case EX_LSH:
+    case 2:
         implicit_gbl(value->data.child.right);
         /* FALLS THROUGH */
-    case EX_COM:
-    case EX_NEG:
+    case 1:
         implicit_gbl(value->data.child.left);
-        break;
-    case EX_ERR:
-        if (value->data.child.left)
-            implicit_gbl(value->data.child.left);
         break;
     }
 }
