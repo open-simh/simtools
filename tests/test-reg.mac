@@ -43,6 +43,7 @@
         l14 = %10       ; error: too large (error R), but symbol is still def'd
         l15 = %8.       ; error: too large (error R), but symbol is still def'd
 
+        mov #R2,R2
         mov #%2,%2             ; 012702  000002 must be absolute, not reloc!
         mov #l1,%2             ; 012702  000001 (idem)
         mov #<%1+%2>,%3        ; 012703  000003 (idem)
@@ -87,7 +88,7 @@ here:   mov #here,%2
         l40 = %extrn    ; A error; L40   =%******
         mov l40,r0      ; U error; code 010000
 
-        word   r0,wait,%2 ; 0, 1, 2
+        .word   r0,wait,r1+1,wait+2,%4     ; 0, 1, 2, 3, 4
 
         .end
 
