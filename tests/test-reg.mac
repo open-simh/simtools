@@ -15,18 +15,23 @@
 
         A = 1
 
-        l1 = %1
-        l2 = %1+1
-        l3 = %a
-        l4 = %a + 1
-        l5 = %<1+1>
-        l6 = <%1>+1     ; must be register!
-        l7 = <%a>+1     ; must be register!
-        l8 = %1 + %2
+        l1  = %1
+        l2  = %1+1
+        l3  = %a
+        l4  = %a + 1
+        l5  = %<1+1>
+        l6  = <%1>+1     ; must be register!
+        l7  = <%a>+1     ; must be register!
+        l8  = %1 + %2
         l8a = <%1> + <%2> ; must be register!
-        l9 = %<%1 + %2>
 
-        B = rti		; 2
+        l9  = %<%1 + %2>
+        l9c = %<%<%1 + %2>>
+        l9d = %<%<%<%1 + %2>>>
+        l9a = %<R1 + R2>
+        l9b = %<R1>
+
+        B   = rti         ; 2
 
         l10 = %B
         l11 = %wait	; 1
