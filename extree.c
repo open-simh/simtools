@@ -120,6 +120,10 @@ void print_tree(
         print_tree(printfile, tp->data.child.right, depth + 4);
         fputc('>', printfile);
         break;
+
+    default:
+        fprintf(printfile, "(node %d)", tp->type);
+        break;
     }
 
     if (depth == 0)
@@ -762,7 +766,8 @@ EX_TREE        *evaluate(
         break;
 
     default:
-        fprintf(stderr, "Invalid tree\n");
+        fprintf(stderr, "evaluate_rec: Invalid tree: ");
+        print_tree(stderr, tp, 0);
         return NULL;
     }
 
