@@ -69,20 +69,20 @@ SECTION        *last_dot_section;       /* ...and its program section */
 the assembler: */
 
 SECTION         register_section = {
-    "", SECTION_REGISTER, 0, 0, 0, 0
+    "*REGISTERS*", SECTION_REGISTER, 0, 0, 0, 0
 };                                     /* the section containing the registers */
 
 SECTION         pseudo_section = {
-    "", SECTION_PSEUDO, 0, 0, 0, 0
+    "*PSEUDO*", SECTION_PSEUDO, 0, 0, 0, 0
 };                                     /* the section containing the
                                           pseudo-operations */
 
 SECTION         instruction_section = {
-    ". ABS.", SECTION_INSTRUCTION, 0, 0, 0, 0
+    "*INSTR*", SECTION_INSTRUCTION, 0, 0, 0, 0
 };                                     /* the section containing instructions */
 
 SECTION         macro_section = {
-    "", SECTION_SYSTEM, 0, 0, 0, 0
+    "*MACRO*", SECTION_SYSTEM, 0, 0, 0, 0
 };                                     /* Section for macros */
 
 /* These are real psects that get written out to the object file */
