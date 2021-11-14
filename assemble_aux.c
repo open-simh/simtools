@@ -222,7 +222,7 @@ void implicit_gbl(
 #define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
 #if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
                     add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                            &symbol_st, &undefined_st);
+                            &absolute_section, &symbol_st);
 #else
                     add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
                             &absolute_section, &undefined_st);
