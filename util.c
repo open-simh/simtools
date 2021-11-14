@@ -246,9 +246,14 @@ static void my_searchenv2(
                zero-delimited. */
             strncpy(hitfile, concat, hitlen - 1);
             hitfile[hitlen - 1] = 0;
+
             free(envcopy);
+            free(concat);
+
             return;
         }
+
+        free(concat);
         envcopy2 = NULL;
     }
 
