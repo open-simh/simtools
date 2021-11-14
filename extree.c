@@ -183,7 +183,7 @@ static EX_TREE *new_temp_sym(
 
     sym = memcheck(malloc(sizeof(SYMBOL)));
     sym->label = memcheck(strdup(label));
-    sym->flags = 0;
+    sym->flags = SYMBOLFLAG_DEFINITION;
     sym->stmtno = stmtno;
     sym->next = NULL;
     sym->section = section;
