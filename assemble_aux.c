@@ -671,6 +671,10 @@ void store_value(
     } else {
         if (SYM_IS_IMPORTED(sym)) {
             store_global_offset_word(stack->top, tr, size, sym->value + offset, sym->label);
+        } else if (sym->section->type == SECTION_REGISTER) {
+            /* Delayed action: evaluate_rec() excludes SECTION_REGISTER when
+             * turning symbols into EX_LIT. Do it here now. */
+            store_word(stack->top, tr, size, sym->value + offset);
         } else if (sym->section != current_pc->section) {
             store_psect_offset_word(stack->top, tr, size, sym->value + offset, sym->section->label);
         } else {
