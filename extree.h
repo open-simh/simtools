@@ -5,7 +5,8 @@
 #include "symbols.h"
 
 typedef struct ex_tree {
-    enum ex_type { EX_LIT = 1,
+    enum ex_type {
+        EX_LIT = 1,
         /* Expression is a literal value */
         EX_SYM = 2,
         /* Expression has a symbol reference
@@ -19,6 +20,8 @@ typedef struct ex_tree {
         /* One's complement */
         EX_NEG = 6,
         /* Negate */
+        EX_REG = 7,
+        /* register value (%) */
         EX_ERR = 8,
         /* Expression with an error */
 

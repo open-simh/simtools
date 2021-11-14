@@ -13,6 +13,8 @@
 ; It specifically mentions %3+1 to be the same as %4.
 ; For the rest there is no indication where exactly register labels can be used.
 
+        .psect abs,abs
+
         A = 1
 
         l1  = %1
@@ -34,24 +36,58 @@
         B   = rti         ; 2
 
         l10 = %B
-        l11 = %wait	; 1
+        l11 = %wait     ; 1
 
         l12 = %1.
         l13 = %7.
-        l14 = %10	; error: too large
-        l15 = %8.	; error: too large
+        l14 = %10       ; error: too large (error R), but symbol is still def'd
+        l15 = %8.       ; error: too large (error R), but symbol is still def'd
 
-         mov #%2,%2             ; must not be a relocatable expression!
-         mov #l1,%2             ; must not be a relocatable expression!
-         mov #<%1+%2>,%3        ; must not be a relocatable expression!
-         mov #<l1+1>,%3         ; must not be a relocatable expression!
-         mov #<%l1+1>,%3        ; must not be a relocatable expression!
+        mov #%2,%2             ; 012702  000002 must be absolute, not reloc!
+        mov #l1,%2             ; 012702  000001 (idem)
+        mov #<%1+%2>,%3        ; 012703  000003 (idem)
+        mov #<l1+1>,%3         ; 012703  000002 (idem)
+        mov #<%l1+1>,%3        ; 012703  000002 (idem)
+        mov #r0,%2             ; 012702  000000 (idem)
+here:   mov #here,%2
+        mov #rti,%2
 
-         l20 = %l1
-         l21 = %l20
+        mov %2,%2              ; 010202
+        mov l1,%2              ; 010102
+        mov <%1+%2>,%3         ; 010303
+        mov <l1+1>,%3          ; 010203
+        mov R1+1,%3            ; 010203
+        mov <%l1+1>,%3         ; 010203
 
-         l22 = l1        ; still a register
-         l23 = l22       ; still a register
+        mov %1,r2               ; mov r1,r2
+        mov %0+1,r2             ; mov r1,r2
+        mov %<0+1>,r2           ; mov r1,r2
+
+        mov r0,r2               ; mov r0,r2
+        mov r0+1,r2             ; mov r1,r2
+        mov r1+7,r2             ; error: too large
+; R    58 000066  016702  000010'  mov r1+7,r2     ; too large
+
+                        ; this shows that after a % comes a unary expr,
+                        ; not an arbitrary binary expr:
+        l30 = 1+%2*2    ; %6.
+        l31 = <1+%2>*3  ; %9. error: too large, but symbol is still defined (R error)
+        mov l31,r0      ; error: bad register; code 011100 (R error)
+        l32 = 1+%<2*2>  ; %5
+        l33 = 1+<%2*2>  ; %5
+
+
+        l20 = %l1
+        l21 = %l20
+
+        l22 = l1        ; still a register
+        l23 = l22       ; still a register
+
+        .globl extrn
+        l40 = %extrn    ; A error; L40   =%******
+        mov l40,r0      ; U error; code 010000
+
+        word   r0,wait,%2 ; 0, 1, 2
 
         .end
 

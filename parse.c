@@ -892,17 +892,7 @@ EX_TREE        *parse_unary(
     cp = skipwhite(cp);
 
     if (*cp == '%') {                  /* Register notation */
-        unsigned        reg;
-
-        cp++;
-        reg = strtoul(cp, &cp, 8);
-        if (reg > 7)
-            return ex_err(NULL, cp);
-
-        /* This returns references to the built-in register symbols */
-        tp = new_ex_tree(EX_SYM);
-        tp->data.symbol = reg_sym[reg];
-        tp->cp = cp;
+        tp = new_ex_una(EX_REG, parse_unary(cp + 1));
         return tp;
     }
 

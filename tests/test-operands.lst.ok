@@ -41,6 +41,7 @@ test-operands.mac:32: ***ERROR Junk at end of line (',(r0)         ; bad
       32 000042 005700                          tst     r0,(r0)         ; bad
 test-operands.mac:33: ***ERROR Invalid addressing mode (Invalid expression)
       33                                        tst     @               ; bad
+**:0: ***ERROR Register expression out of range.
 test-operands.mac:34: ***ERROR Invalid addressing mode (Invalid expression)
       34                                        tst     %77             ; bad
 test-operands.mac:35: ***ERROR Invalid addressing mode (Invalid expression)

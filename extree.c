@@ -7,6 +7,8 @@
 
 #include "util.h"
 #include "assemble_globals.h"
+#include "assemble_aux.h"
+#include "listing.h"
 #include "object.h"
 
 
@@ -23,6 +25,10 @@ void print_tree(
     int depth)
 {
     SYMBOL         *sym;
+
+    if (printfile == NULL) {
+        return;
+    }
 
     if (tp == NULL) {
         fprintf(printfile, "(null)");
@@ -53,6 +59,12 @@ void print_tree(
 
     case EX_NEG:
         fprintf(printfile, "-<");
+        print_tree(printfile, tp->data.child.left, depth + 4);
+        fputc('>', printfile);
+        break;
+
+    case EX_REG:
+        fprintf(printfile, "%%<");
         print_tree(printfile, tp->data.child.left, depth + 4);
         fputc('>', printfile);
         break;
@@ -146,6 +158,7 @@ int num_subtrees(
 
     case EX_COM:
     case EX_NEG:
+    case EX_REG:
     case EX_ERR:
         return 1;
 
@@ -400,6 +413,25 @@ EX_TREE        *evaluate(
         } else {
             /* Copy verbatim. */
             res = new_ex_una(EX_NEG, tp);
+        }
+        break;
+
+    case EX_REG:
+        /* Evaluate as a literal, and create a register label */
+        {
+            res = evaluate(tp->data.child.left, flags);
+            int regno = get_register(res);
+
+            if (regno == NO_REG) {
+                report(NULL, "Register expression out of range.\n");
+                res = ex_err(res, res->cp);
+            } else {
+                EX_TREE *newresult = new_ex_tree(EX_SYM);
+
+                newresult->cp = res->cp;
+                newresult->data.symbol = reg_sym[regno];
+                res = newresult;
+            }
         }
         break;
 
