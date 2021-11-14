@@ -216,6 +216,8 @@ int get_mode(
         int ok = expr_ok(mode->offset);
         if (!ok) {
             *error = "Invalid expression after '#'";
+            free_tree(mode->offset);
+            mode->offset = NULL;
         }
         return ok;
     }
@@ -302,6 +304,8 @@ int get_mode(
 
     if (!expr_ok(mode->offset)) {
         *error = "Invalid expression";
+        free_tree(mode->offset);
+        mode->offset = NULL;
         return FALSE;
     }
 
@@ -316,11 +320,15 @@ int get_mode(
         if (reg == NO_REG) {
             *error = "Register expected after 'offset('";
             free_tree(value);
+            free_tree(mode->offset);
+            mode->offset = NULL;
             return FALSE;              /* Syntax error in addressing mode */
         }
         if (cp = skipwhite(value->cp), *cp++ != ')') {
             *error = "')' expected after 'offset(register'";
             free_tree(value);
+            free_tree(mode->offset);
+            mode->offset = NULL;
             return FALSE;              /* Syntax error in addressing mode */
         }
 
