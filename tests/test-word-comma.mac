@@ -10,4 +10,11 @@ start:  .word   123    ; 1 word
         .word   1,,3   ; 3 words
         .word   1,2,3  ; 3 words
 
+                       ; all the values below are not relocatable.
         .word   r0,wait,r1+1,wait+2,%4,%4+1     ; 0, 1, 2, 3, 4, 5
+        mov     #r0,r0
+        mov     #wait,r0
+        mov     #r1+1,r0
+        mov     #wait+2,r0
+        mov     #%4,r0
+        mov     #%4+1,r0

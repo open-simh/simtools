@@ -531,6 +531,10 @@ void mode_extension(
                 store_global_displaced_offset_word(str, tr, 2, offset, sym->label);
             else
                 store_global_offset_word(str, tr, 2, offset, sym->label);
+        } else if (sym->section->type == SECTION_REGISTER) {
+            /* Delayed action: evaluate_rec() excludes SECTION_REGISTER when
+             * turning symbols into EX_LIT. Do it here now. */
+            store_word(str, tr, 2, sym->value + offset);
         } else {
             /* Relative to non-external symbol. */
             if (current_pc->section == sym->section) {
