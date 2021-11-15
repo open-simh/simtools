@@ -1,0 +1,126 @@
+       1                                ;;;;;
+       2                                ;
+       3                                ; Test expressions that evaluate to registers.
+       4                                ;
+       5                                ; !!! THIS TEST IS NOT RUN YET BECAUSE MANY OF THE CASES FAIL !!!
+       6                                ;
+       7                                ; All lines not marked "error" should assemble without complaint
+       8                                ; as absolute values (no relocation etc).
+       9                                ;
+      10                                ; Section 3.4 (page 3-8) is a bit vague about the expressions that are allowed
+      11                                ; after a %, but "the digit specifying the register can be replaced by any valid,
+      12                                ; absolute term that can be evaluated during the first assembly pass."
+      13                                ; It specifically mentions %3+1 to be the same as %4.
+      14                                ; For the rest there is no indication where exactly register labels can be used.
+      15                                
+      16 000000                                 .psect abs,abs
+      17                                
+      18        000001                          A = 1
+      19                                
+      20        000001                          l1  = %1
+      21        000002                          l2  = %1+1
+      22        000001                          l3  = %a
+      23        000002                          l4  = %a + 1
+      24        000002                          l5  = %<1+1>
+      25        000002                          l6  = <%1>+1     ; must be register!
+      26        000002                          l7  = <%a>+1     ; must be register!
+      27        000003                          l8  = %1 + %2
+      28        000003                          l8a = <%1> + <%2> ; must be register!
+      29                                
+      30        000003                          l9  = %<%1 + %2>
+      31        000003                          l9c = %<%<%1 + %2>>
+      32        000003                          l9d = %<%<%<%1 + %2>>>
+      33        000003                          l9a = %<R1 + R2>
+      34        000001                          l9b = %<R1>
+      35                                
+      36        000002                          B   = rti         ; 2
+      37                                
+      38        000002                          l10 = %B
+      39        000001                          l11 = %wait     ; 1
+      40                                
+      41        000001                          l12 = %1.
+      42        000007                          l13 = %7.
+**:0: ***ERROR Register expression out of range.
+test-reg.mac:43: ***ERROR Complex expression cannot be assigned to a symbol
+      43                                        l14 = %10       ; error: too large (error R), but symbol is still def'd
+**:0: ***ERROR Register expression out of range.
+test-reg.mac:44: ***ERROR Complex expression cannot be assigned to a symbol
+      44                                        l15 = %8.       ; error: too large (error R), but symbol is still def'd
+      45                                
+      46 000000 012702  000002                  mov #R2,R2
+      47 000004 012702  000002                  mov #%2,%2             ; 012702  000002 must be absolute, not reloc!
+      48 000010 012702  000001                  mov #l1,%2             ; 012702  000001 (idem)
+      49 000014 012703  000003                  mov #<%1+%2>,%3        ; 012703  000003 (idem)
+      50 000020 012703  000002                  mov #<l1+1>,%3         ; 012703  000002 (idem)
+      51 000024 012703  000002                  mov #<%l1+1>,%3        ; 012703  000002 (idem)
+      52 000030 012702  000000                  mov #r0,%2             ; 012702  000000 (idem)
+      53 000034 012702  000034          here:   mov #here,%2
+      54 000040 012702  000002                  mov #rti,%2
+      55                                
+      56 000044 010202                          mov %2,%2              ; 010202
+      57 000046 010102                          mov l1,%2              ; 010102
+      58 000050 010303                          mov <%1+%2>,%3         ; 010303
+      59 000052 010203                          mov <l1+1>,%3          ; 010203
+      60 000054 010203                          mov R1+1,%3            ; 010203
+      61 000056 010203                          mov <%l1+1>,%3         ; 010203
+      62                                
+      63 000060 010102                          mov %1,r2               ; mov r1,r2
+      64 000062 010102                          mov %0+1,r2             ; mov r1,r2
+      65 000064 010102                          mov %<0+1>,r2           ; mov r1,r2
+      66                                
+      67 000066 010002                          mov r0,r2               ; mov r0,r2
+      68 000070 010102                          mov r0+1,r2             ; mov r1,r2
+**:0: ***ERROR Register expression out of range.
+test-reg.mac:69: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
+      69                                        mov r1+7,r2             ; error: too large
+      70                                ; R    58 000066  016702  000010'  mov r1+7,r2     ; too large
+      71                                
+      72                                                        ; this shows that after a % comes a unary expr,
+      73                                                        ; not an arbitrary binary expr:
+      74        000006                          l30 = 1+%2*2    ; %6.
+**:0: ***ERROR Register expression out of range.
+test-reg.mac:75: ***ERROR Complex expression cannot be assigned to a symbol
+      75                                        l31 = <1+%2>*3  ; %9. error: too large, but symbol is still defined (R error)
+test-reg.mac:76: ***ERROR Invalid expression (complex displaced relocation)
+      76 000072 016700  000000                  mov l31,r0      ; error: bad register; code 011100 (R error)
+      77        000005                          l32 = 1+%<2*2>  ; %5
+      78        000005                          l33 = 1+<%2*2>  ; %5
+      79                                
+      80                                
+      81        000001                          l20 = %l1
+      82        000001                          l21 = %l20
+      83                                
+      84        000001                          l22 = l1        ; still a register
+      85        000001                          l23 = l22       ; still a register
+      86                                
+      87                                        .globl extrn
+**:0: ***ERROR Register expression out of range.
+test-reg.mac:88: ***ERROR Complex expression cannot be assigned to a symbol
+      88                                        l40 = %extrn    ; A error; L40   =%******
+test-reg.mac:89: ***ERROR Invalid expression (complex displaced relocation)
+      89 000076 016700  000000                  mov l40,r0      ; U error; code 010000
+      90                                
+      91 000102 000000  000001  000002          .word   r0,wait,r1+1,wait+2,%4     ; 0, 1, 2, 3, 4
+         000110 000003  000004          
+      92                                
+      93                                        .end
+      94                                
+      94                                
+
+
+Symbol table
+
+.     = 000114       002 L11   =%000001           L21   =%000001           L33   =%000005           L8A   =%000003           
+A     = 000001           L12   =%000001           L22   =%000001           L4    =%000002           L9    =%000003           
+B     = 000002           L13   =%000007           L23   =%000001           L40   = ******           L9A   =%000003           
+EXTRN = ****** G         L14   = ******           L3    =%000001           L5    =%000002           L9B   =%000001           
+HERE  = 000034       002 L15   = ******           L30   =%000006           L6    =%000002           L9C   =%000003           
+L1    =%000001           L2    =%000002           L31   = ******           L7    =%000002           L9D   =%000003           
+L10   =%000002           L20   =%000001           L32   =%000005           L8    =%000003           
+
+
+Program sections:
+
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
+        000000    001   (RW,I,LCL,REL,CON,NOSAV)
+ABS     000114    002   (RW,I,LCL,ABS,OVR,NOSAV)
