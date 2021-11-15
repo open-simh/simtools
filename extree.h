@@ -79,4 +79,6 @@ EX_TREE        *evaluate(
 
 #define EVALUATE_DEFINEDNESS                  1
 
+#define EVALUATE_OUT_IS_REGISTER              1
+
 #endif

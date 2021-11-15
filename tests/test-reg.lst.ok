@@ -69,48 +69,49 @@ test-reg.mac:44: ***ERROR Complex expression cannot be assigned to a symbol
       65 000064 010102                          mov %<0+1>,r2           ; mov r1,r2
       66                                
       67 000066 010002                          mov r0,r2               ; mov r0,r2
-      68 000070 010102                          mov r0+1,r2             ; mov r1,r2
+      68 000070 010102                          mov ----r1,<r2>         ; mov r1,r2
+      69 000072 010102                          mov r0+1,r2             ; mov r1,r2
 **:0: ***ERROR Register expression out of range.
-test-reg.mac:69: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
-      69                                        mov r1+7,r2             ; error: too large
-      70                                ; R    58 000066  016702  000010'  mov r1+7,r2     ; too large
-      71                                
-      72                                                        ; this shows that after a % comes a unary expr,
-      73                                                        ; not an arbitrary binary expr:
-      74        000006                          l30 = 1+%2*2    ; %6.
+test-reg.mac:70: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
+      70                                        mov r1+7,r2             ; error: too large
+      71                                ; R    58 000066  016702  000010'  mov r1+7,r2     ; too large
+      72                                
+      73                                                        ; this shows that after a % comes a unary expr,
+      74                                                        ; not an arbitrary binary expr:
+      75        000006                          l30 = 1+%2*2    ; %6.
 **:0: ***ERROR Register expression out of range.
-test-reg.mac:75: ***ERROR Complex expression cannot be assigned to a symbol
-      75                                        l31 = <1+%2>*3  ; %9. error: too large, but symbol is still defined (R error)
-test-reg.mac:76: ***ERROR Invalid expression (complex displaced relocation)
-      76 000072 016700  000000                  mov l31,r0      ; error: bad register; code 011100 (R error)
-      77        000005                          l32 = 1+%<2*2>  ; %5
-      78        000005                          l33 = 1+<%2*2>  ; %5
-      79                                
+test-reg.mac:76: ***ERROR Complex expression cannot be assigned to a symbol
+      76                                        l31 = <1+%2>*3  ; %9. error: too large, but symbol is still defined (R error)
+test-reg.mac:77: ***ERROR Invalid expression (complex displaced relocation)
+      77 000074 016700  000000                  mov l31,r0      ; error: bad register; code 011100 (R error)
+      78        000005                          l32 = 1+%<2*2>  ; %5
+      79        000005                          l33 = 1+<%2*2>  ; %5
       80                                
-      81        000001                          l20 = %l1
-      82        000001                          l21 = %l20
-      83                                
-      84        000001                          l22 = l1        ; still a register
-      85        000001                          l23 = l22       ; still a register
-      86                                
-      87                                        .globl extrn
+      81                                
+      82        000001                          l20 = %l1
+      83        000001                          l21 = %l20
+      84                                
+      85        000001                          l22 = l1        ; still a register
+      86        000001                          l23 = l22       ; still a register
+      87                                
+      88                                        .globl extrn
 **:0: ***ERROR Register expression out of range.
-test-reg.mac:88: ***ERROR Complex expression cannot be assigned to a symbol
-      88                                        l40 = %extrn    ; A error; L40   =%******
-test-reg.mac:89: ***ERROR Invalid expression (complex displaced relocation)
-      89 000076 016700  000000                  mov l40,r0      ; U error; code 010000
-      90                                
-      91 000102 000000  000001  000002          .word   r0,wait,r1+1,wait+2,%4     ; 0, 1, 2, 3, 4
-         000110 000003  000004          
-      92                                
-      93                                        .end
-      94                                
-      94                                
+test-reg.mac:89: ***ERROR Complex expression cannot be assigned to a symbol
+      89                                        l40 = %extrn    ; A error; L40   =%******
+test-reg.mac:90: ***ERROR Invalid expression (complex displaced relocation)
+      90 000100 016700  000000                  mov l40,r0      ; U error; code 010000
+      91                                
+      92 000104 000000  000001  000002          .word   r0,wait,r1+1,wait+2,%4     ; 0, 1, 2, 3, 4
+         000112 000003  000004          
+      93                                
+      94                                        .end
+      95                                
+      95                                
 
 
 Symbol table
 
-.     = 000114       002 L11   =%000001           L21   =%000001           L33   =%000005           L8A   =%000003           
+.     = 000116       002 L11   =%000001           L21   =%000001           L33   =%000005           L8A   =%000003           
 A     = 000001           L12   =%000001           L22   =%000001           L4    =%000002           L9    =%000003           
 B     = 000002           L13   =%000007           L23   =%000001           L40   = ******           L9A   =%000003           
 EXTRN = ****** G         L14   = ******           L3    =%000001           L5    =%000002           L9B   =%000001           
@@ -123,4 +124,4 @@ Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000000    001   (RW,I,LCL,REL,CON,NOSAV)
-ABS     000114    002   (RW,I,LCL,ABS,OVR,NOSAV)
+ABS     000116    002   (RW,I,LCL,ABS,OVR,NOSAV)

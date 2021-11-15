@@ -65,6 +65,7 @@ here:   mov #here,%2
         mov %<0+1>,r2           ; mov r1,r2
 
         mov r0,r2               ; mov r0,r2
+        mov ----r1,<r2>         ; mov r1,r2
         mov r0+1,r2             ; mov r1,r2
         mov r1+7,r2             ; error: too large
 ; R    58 000066  016702  000010'  mov r1+7,r2     ; too large

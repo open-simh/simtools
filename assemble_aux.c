@@ -527,7 +527,7 @@ void mode_extension(
             else
                 store_global_offset_word(str, tr, 2, offset, sym->label);
         } else if (sym->section->type == SECTION_REGISTER) {
-            /* Delayed action: evaluate_rec() excludes SECTION_REGISTER when
+            /* Delayed action: evaluate() excludes SECTION_REGISTER when
              * turning symbols into EX_LIT. Do it here now. */
             store_word(str, tr, 2, sym->value + offset);
         } else {
@@ -671,7 +671,7 @@ void store_value(
         if (SYM_IS_IMPORTED(sym)) {
             store_global_offset_word(stack->top, tr, size, sym->value + offset, sym->label);
         } else if (sym->section->type == SECTION_REGISTER) {
-            /* Delayed action: evaluate_rec() excludes SECTION_REGISTER when
+            /* Delayed action: evaluate() excludes SECTION_REGISTER when
              * turning symbols into EX_LIT. Do it here now. */
             store_word(stack->top, tr, size, sym->value + offset);
         } else if (sym->section != current_pc->section) {

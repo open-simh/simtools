@@ -304,133 +304,6 @@ EX_TREE *dup_tree(
     return res;
 }
 
-/*
- * Lift any EX_REG nodes to a higher level in the tree.
- *
- * There will be at most 1 EX_REG label left in the tree, if any,
- * and when it's there it is at the root.
- *
- * This whole complicated tree manipulation is only there because
- * DEC's Macro11 has a global bit per expression to indicate it
- * is a register... probably added after the fact without regard
- * of the weird expressions it would allow.
- */
-
-EX_TREE        *pull_up_reg(
-    EX_TREE *tp,
-    int      depth)
-{
-    EX_TREE        *res;
-    int             nsubtrees;
-
-    if (!tp)
-        return tp;
-
-    /* Eliminate multiple levels of EX_REG */
-    if (tp->type == EX_REG) {
-#if DEBUG_REGEXPR
-        fprintf(stderr, "pull_up_reg: initial EX_REG: ");
-        print_tree(stderr, tp, 0);
-#endif /* DEBUG_REGEXPR */
-
-        res = pull_up_reg(tp->data.child.left, depth + 1);
-        if (res->type != EX_REG) {
-            res = new_ex_una(EX_REG, res);
-        }
-#if DEBUG_REGEXPR
-        fprintf(stderr, "pull_up_reg: pulled up EX_REG: ");
-        print_tree(stderr, res, 0);
-#endif /* DEBUG_REGEXPR */
-
-        return res;
-    }
-
-    nsubtrees = num_subtrees(tp);
-
-    if (nsubtrees > 0) {
-        EX_TREE        *left = tp->data.child.left,
-                       *right = tp->data.child.right,
-                       *evalleft,
-                       *evalright;
-        int             lifted = 0;
-
-#if DEBUG_REGEXPR
-        fprintf(stderr, "pull_up_reg: before: ");
-        print_tree(stderr, tp, 0);
-#endif /* DEBUG_REGEXPR */
-
-        left = pull_up_reg(left, depth + 1);
-
-        evalleft = left;
-        if (left && left->type == EX_REG) {
-#if DEBUG_REGEXPR
-            if (tp->type == EX_REG) {
-                fprintf(stderr, "pull_up_reg: left->type == EX_REG while tp->type==EX_REG\n");
-            }
-#endif /* DEBUG_REGEXPR */
-            evalleft = left->data.child.left;
-            free(left);
-            lifted++;
-        }
-
-        if (nsubtrees > 1) {
-            right = pull_up_reg(right, depth + 1);
-
-            evalright = right;
-            if (right && right->type == EX_REG) {
-                evalright = right->data.child.left;
-                free(right);
-                lifted++;
-            }
-        } else {
-            evalright = NULL;
-        }
-
-        res = new_ex_tree(tp->type);
-        res->data.child.left = evalleft;
-        res->data.child.right = evalright;
-        res->cp = tp->cp;
-
-        if (lifted) {
-            res = new_ex_una(EX_REG, res);
-
-#if DEBUG_REGEXPR
-            fprintf(stderr, "pull_up_reg: after:  ");
-            print_tree(stderr, res, 0);
-#endif /* DEBUG_REGEXPR */
-        }
-        return res;
-    }
-
-    if (depth > 0 && tp->type == EX_SYM) {
-        /*
-         * Temporarily change R0 into %0.
-         * We only bother to do this in nested expressions, because for
-         * the common case where R0 is the whole expression this makes
-         * no sense.
-         */
-        int regno = get_register(tp);
-
-        if (regno != NO_REG) {
-#if DEBUG_REGEXPR
-            fprintf(stderr, "pull_up_reg: label `");
-            print_tree(stderr, tp, 1);
-#endif /* DEBUG_REGEXPR */
-            res = new_ex_lit(regno);
-            res->cp = tp->cp;
-            res = new_ex_una(EX_REG, res);
-#if DEBUG_REGEXPR
-            fprintf(stderr, "' to ");
-            print_tree(stderr, res, 0);
-#endif /* DEBUG_REGEXPR */
-
-            return res;
-        }
-    }
-
-    return dup_tree(tp);
-}
-
 #define RELTYPE(tp) (((tp)->type == EX_SYM || (tp)->type == EX_TEMP_SYM) && \
         (tp)->data.symbol->section->flags & PSECT_REL)
 
@@ -439,7 +312,8 @@ EX_TREE        *pull_up_reg(
    Leaves the input tree untouched and creates a new tree as result. */
 EX_TREE        *evaluate_rec(
     EX_TREE *tp,
-    int flags)
+    int flags,
+    int *outflags)
 {
     EX_TREE        *res;
     char           *cp = tp->cp;
@@ -480,9 +354,13 @@ EX_TREE        *evaluate_rec(
 
             /* Turn defined absolute symbol to a literal */
             if (!(sym->section->flags & PSECT_REL)
-                && !SYM_IS_IMPORTED(sym)
-                && sym->section->type != SECTION_REGISTER) {
+                && !SYM_IS_IMPORTED(sym)) {
                 res = new_ex_lit(sym->value);
+
+                if (sym->section->type == SECTION_REGISTER) {
+                    *outflags |= EVALUATE_OUT_IS_REGISTER;
+                }
+
                 break;
             }
 
@@ -512,7 +390,7 @@ EX_TREE        *evaluate_rec(
 
     case EX_COM:
         /* Complement */
-        tp = evaluate_rec(tp->data.child.left, flags);
+        tp = evaluate_rec(tp->data.child.left, flags, outflags);
         if (tp->type == EX_LIT) {
             /* Complement the literal */
             res = new_ex_lit(~tp->data.lit);
@@ -525,7 +403,7 @@ EX_TREE        *evaluate_rec(
         break;
 
     case EX_NEG:
-        tp = evaluate_rec(tp->data.child.left, flags);
+        tp = evaluate_rec(tp->data.child.left, flags, outflags);
         if (tp->type == EX_LIT) {
             /* negate literal */
             res = new_ex_lit((unsigned) -(int) tp->data.lit);
@@ -545,6 +423,11 @@ EX_TREE        *evaluate_rec(
         }
         break;
 
+    case EX_REG:
+        res = evaluate_rec(tp->data.child.left, flags, outflags);
+        *outflags |= EVALUATE_OUT_IS_REGISTER;
+        break;
+
     case EX_ERR:
         /* Copy */
         res = dup_tree(tp);
@@ -555,8 +438,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Both literals?  Sum them and return result. */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -631,8 +514,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Both literals?  Subtract them and return a lit. */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -707,8 +590,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Can only multiply if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -769,8 +652,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Can only divide if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -797,8 +680,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -842,8 +725,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -887,8 +770,8 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags);
-            right = evaluate_rec(tp->data.child.right, flags);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -940,6 +823,7 @@ EX_TREE        *evaluate_rec(
     }
 
     res->cp = cp;
+
     return res;
 }
 
@@ -947,50 +831,47 @@ EX_TREE        *evaluate(
     EX_TREE *tp,
     int flags)
 {
-    EX_TREE        *pulled_up,
-                   *res;
-    int             is_register = 0;
+    EX_TREE        *res;
+    int             outflags = 0;
 
 #if DEBUG_REGEXPR
-    fprintf(stderr, "Before pull_up_reg: ");
+    fprintf(stderr, "evaluate: ");
     print_tree(stderr, tp, 0);
 #endif /* DEBUG_REGEXPR */
+    /*
+     * Check the common simple case for register references: R0...PC.
+     * Copy those directly, without going into the recursion.
+     * Therefore, in the recursion it can be assumed that the expression
+     * is more complex, and it is worth the overhead of converting them
+     * to an EX_LIT plus the EVALUATE_OUT_IS_REGISTER flag
+     * (and back again, up here).
+     */
+    if (tp->type == EX_SYM &&
+            tp->data.symbol->section->type == SECTION_REGISTER &&
+            !SYM_IS_IMPORTED(tp->data.symbol)) {
+        res = dup_tree(tp);
+    } else {
+        res = evaluate_rec(tp, flags, &outflags);
 
-    pulled_up = pull_up_reg(tp, 0);
+        if (outflags & EVALUATE_OUT_IS_REGISTER) {
+            int regno = get_register(res);
 
+            if (regno == NO_REG) {
+                report(NULL, "Register expression out of range.\n");
 #if DEBUG_REGEXPR
-    fprintf(stderr, "After  pull_up_reg: ");
-    print_tree(stderr, pulled_up, 0);
+                print_tree(stderr, tp, 0);
+                print_tree(stderr, res, 0);
 #endif /* DEBUG_REGEXPR */
+                /* TODO: maybe make this a EX_TEMP_SYM? */
+                res = ex_err(res, res->cp);
+            } else {
+                EX_TREE *newresult = new_ex_tree(EX_SYM);
 
-    while (pulled_up->type == EX_REG) {
-        EX_TREE *new = pulled_up->data.child.left;
-        free(pulled_up);
-        pulled_up = new;
-        is_register = 1;
-    }
-
-    res = evaluate_rec(pulled_up, flags);
-    free_tree(pulled_up);
-
-    if (is_register) {
-        int regno = get_register(res);
-
-        if (regno == NO_REG) {
-            report(NULL, "Register expression out of range.\n");
-#if DEBUG_REGEXPR
-            print_tree(stderr, tp, 0);
-            print_tree(stderr, res, 0);
-#endif /* DEBUG_REGEXPR */
-            /* TODO: maybe make this a EX_TEMP_SYM? */
-            res = ex_err(res, res->cp);
-        } else {
-            EX_TREE *newresult = new_ex_tree(EX_SYM);
-
-            newresult->cp = res->cp;
-            newresult->data.symbol = reg_sym[regno];
-            free_tree(res);
-            res = newresult;
+                newresult->cp = res->cp;
+                newresult->data.symbol = reg_sym[regno];
+                free_tree(res);
+                res = newresult;
+            }
         }
     }
 
