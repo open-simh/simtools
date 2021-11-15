@@ -368,7 +368,7 @@ EX_TREE        *evaluate(
             /* Make a temp sym with the negative value of the given
                sym (this works for symbols within relocatable sections
                too) */
-            res = new_temp_sym("*TEMP", tp->data.symbol->section, (unsigned) -(int) tp->data.symbol->value);
+            res = new_temp_sym("*NEG", tp->data.symbol->section, (unsigned) -(int) tp->data.symbol->value);
             res->cp = tp->cp;
             free_tree(tp);
         } else {
