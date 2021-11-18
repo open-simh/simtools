@@ -3,6 +3,14 @@ xx.xx.202x: Rhialto
         - Improved error messages for bad addressing modes
           (due to gitlab issue #10)
         - Undefined symbols are now listed in the symbol table.
+        - The weird way the unary "operator" % works in expressions is
+          now implemented.
+          The docs on page 3-8/9 aren't very precise but testing showed
+          that any expression with a register in it can be used as a
+          register, and (if used to define a symbol) is listed in the
+          symbol table as such. %3+1 is <%3>+1 is R4.
+        - Fixed registers being used in .word or immediate operands:
+          no longer generated as being relocatable expressions.
 
 16.05.2021: Rhialto
         version 0.7.1:
