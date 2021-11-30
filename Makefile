@@ -5,7 +5,7 @@
 
 WARNS     ?= -Wall -Wshadow -Wextra -pedantic -Woverflow -Wstrict-overflow
 OBJFORMAT ?= -DDEFAULT_OBJECTFORMAT_RT11=0
-SANITIZE  ?= #-fsanitize=address -fsanitize=undefined -fsanitize-recover=all -fno-omit-frame-pointer
+#SANITIZE  ?= -fsanitize=address -fsanitize=undefined -fsanitize-recover=all -fno-omit-frame-pointer
 DEBUG     ?= -ggdb $(SANITIZE)
 OPT       ?= -O3
 CFLAGS    ?= -std=gnu99 $(WARNS) $(DEBUG) $(OPT) $(OBJFORMAT)
@@ -57,20 +57,20 @@ clean:
 argtests: macro11
 	@ for OPT in -e -d -m -p -o -l -ysl ; do \
 	  ./macro11 foo.mac $$OPT     2> /dev/null; \
-	  if (( $$? == 1 )); then echo PASS; else echo FAIL; fi; \
+	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
 	  echo "  $$OPT missing value"; \
 	  ./macro11 foo.mac $$OPT -v  2> /dev/null; \
-	  if (( $$? == 1 )); then echo PASS; else echo FAIL; fi; \
+	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
 	  echo "  $$OPT fol. by option"; \
 	  done
 	@ ./macro11 foo.mac $$OPT -x -v 2> /dev/null; \
-	  if (( $$? == 1 )); then echo PASS; else echo FAIL; fi; \
+	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
 	   echo "  -x must be the last option"
 
+LSAN_OPTIONS=suppressions=../macro11.supp
+
 tests: macro11 argtests
-	@ ACTUAL=`./macro11 tests/test-undef.mac 2>&1`; \
-	if [ "tests/test-undef.mac:1: ***ERROR MACRO .TTYOU not found" == "$$ACTUAL" ]; then echo PASS; else echo FAIL; fi; \
-	echo "  test-undef.mac"
+	cd tests && env LSAN_OPTIONS="${LSAN_OPTIONS}" ./RunTests
 
 # Automatic dependency generation
 
