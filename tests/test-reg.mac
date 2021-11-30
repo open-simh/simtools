@@ -2,8 +2,6 @@
 ;
 ; Test expressions that evaluate to registers.
 ;
-; !!! THIS TEST IS NOT RUN YET BECAUSE MANY OF THE CASES FAIL !!!
-;
 ; All lines not marked "error" should assemble without complaint
 ; as absolute values (no relocation etc).
 ;
