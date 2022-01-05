@@ -172,9 +172,9 @@ void stream_delete(
 
 /* *** class BUFFER_STREAM implementation */
 
-/* STREAM::gets for a buffer stream */
+/* STREAM::getline for a buffer stream */
 
-char           *buffer_stream_gets(
+char           *buffer_stream_getline(
     STREAM *str)
 {
     char           *nl;
@@ -228,7 +228,7 @@ void buffer_stream_rewind(
 /* BUFFER_STREAM vtbl */
 
 STREAM_VTBL     buffer_stream_vtbl = {
-    buffer_stream_delete, buffer_stream_gets, buffer_stream_rewind
+    buffer_stream_delete, buffer_stream_getline, buffer_stream_rewind
 };
 
 void buffer_stream_construct(
@@ -271,9 +271,9 @@ STREAM         *new_buffer_stream(
 
 /* *** FILE_STREAM implementation */
 
-/* Implement STREAM::gets for a file stream */
+/* Implement STREAM::getline for a file stream */
 
-static char    *file_gets(
+static char    *file_getline(
     STREAM *str)
 {
     int             i,
@@ -332,7 +332,7 @@ void file_rewind(
 }
 
 static STREAM_VTBL file_stream_vtbl = {
-    file_destroy, file_gets, file_rewind
+    file_destroy, file_getline, file_rewind
 };
 
 /* Prepare and open a stream from a file. */
@@ -391,11 +391,11 @@ void stack_push(
     stack->top = str;
 }
 
-/* stack_gets calls vtbl->gets for the topmost stack entry.  When
+/* stack_getline calls vtbl->getline for the topmost stack entry.  When
    topmost streams indicate they're exhausted, they are popped and
    deleted, until the stack is exhausted. */
 
-char           *stack_gets(
+char           *stack_getline(
     STACK *stack)
 {
     char           *line;
@@ -403,7 +403,7 @@ char           *stack_gets(
     if (stack->top == NULL)
         return NULL;
 
-    while ((line = stack->top->vtbl->gets(stack->top)) == NULL) {
+    while ((line = stack->top->vtbl->getline(stack->top)) == NULL) {
         stack_pop(stack);
         if (stack->top == NULL)
             return NULL;

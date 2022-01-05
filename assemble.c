@@ -45,7 +45,7 @@ static int assemble(
     int             local;      /* Whether a label is a local label or
                                    not */
 
-    line = stack_gets(stack);
+    line = stack_getline(stack);
     if (line == NULL)
         return -1;                     /* Return code for EOF. */
 
@@ -522,7 +522,7 @@ static int assemble(
                             cp += strcspn(cp, quote);
                             if (*cp == quote[0])
                                 break; /* Found closing quote */
-                            cp = stack_gets(stack);     /* Read next input line */
+                            cp = stack_getline(stack);     /* Read next input line */
                             if (cp == NULL)
                                 break; /* EOF */
                         }
@@ -641,7 +641,7 @@ static int assemble(
                                 for (;;) {
                                     char           *mlabel;
 
-                                    maccp = macstr->vtbl->gets(macstr);
+                                    maccp = macstr->vtbl->getline(macstr);
                                     if (maccp == NULL)
                                         break;
                                     mlabel = get_symbol(maccp, &maccp, NULL);

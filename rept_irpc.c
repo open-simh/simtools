@@ -27,11 +27,11 @@ typedef struct rept_stream {
                                    expansion */
 } REPT_STREAM;
 
-/* rept_stream_gets gets a line from a repeat stream.  At the end of
+/* rept_stream_getline gets a line from a repeat stream.  At the end of
    each count, the coutdown is decreated and the stream is reset to
    its beginning. */
 
-char           *rept_stream_gets(
+char           *rept_stream_getline(
     STREAM *str)
 {
     REPT_STREAM    *rstr = (REPT_STREAM *) str;
@@ -41,7 +41,7 @@ char           *rept_stream_gets(
         if (rstr->count <= 0)
             return NULL;
 
-        if ((cp = buffer_stream_gets(str)) != NULL)
+        if ((cp = buffer_stream_getline(str)) != NULL)
             return cp;
 
         buffer_stream_rewind(str);
@@ -64,7 +64,7 @@ void rept_stream_delete(
 /* The VTBL */
 
 STREAM_VTBL     rept_stream_vtbl = {
-    rept_stream_delete, rept_stream_gets, buffer_stream_rewind
+    rept_stream_delete, rept_stream_getline, buffer_stream_rewind
 };
 
 /* expand_rept is called when a .REPT is encountered in the input. */
@@ -135,11 +135,11 @@ typedef struct irp_stream {
     int             savecond;   /* Saved conditional level */
 } IRP_STREAM;
 
-/* irp_stream_gets expands the IRP as the stream is read. */
+/* irp_stream_getline expands the IRP as the stream is read. */
 /* Each time an iteration is exhausted, the next iteration is
    generated. */
 
-char           *irp_stream_gets(
+char           *irp_stream_getline(
     STREAM *str)
 {
     IRP_STREAM     *istr = (IRP_STREAM *) str;
@@ -148,7 +148,7 @@ char           *irp_stream_gets(
     ARG            *arg;
 
     for (;;) {
-        if ((cp = buffer_stream_gets(str)) != NULL)
+        if ((cp = buffer_stream_getline(str)) != NULL)
             return cp;
 
         cp = istr->items + istr->offset;
@@ -190,7 +190,7 @@ void irp_stream_delete(
 }
 
 STREAM_VTBL     irp_stream_vtbl = {
-    irp_stream_delete, irp_stream_gets, buffer_stream_rewind
+    irp_stream_delete, irp_stream_getline, buffer_stream_rewind
 };
 
 /* expand_irp is called when a .IRP is encountered in the input. */
@@ -266,10 +266,10 @@ typedef struct irpc_stream {
     int             savecond;   /* conditional stack at invocation */
 } IRPC_STREAM;
 
-/* irpc_stream_gets - same comments apply as with irp_stream_gets, but
+/* irpc_stream_getline - same comments apply as with irp_stream_getline, but
    the substitution is character-by-character */
 
-char           *irpc_stream_gets(
+char           *irpc_stream_getline(
     STREAM *str)
 {
     IRPC_STREAM    *istr = (IRPC_STREAM *) str;
@@ -278,7 +278,7 @@ char           *irpc_stream_gets(
     ARG            *arg;
 
     for (;;) {
-        if ((cp = buffer_stream_gets(str)) != NULL)
+        if ((cp = buffer_stream_getline(str)) != NULL)
             return cp;
 
         cp = istr->items + istr->offset;
@@ -320,7 +320,7 @@ void irpc_stream_delete(
 }
 
 STREAM_VTBL     irpc_stream_vtbl = {
-    irpc_stream_delete, irpc_stream_gets, buffer_stream_rewind
+    irpc_stream_delete, irpc_stream_getline, buffer_stream_rewind
 };
 
 /* expand_irpc - called when .IRPC is encountered in the input */

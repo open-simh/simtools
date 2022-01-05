@@ -40,7 +40,7 @@ void macro_stream_delete(
 }
 
 STREAM_VTBL     macro_stream_vtbl = {
-    macro_stream_delete, buffer_stream_gets, buffer_stream_rewind
+    macro_stream_delete, buffer_stream_getline, buffer_stream_rewind
 };
 
 STREAM         *new_macro_stream(
@@ -85,7 +85,7 @@ void read_body(
         char           *nextline;
         char           *cp;
 
-        nextline = stack_gets(stack);  /* Now read the line */
+        nextline = stack_getline(stack);  /* Now read the line */
         if (nextline == NULL) {        /* End of file. */
             report(stack->top, "Macro body of '%s' not closed\n", name);
             break;
