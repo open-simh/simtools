@@ -1,5 +1,5 @@
-xx.xx.202x: Rhialto
-        version 0.7.x:
+05.01.2022: Rhialto
+        version 0.7.2:
         - Improved error messages for bad addressing modes
           (due to gitlab issue #10)
         - Undefined symbols are now listed in the symbol table.
@@ -11,6 +11,7 @@ xx.xx.202x: Rhialto
           symbol table as such. %3+1 is <%3>+1 is R4.
         - Fixed registers being used in .word or immediate operands:
           no longer generated as being relocatable expressions.
+        - 'make tests' works more portably.
 
 16.05.2021: Rhialto
         version 0.7.1:
