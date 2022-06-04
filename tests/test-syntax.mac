@@ -1,0 +1,42 @@
+;;;;
+;
+; Test some aspects of syntax.
+;
+; Reference MACRO11 does very weird things with these errors.
+; Fortunately I don't plan to produce exactly the same results in case of errors.
+; It seems to recognise an operand where there is none (or none yet)...
+;
+; AQ   37 000022  012767  000004  177772          mov     #4..,r0
+; AQ   38 000030  012767  000011  177772          mov     #9..,r0
+; AQ   39 000036  012767  000004  000000G         mov     #4.$,r0
+; AQU  40 000044  012767  000000  177772          mov     #4$.,r0
+;      41
+; A    42 000052  012767  000004  177772          mov     #4..
+; A    43 000060  012767  000004  000000G         mov     #4.$
+; AU   44 000066  012767  000000  177772          mov     #4$.
+
+	mov	#4..,r0		; bad syntax
+	mov	#4$.,r0		; bad syntax
+	mov	#4.$,r0		; bad syntax
+	mov	#4$$,r0		; bad syntax
+
+	mov	#4..		; bad syntax
+	mov	#4$.		; bad syntax
+	mov	#4.$		; bad syntax
+	mov	#4$$		; bad syntax
+
+;; page 2-4:
+;; Multiple expressions used in the operand field of a MACRO-11 statement
+;; must be separated by a comma;
+;; multiple symbols similarly must be delimited by a valid separator
+;; (a comma, tab, and/or space).
+;; When the operator field contains an op code, associated operands are
+;; always expressions, ...
+
+a=1
+        mov     #4 r0
+        mov     a r0
+
+;; page 2-3:
+;; An operator is terminated by a space, tab, or any non-Radix-50 character,
+        mov@a,r0

@@ -33,6 +33,7 @@ TESTS="test-asciz \
     test-reg \
     test-reloc \
     test-rept \
+    test-syntax \
     test-ua-pl \
     test-undef \
     test-word-comma"

@@ -743,23 +743,23 @@ char           *get_symbol(
 {
     int             len;
     char           *symcp;
-    int             digits = 0;
+    int             start_digit = 0;
+    int             not_digits = 0;
 
     cp = skipwhite(cp);                /* Skip leading whitespace */
 
     if (!issym((unsigned char)*cp))
         return NULL;
 
-    digits = 0;
     if (isdigit((unsigned char)*cp))
-        digits = 2;                    /* Think about digit count */
+        start_digit = 1;
 
     for (symcp = cp + 1; issym((unsigned char)*symcp); symcp++) {
         if (!isdigit((unsigned char)*symcp)) /* Not a digit? */
-            digits--;                  /* Make a note. */
+            not_digits++;                    /* Make a note. */
     }
 
-    if (digits == 2)
+    if (start_digit && not_digits == 0)
         return NULL;                   /* Not a symbol, it's a digit string */
 
     if (endp)
@@ -780,9 +780,9 @@ char           *get_symbol(
     if (islocal) {
         *islocal = 0;
 
-        /* Turn to local label format */
-        if (digits == 1) {
-            if (symcp[len - 1] == '$') {
+        /* Check if local label format */
+        if (start_digit) {
+            if (not_digits == 1 && symcp[len - 1] == '$') {
                 char           *newsym = memcheck(malloc(32));  /* Overkill */
 
                 sprintf(newsym, "%ld$%d", strtol(symcp, NULL, 10), lsb);
@@ -792,8 +792,7 @@ char           *get_symbol(
                 }
                 free(symcp);
                 symcp = newsym;
-                if (islocal)
-                    *islocal = SYMBOLFLAG_LOCAL;
+                *islocal = SYMBOLFLAG_LOCAL;
                 lsb_used++;
             } else {
                 free(symcp);
@@ -801,8 +800,8 @@ char           *get_symbol(
             }
         }
     } else {
-        /* disallow local label format */
-        if (isdigit((unsigned char)*symcp)) {
+        /* Disallow local label format */
+        if (start_digit) {
             free(symcp);
             return NULL;
         }
