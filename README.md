@@ -50,7 +50,7 @@ hpasm | Assembler for the HP2100
 macro1 | Assembler for the PDP-1
 macro7 | Assembler for the PDP-7
 macro8x | Assembler for the PDP-8
-macro11 | Assembler for the PDP-11
+macro11 | Assembler for the PDP-11. Synchronized from git `https://gitlab.com/Rhialto/macro11.git`; most recently from tag `macro11-v0.7.2`.
 
 ## Extracters
 
