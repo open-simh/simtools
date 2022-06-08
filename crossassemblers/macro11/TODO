@@ -1,7 +1,12 @@
+        .packed         pdf page 80
 
 listing format errors: ignore whitespace of input
 
 documentation: print supported directives
+
+register symbols: %3+1 is the same as %4 (pdf page 3-9 aka 35),
+but where precisely register symbols can be used, and how,
+isn't specified.
 
 ---------------------------------------
 I was not able to locate a Macro-11 language reference manual any more

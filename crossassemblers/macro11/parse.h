@@ -8,8 +8,8 @@
 
 // is char 'c' part of a symbol?
 #define issym(c) (isalpha(c) || isdigit(c) \
-		|| (c) == '.' || (c) == '$' \
-		|| (symbol_allow_underscores && (c) == '_'))
+                || (c) == '.' || (c) == '$' \
+                || (symbol_allow_underscores && (c) == '_'))
 
 
 char           *skipwhite(
@@ -23,6 +23,9 @@ char           *skipdelim_comma(
 SYMBOL         *get_op(
     char *cp,
     char **endp);
+int             check_eol(
+    STACK *stack,
+    char *cp);
 char           *getstring(
     char *cp,
     char **endp);
@@ -36,14 +39,22 @@ char           *get_symbol(
 int             get_mode(
     char *cp,
     char **endp,
-    ADDR_MODE *mode);
+    ADDR_MODE *mode,
+    char **error);
+int             get_fp_src_mode(
+    char *cp,
+    char **endp,
+    ADDR_MODE *mode,
+    char **error);
 
 EX_TREE        *parse_expr(
     char *cp,
-    int undef);
+    int flags);
 EX_TREE        *parse_unary_expr(
     char *cp,
-    int undef);
+    int flags);
+int             expr_ok(
+    EX_TREE *expr);
 int             parse_float(
     char *cp,
     char **endp,

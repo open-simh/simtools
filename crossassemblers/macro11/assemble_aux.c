@@ -194,46 +194,58 @@ unsigned get_register(
 
 /*
   implicit_gbl is a self-recursive routine that adds undefined symbols
-  to the "implicit globals" symbol table.
+  to the "implicit globals" symbol table, or alternatively adds the
+  symbol as an UNDEFINED symbol.
 */
 
 void implicit_gbl(
     EX_TREE *value)
 {
-    if (pass)
+    if (pass || !value)
         return;                        /* Only do this in first pass */
 
-    if (!enabl_gbl)
-        return;                        /* Option not enabled, don't do it. */
-
-    switch (value->type) {
-    case EX_UNDEFINED_SYM:
-        {
-            if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {      /* Unless it's a
-                                                                           local symbol, */
-                add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL, &absolute_section, &implicit_st);
+    switch (num_subtrees(value)) {
+    case 0:
+        switch (value->type) {
+        case EX_UNDEFINED_SYM:
+            {
+                if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {
+                    /* Unless it's a local symbol, */
+                    if (enabl_gbl) {
+                        /* either make the undefined symbol into an
+                           implicit global */
+                        add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
+                                &absolute_section, &implicit_st);
+                    } else {
+                        /* or add it to the undefined symbol table,
+                           purely for listing purposes.
+                           It also works to add it to symbol_st,
+                           all code is carefully made for that. */
+#define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
+#if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
+                        add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
+                                &absolute_section, &symbol_st);
+#else
+                        add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
+                                &absolute_section, &undefined_st);
+#endif
+                    }
+                }
             }
+            break;
+        case EX_LIT:
+        case EX_SYM:
+        case EX_TEMP_SYM: // Impossible on this pass
+            return;
+        default:
+            break;
         }
         break;
-    case EX_LIT:
-    case EX_SYM:
-    case EX_TEMP_SYM: // Impossible on this pass
-        return;
-    case EX_ADD:
-    case EX_SUB:
-    case EX_MUL:
-    case EX_DIV:
-    case EX_AND:
-    case EX_OR:
+    case 2:
         implicit_gbl(value->data.child.right);
-        /* falls into... */
-    case EX_COM:
-    case EX_NEG:
+        /* FALLS THROUGH */
+    case 1:
         implicit_gbl(value->data.child.left);
-        break;
-    case EX_ERR:
-        if (value->data.child.left)
-            implicit_gbl(value->data.child.left);
         break;
     }
 }
@@ -256,6 +268,28 @@ void migrate_implicit(
         isym->flags |= SYMBOLFLAG_IMPLICIT_GLOBAL;
         sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
         // Just one other thing - migrate the stmtno
+        sym->stmtno = isym->stmtno;
+    }
+}
+
+/* Done between second pass and listing */
+/* Migrates the symbols from the "undefined" table into the main table. */
+
+void migrate_undefined(
+    void)
+{
+    SYMBOL_ITER     iter;
+    SYMBOL         *isym,
+                   *sym;
+
+    for (isym = first_sym(&undefined_st, &iter); isym != NULL; isym = next_sym(&undefined_st, &iter)) {
+        sym = lookup_sym(isym->label, &symbol_st);
+        if (sym) {
+            continue;                  /* It's already in there.  Great. */
+        }
+        isym->flags |= SYMBOLFLAG_UNDEFINED; /* Just in case */
+        sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
+        /* Just one other thing - migrate the stmtno */
         sym->stmtno = isym->stmtno;
     }
 }
@@ -322,7 +356,12 @@ int complex_tree(
         {
             SYMBOL         *sym = tree->data.symbol;
 
-            if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+            /* This check may not be needed; so far it made no difference. */
+            if (sym->flags & SYMBOLFLAG_UNDEFINED) {
+                return 0;
+            }
+
+            if (SYM_IS_IMPORTED(sym)) {
                 text_complex_global(tx, sym->label);
             } else {
                 text_complex_psect(tx, sym->section->sector, sym->value);
@@ -412,7 +451,7 @@ static void store_complex(
     text_complex_begin(&tx);           /* Open complex expression */
 
     if (!complex_tree(&tx, value)) {   /* Translate */
-        report(refstr, "Invalid expression\n");
+        report(refstr, "Invalid expression (complex relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
@@ -438,7 +477,7 @@ static void store_complex_displaced(
     text_complex_begin(&tx);
 
     if (!complex_tree(&tx, value)) {
-        report(refstr, "Invalid expression\n");
+        report(refstr, "Invalid expression (complex displaced relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
@@ -467,32 +506,42 @@ void mode_extension(
     }
 
     if (value->type == EX_LIT) {
-        if (mode->rel)                 /* PC-relative? */
-            store_displaced_word(str, tr, 2, value->data.lit);
-        else
+        if (mode->pcrel) {            /* PC-relative? */
+            if (current_pc->section->flags & PSECT_REL) {
+                store_displaced_word(str, tr, 2, value->data.lit);
+            } else {
+                /* I can compute this myself. */
+                store_word(str, tr, 2, value->data.lit - DOT - 2);
+            }
+        } else {
             store_word(str, tr, 2, value->data.lit);    /* Just a
                                                            known
                                                            value. */
+        }
     } else if (express_sym_offset(value, &sym, &offset)) {
-        if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+        if (SYM_IS_IMPORTED(sym)) {
             /* Reference to a global symbol. */
             /* Global symbol plus offset */
-            if (mode->rel)
+            if (mode->pcrel)
                 store_global_displaced_offset_word(str, tr, 2, offset, sym->label);
             else
                 store_global_offset_word(str, tr, 2, offset, sym->label);
+        } else if (sym->section->type == SECTION_REGISTER) {
+            /* Delayed action: evaluate() excludes SECTION_REGISTER when
+             * turning symbols into EX_LIT. Do it here now. */
+            store_word(str, tr, 2, sym->value + offset);
         } else {
             /* Relative to non-external symbol. */
             if (current_pc->section == sym->section) {
                 /* In the same section */
-                if (mode->rel) {
+                if (mode->pcrel) {
                     /* I can compute this myself. */
                     store_word(str, tr, 2, sym->value + offset - DOT - 2);
                 } else
                     store_internal_word(str, tr, 2, sym->value + offset);
             } else {
                 /* In a different section */
-                if (mode->rel)
+                if (mode->pcrel)
                     store_psect_displaced_offset_word(str, tr, 2, sym->value + offset, sym->section->label);
                 else
                     store_psect_offset_word(str, tr, 2, sym->value + offset, sym->section->label);
@@ -501,7 +550,7 @@ void mode_extension(
     } else {
         /* Complex relocation */
 
-        if (mode->rel)
+        if (mode->pcrel)
             store_complex_displaced(str, tr, 2, mode->offset);
         else
             store_complex(str, tr, 2, mode->offset);
@@ -553,7 +602,7 @@ int eval_undefined(
 }
 
 /* push_cond - a new conditional (.IF) block has been activated.  Push
-   it's context. */
+   its context. */
 
 void push_cond(
     int ok,
@@ -619,8 +668,12 @@ void store_value(
     } else if (!express_sym_offset(value, &sym, &offset)) {
         store_complex(stack->top, tr, size, value);
     } else {
-        if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL) {
+        if (SYM_IS_IMPORTED(sym)) {
             store_global_offset_word(stack->top, tr, size, sym->value + offset, sym->label);
+        } else if (sym->section->type == SECTION_REGISTER) {
+            /* Delayed action: evaluate() excludes SECTION_REGISTER when
+             * turning symbols into EX_LIT. Do it here now. */
+            store_word(stack->top, tr, size, sym->value + offset);
         } else if (sym->section != current_pc->section) {
             store_psect_offset_word(stack->top, tr, size, sym->value + offset, sym->section->label);
         } else {
@@ -653,7 +706,7 @@ int do_word(
         } else {
             EX_TREE        *value = parse_expr(cp, 0);
 
-            if (value->cp > cp) {
+            if (value->type != EX_ERR && value->cp > cp) {
                 store_value(stack, tr, size, value);
 
                 cp = value->cp;
@@ -685,6 +738,10 @@ int check_branch(
     int max)
 {
     int             s_offset;
+
+    if (offset & 1) {
+        report(stack->top, "Bad branch target (odd address)\n");
+    }
 
     /* Sign-extend */
     if (offset & 0100000)
@@ -731,7 +788,7 @@ void write_globals(
     if (ident)
         gsd_ident(&gsd, ident);
 
-    /* write out each PSECT with it's global stuff */
+    /* write out each PSECT with its global stuff */
     /* Sections must be written out in the order that they
        appear in the assembly file.  */
     for (isect = 0; isect < sector; isect++) {
@@ -745,11 +802,10 @@ void write_globals(
         while (sym) {
             if ((sym->flags & SYMBOLFLAG_GLOBAL) && sym->section == psect) {
                 gsd_global(&gsd, sym->label,
-                           (sym->
-                            flags & SYMBOLFLAG_DEFINITION ? GLOBAL_DEF : 0) | ((sym->
-                                                                                flags & SYMBOLFLAG_WEAK) ?
-                                                                               GLOBAL_WEAK : 0)
-                           | ((sym->section->flags & PSECT_REL) ? GLOBAL_REL : 0) | 0100,
+                           ((sym->flags & SYMBOLFLAG_DEFINITION) ? GLOBAL_DEF  : 0) |
+                           ((sym->flags & SYMBOLFLAG_WEAK)       ? GLOBAL_WEAK : 0) |
+                           ((sym->section->flags & PSECT_REL)    ? GLOBAL_REL  : 0) |
+                           0100,
                            /* Looks undefined, but add it in anyway */
                            sym->value);
             }

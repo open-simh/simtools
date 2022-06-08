@@ -15,9 +15,16 @@ typedef struct addr_mode {
     /* bit 3 is indirect */
     /* bits 4:6 are mode, where 0=Rn, 1=(Rn)+,
        2=-(Rn), 3=offset(Rn) */
-    int             rel;        /* the addressing mode is PC-relative */
+    int             pcrel;      /* the addressing mode is PC-relative */
     EX_TREE        *offset;     /* Expression giving the offset */
 } ADDR_MODE;
+
+#define MODE_INDIRECT   010     /* (R0), @(R0)+, @-(R0), @42(R0) */
+#define MODE_REG        000     /* R0 */
+#define MODE_AUTO_INCR  020     /* (R0)+ */
+#define MODE_AUTO_DECR  040     /* -(R0) */
+#define MODE_OFFSET     060     /* 42(R0) */
+#define MODE_PC         007
 
 void            push_cond(
     int ok,
@@ -85,7 +92,7 @@ void            write_globals(
     FILE *obj);
 void            migrate_implicit(
     void);
-
-
+void            migrate_undefined(
+    void);
 
 #endif

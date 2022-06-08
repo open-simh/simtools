@@ -1,15 +1,17 @@
-#define EXTREE__C
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "extree.h"                    /* my own definitions */
 
 #include "util.h"
 #include "assemble_globals.h"
+#include "assemble_aux.h"
+#include "listing.h"
 #include "object.h"
 
+#define DEBUG_REGEXPR   0
 
 /* Diagnostic: print an expression tree.  I used this in various
    places to help me diagnose parse problems, by putting in calls to
@@ -24,6 +26,10 @@ void print_tree(
     int depth)
 {
     SYMBOL         *sym;
+
+    if (printfile == NULL) {
+        return;
+    }
 
     if (tp == NULL) {
         fprintf(printfile, "(null)");
@@ -54,6 +60,12 @@ void print_tree(
 
     case EX_NEG:
         fprintf(printfile, "-<");
+        print_tree(printfile, tp->data.child.left, depth + 4);
+        fputc('>', printfile);
+        break;
+
+    case EX_REG:
+        fprintf(printfile, "%%<");
         print_tree(printfile, tp->data.child.left, depth + 4);
         fputc('>', printfile);
         break;
@@ -114,37 +126,42 @@ void print_tree(
         print_tree(printfile, tp->data.child.right, depth + 4);
         fputc('>', printfile);
         break;
+
+    case EX_LSH:
+        fputc('<', printfile);
+        print_tree(printfile, tp->data.child.left, depth + 4);
+        fputc('_', printfile);
+        print_tree(printfile, tp->data.child.right, depth + 4);
+        fputc('>', printfile);
+        break;
+
+    default:
+        fprintf(printfile, "(node %d)", tp->type);
+        break;
     }
 
     if (depth == 0)
         fputc('\n', printfile);
 }
 
-/* free_tree frees an expression tree. */
+/* num_subtrees tells you how many subtrees this EX_TREE has. */
 
-void free_tree(
+int num_subtrees(
     EX_TREE *tp)
 {
     switch (tp->type) {
     case EX_UNDEFINED_SYM:
     case EX_TEMP_SYM:
-        free(tp->data.symbol->label);
-        free(tp->data.symbol);
-        break;
-
-    case EX_LIT:
     case EX_SYM:
+    case EX_LIT:
+        return 0;
         break;
 
     case EX_COM:
     case EX_NEG:
-        free_tree(tp->data.child.left);
-        break;
-
+    case EX_REG:
     case EX_ERR:
-        if (tp->data.child.left)
-            free_tree(tp->data.child.left);
-        break;
+        return 1;
 
     case EX_ADD:
     case EX_SUB:
@@ -152,10 +169,47 @@ void free_tree(
     case EX_DIV:
     case EX_AND:
     case EX_OR:
-        free_tree(tp->data.child.left);
-        free_tree(tp->data.child.right);
-        break;
+    case EX_LSH:
+        return 2;
     }
+
+    return 0;
+}
+
+/* free_tree frees an expression tree. */
+
+void free_tree(
+    EX_TREE *tp)
+{
+    if (!tp)
+        return;
+
+    switch (num_subtrees(tp)) {
+        case 0:
+            switch (tp->type) {
+            case EX_UNDEFINED_SYM:
+            case EX_TEMP_SYM:
+                free(tp->data.symbol->label);
+                free(tp->data.symbol);
+                break;
+
+            case EX_SYM:
+            case EX_LIT:
+                break;
+
+            default:
+                assert(0);
+                break;
+            }
+        break;
+        case 2:
+            free_tree(tp->data.child.right);
+            /* FALLTHROUGH */
+        case 1:
+            free_tree(tp->data.child.left);
+            break;
+    }
+
     free(tp);
 }
 
@@ -172,14 +226,13 @@ static EX_TREE *new_temp_sym(
 
     sym = memcheck(malloc(sizeof(SYMBOL)));
     sym->label = memcheck(strdup(label));
-    sym->flags = 0;
+    sym->flags = SYMBOLFLAG_DEFINITION;
     sym->stmtno = stmtno;
     sym->next = NULL;
     sym->section = section;
     sym->value = value;
 
-    tp = new_ex_tree();
-    tp->type = EX_TEMP_SYM;
+    tp = new_ex_tree(EX_TEMP_SYM);
     tp->data.symbol = sym;
 
     return tp;
@@ -215,40 +268,37 @@ EX_TREE *dup_tree(
         return NULL;
     }
 
-    res = new_ex_tree();
-    res->type = tp->type;
+    res = new_ex_tree(tp->type);
     res->cp = tp->cp;
 
-    switch (tp->type) {
-    case EX_UNDEFINED_SYM:
-    case EX_TEMP_SYM:
-        res->data.symbol = dup_symbol(tp->data.symbol);
-        break;
+    switch (num_subtrees(tp)) {
+        case 0:
+            switch (tp->type) {
+            case EX_UNDEFINED_SYM:
+            case EX_TEMP_SYM:
+                res->data.symbol = dup_symbol(tp->data.symbol);
+                break;
 
-    /* The symbol reference in EX_SYM is not freed in free_tree() */
-    case EX_SYM:
-        res->data.symbol = tp->data.symbol;
-        break;
+            /* The symbol reference in EX_SYM is not freed in free_tree() */
+            case EX_SYM:
+                res->data.symbol = tp->data.symbol;
+                break;
 
-    case EX_LIT:
-        res->data.lit = tp->data.lit;
-        break;
+            case EX_LIT:
+                res->data.lit = tp->data.lit;
+                break;
 
-    case EX_COM:
-    case EX_NEG:
-    case EX_ERR:
-        res->data.child.left = dup_tree(tp->data.child.left);
+            default:
+                assert(0);
+                break;
+            }
         break;
-
-    case EX_ADD:
-    case EX_SUB:
-    case EX_MUL:
-    case EX_DIV:
-    case EX_AND:
-    case EX_OR:
-        res->data.child.left = dup_tree(tp->data.child.left);
-        res->data.child.right = dup_tree(tp->data.child.right);
-        break;
+        case 2:
+            res->data.child.right = dup_tree(tp->data.child.right);
+            /* FALLTHROUGH */
+        case 1:
+            res->data.child.left = dup_tree(tp->data.child.left);
+            break;
     }
 
     return res;
@@ -258,10 +308,12 @@ EX_TREE *dup_tree(
         (tp)->data.symbol->section->flags & PSECT_REL)
 
 /* evaluate "evaluates" an EX_TREE, ideally trying to produce a
-   constant value, else a symbol plus an offset.  */
-EX_TREE        *evaluate(
+   constant value, else a symbol plus an offset.
+   Leaves the input tree untouched and creates a new tree as result. */
+EX_TREE        *evaluate_rec(
     EX_TREE *tp,
-    int undef)
+    int flags,
+    int *outflags)
 {
     EX_TREE        *res;
     char           *cp = tp->cp;
@@ -273,22 +325,26 @@ EX_TREE        *evaluate(
 
             /* Change some symbols to "undefined" */
 
-            if (undef) {
-                int             change = 0;
+            if (flags & EVALUATE_DEFINEDNESS) {
+                int             is_undefined = 0;
 
                 /* I'd prefer this behavior, but MACRO.SAV is a bit too primitive. */
 #if 0
                 /* A temporary symbol defined later is "undefined." */
                 if (!(sym->flags & PERMANENT) && sym->stmtno > stmtno)
-                    change = 1;
+                    is_undefined = 1;
 #endif
 
                 /* A global symbol with no assignment is "undefined." */
                 /* Go figure. */
-                if ((sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) == SYMBOLFLAG_GLOBAL)
-                    change = 1;
+                if (SYM_IS_IMPORTED(sym))
+                    is_undefined = 1;
 
-                if (change) {
+                /* A symbol marked as undefined is undefined */
+                if (sym->flags & SYMBOLFLAG_UNDEFINED)
+                    is_undefined = 1;
+
+                if (is_undefined) {
                     res = new_temp_sym(tp->data.symbol->label, tp->data.symbol->section,
                                        tp->data.symbol->value);
                     res->type = EX_UNDEFINED_SYM;
@@ -298,9 +354,13 @@ EX_TREE        *evaluate(
 
             /* Turn defined absolute symbol to a literal */
             if (!(sym->section->flags & PSECT_REL)
-                && (sym->flags & (SYMBOLFLAG_GLOBAL | SYMBOLFLAG_DEFINITION)) != SYMBOLFLAG_GLOBAL
-                && sym->section->type != SECTION_REGISTER) {
+                && !SYM_IS_IMPORTED(sym)) {
                 res = new_ex_lit(sym->value);
+
+                if (sym->section->type == SECTION_REGISTER) {
+                    *outflags |= EVALUATE_OUT_IS_REGISTER;
+                }
+
                 break;
             }
 
@@ -330,23 +390,20 @@ EX_TREE        *evaluate(
 
     case EX_COM:
         /* Complement */
-        tp = evaluate(tp->data.child.left, undef);
+        tp = evaluate_rec(tp->data.child.left, flags, outflags);
         if (tp->type == EX_LIT) {
             /* Complement the literal */
             res = new_ex_lit(~tp->data.lit);
             free_tree(tp);
         } else {
             /* Copy verbatim. */
-            res = new_ex_tree();
-            res->type = EX_COM;
-            res->cp = tp->cp;
-            res->data.child.left = tp;
+            res = new_ex_una(EX_COM, tp);
         }
 
         break;
 
     case EX_NEG:
-        tp = evaluate(tp->data.child.left, undef);
+        tp = evaluate_rec(tp->data.child.left, flags, outflags);
         if (tp->type == EX_LIT) {
             /* negate literal */
             res = new_ex_lit((unsigned) -(int) tp->data.lit);
@@ -357,16 +414,18 @@ EX_TREE        *evaluate(
             /* Make a temp sym with the negative value of the given
                sym (this works for symbols within relocatable sections
                too) */
-            res = new_temp_sym("*TEMP", tp->data.symbol->section, (unsigned) -(int) tp->data.symbol->value);
+            res = new_temp_sym("*NEG", tp->data.symbol->section, (unsigned) -(int) tp->data.symbol->value);
             res->cp = tp->cp;
             free_tree(tp);
         } else {
             /* Copy verbatim. */
-            res = new_ex_tree();
-            res->type = EX_NEG;
-            res->cp = tp->cp;
-            res->data.child.left = tp;
+            res = new_ex_una(EX_NEG, tp);
         }
+        break;
+
+    case EX_REG:
+        res = evaluate_rec(tp->data.child.left, flags, outflags);
+        *outflags |= EVALUATE_OUT_IS_REGISTER;
         break;
 
     case EX_ERR:
@@ -379,8 +438,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Both literals?  Sum them and return result. */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -455,8 +514,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Both literals?  Subtract them and return a lit. */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -531,8 +590,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Can only multiply if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -593,8 +652,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Can only divide if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -621,8 +680,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -666,8 +725,8 @@ EX_TREE        *evaluate(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate(tp->data.child.left, undef);
-            right = evaluate(tp->data.child.right, undef);
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
 
             /* Operate if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
@@ -705,12 +764,117 @@ EX_TREE        *evaluate(
             res = new_ex_bin(EX_OR, left, right);
         }
         break;
+
+    case EX_LSH:
+        {
+            EX_TREE        *left,
+                           *right;
+
+            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            right = evaluate_rec(tp->data.child.right, flags, outflags);
+
+            /* Operate if both are literals */
+            if (left->type == EX_LIT && right->type == EX_LIT) {
+                int shift = right->data.lit;
+                if (shift < 0)
+                    res = new_ex_lit(left->data.lit >> -shift);
+                else
+                    res = new_ex_lit(left->data.lit << shift);
+                free_tree(left);
+                free_tree(right);
+                break;
+            }
+
+            if (right->type == EX_LIT &&        /* Symbol shifted 0 == symbol */
+                right->data.lit == 0) {
+                res = left;
+                free_tree(right);
+                break;
+            }
+
+            if (right->type == EX_LIT &&        /* Anything shifted 16 == 0 */
+                ((int)right->data.lit > 15 ||
+                 (int)right->data.lit < -15)) {
+                res = new_ex_lit(0);
+                free_tree(left);
+                free_tree(right);
+                break;
+            }
+
+            if (right->type == EX_LIT) {        /* Other shifts become * or / */
+                int shift = right->data.lit;
+                if (shift > 0)
+                    res = new_ex_bin(EX_MUL, left, new_ex_lit(1 << shift));
+                else
+                    res = new_ex_bin(EX_DIV, left, new_ex_lit(1 << -shift));
+                free_tree(right);
+                break;
+            }
+
+            /* Anything else returns verbatim */
+            res = new_ex_bin(EX_LSH, left, right);
+        }
+        break;
+
     default:
-        fprintf(stderr, "Invalid tree\n");
+        fprintf(stderr, "evaluate_rec: Invalid tree: ");
+        print_tree(stderr, tp, 0);
         return NULL;
     }
 
     res->cp = cp;
+
+    return res;
+}
+
+EX_TREE        *evaluate(
+    EX_TREE *tp,
+    int flags)
+{
+    EX_TREE        *res;
+    int             outflags = 0;
+
+#if DEBUG_REGEXPR
+    fprintf(stderr, "evaluate: ");
+    print_tree(stderr, tp, 0);
+#endif /* DEBUG_REGEXPR */
+    /*
+     * Check the common simple case for register references: R0...PC.
+     * Copy those directly, without going into the recursion.
+     * Therefore, in the recursion it can be assumed that the expression
+     * is more complex, and it is worth the overhead of converting them
+     * to an EX_LIT plus the EVALUATE_OUT_IS_REGISTER flag
+     * (and back again, up here).
+     */
+    if (tp->type == EX_SYM &&
+            tp->data.symbol->section->type == SECTION_REGISTER &&
+            !SYM_IS_IMPORTED(tp->data.symbol)) {
+        res = dup_tree(tp);
+    } else {
+        res = evaluate_rec(tp, flags, &outflags);
+
+        if (outflags & EVALUATE_OUT_IS_REGISTER) {
+            int regno = get_register(res);
+
+            if (regno == NO_REG) {
+                report(NULL, "Register expression out of range.\n");
+#if DEBUG_REGEXPR
+                print_tree(stderr, tp, 0);
+                print_tree(stderr, res, 0);
+#endif /* DEBUG_REGEXPR */
+                /* TODO: maybe make this a EX_TEMP_SYM? */
+                res = ex_err(res, res->cp);
+            } else {
+                EX_TREE *newresult = new_ex_tree(EX_SYM);
+
+                newresult->cp = res->cp;
+                newresult->data.symbol = reg_sym[regno];
+                free_tree(res);
+                res = newresult;
+            }
+        }
+    }
+
     return res;
 }
 
@@ -718,9 +882,11 @@ EX_TREE        *evaluate(
 /* Allocate an EX_TREE */
 
 EX_TREE        *new_ex_tree(
-    void)
+    int type)
 {
-    EX_TREE        *tr = memcheck(malloc(sizeof(EX_TREE)));
+    EX_TREE        *tr = memcheck(calloc(1, sizeof(EX_TREE)));
+
+    tr->type = type;
 
     return tr;
 }
@@ -734,9 +900,8 @@ EX_TREE        *ex_err(
 {
     EX_TREE        *errtp;
 
-    errtp = new_ex_tree();
+    errtp = new_ex_tree(EX_ERR);
     errtp->cp = cp;
-    errtp->type = EX_ERR;
     errtp->data.child.left = tp;
 
     return errtp;
@@ -749,8 +914,7 @@ EX_TREE        *new_ex_lit(
 {
     EX_TREE        *tp;
 
-    tp = new_ex_tree();
-    tp->type = EX_LIT;
+    tp = new_ex_tree(EX_LIT);
     tp->data.lit = value;
 
     return tp;
@@ -765,10 +929,28 @@ EX_TREE        *new_ex_bin(
 {
     EX_TREE        *tp;
 
-    tp = new_ex_tree();
-    tp->type = type;
+    tp = new_ex_tree(type);
     tp->data.child.left = left;
     tp->data.child.right = right;
+
+    tp->cp = right->cp;
+
+    return tp;
+}
+
+/* Create an EX_TREE representing a unary expression */
+
+EX_TREE        *new_ex_una(
+    int type,
+    EX_TREE *left)
+{
+    EX_TREE        *tp;
+
+    tp = new_ex_tree(type);
+    tp->data.child.left = left;
+    tp->data.child.right = NULL;
+
+    tp->cp = left->cp;
 
     return tp;
 }

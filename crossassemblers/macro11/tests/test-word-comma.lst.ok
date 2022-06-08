@@ -10,15 +10,29 @@
       10 000042 000001  000000  000003          .word   1,,3   ; 3 words
       11 000050 000001  000002  000003          .word   1,2,3  ; 3 words
       12                                
-      12                                
+      13                                                       ; all the values below are not relocatable.
+      14 000056 000000  000001  000002          .word   r0,wait,r1+1,wait+2,%4,%4+1     ; 0, 1, 2, 3, 4, 5
+         000064 000003  000004  000005  
+      15 000072 012700  000000                  mov     #r0,r0
+      16 000076 012700  000001                  mov     #wait,r0
+      17 000102 012700  000002                  mov     #r1+1,r0
+      18 000106 012700  000003                  mov     #wait+2,r0
+      19 000112 012700  000004                  mov     #%4,r0
+      20 000116 012700  000005                  mov     #%4+1,r0
+      21                                
+      22 000122 016102  000001                  mov     wait(wait),r2
+      23 000126 016102  000000                  mov     r0(wait),r2
+      24 000132 016102  000001                  mov     wait(r1),r2
+      25 000136 016102  000000                  mov     r0(r1),r2
+      25                                
 
 
 Symbol table
 
-.      ******R      001 START  000000R      001 
+.       000142R      001 START   000000R      001 
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000056    001   (RW,I,LCL,REL,CON,NOSAV)
+        000142    001   (RW,I,LCL,REL,CON,NOSAV)
