@@ -22,16 +22,14 @@ test-operands.mac:15: ***ERROR Junk at end of line (',0             ; bad')
       19 000020 104377                          emt     255.
 test-operands.mac:20: ***ERROR Literal operand too large (256. > 255.)
       20 000022 104377                          emt     256.            ; too large
-test-operands.mac:21: ***ERROR Instruction requires simple literal operand
-      21 000024 104000                          emt     .               ; must be literal
+      21 000024    024'    210                  emt     .               ; allowed though strange
       22                                
       23 000026 104400                          trap    0
       24 000030 104401                          trap    1
       25 000032 104777                          trap    255.
 test-operands.mac:26: ***ERROR Literal operand too large (256. > 255.)
       26 000034 104777                          trap    256.            ; too large
-test-operands.mac:27: ***ERROR Instruction requires simple literal operand
-      27 000036 104400                          trap    .               ; must be literal
+      27 000036    036'    211                  trap    .               ; allowed though strange
       28                                
       29                                ; OC_1GEN
       30                                

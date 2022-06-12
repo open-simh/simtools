@@ -1347,29 +1347,40 @@ O    75                                         .endc
                     case OC_MARK:
                         /* MARK, EMT, TRAP */  {
                             EX_TREE        *value;
-                            unsigned        word;
 
                             cp = skipwhite(cp);
-                            if (*cp == '#')
-                                cp++;  /* Allow the hash, but
-                                          don't require it */
-                            value = parse_expr(cp, 0);
-                            cp = value->cp;
-                            if (value->type != EX_LIT) {
-                                report(stack->top, "Instruction requires simple literal operand\n");
-                                word = op->value;
-                            } else {
-                                unsigned int max = (op->value == I_MARK)? 077 : 0377;
-
-                                if (value->data.lit > max) {
-                                    report(stack->top, "Literal operand too large (%d. > %d.)\n", value->data.lit, max);
-                                    value->data.lit = max;
-                                }
-                                word = op->value | value->data.lit;
+                            if (EOL (*cp)) {
+                                /* Default argument is 0 */
+                                store_word (stack->top, tr, 2, op->value);
                             }
+                            else {
+                                if (*cp == '#')
+                                    cp++;  /* Allow the hash, but
+                                              don't require it */
+                                value = parse_expr(cp, 0);
+                                cp = value->cp;
+                                if (value->type != EX_LIT) {
+                                    if (op->value == I_MARK) {
+                                        report(stack->top, "Instruction requires " "simple literal operand\n");
+                                        store_word(stack->top, tr, 2, op->value);
+                                    }
+                                    else {
+                                        /* EMT, TRAP: handle as two bytes */
+                                        store_value (stack, tr, 1, value);
+                                        store_word (stack->top, tr, 1, op->value >> 8);
+                                    }
+                                } else {
+                                    unsigned v = value->data.lit;
+                                    unsigned int max = (op->value == I_MARK)? 077 : 0377;
 
-                            store_word(stack->top, tr, 2, word);
-                            free_tree(value);
+                                    if (v > max) {
+                                        report(stack->top, "Literal operand too large (%d. > %d.)\n", value->data.lit, max);
+                                        v = max;
+                                    }
+                                    store_word(stack->top, tr, 2, op->value | v);
+                                }
+                                free_tree(value);
+                            }
                         }
                         return CHECK_EOL;
 
