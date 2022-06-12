@@ -369,6 +369,7 @@ void add_symbols(
     add_sym(".BLKW", P_BLKW, S, &pseudo_section, &system_st);
     add_sym(".BYTE", P_BYTE, S, &pseudo_section, &system_st);
     add_sym(".CSECT", P_CSECT, S, &pseudo_section, &system_st);
+    add_sym(".CROSS", P_CROSS, S, &pseudo_section, &system_st);
     add_sym(".DSABL", P_DSABL, S, &pseudo_section, &system_st);
     add_sym(".ENABL", P_ENABL, S, &pseudo_section, &system_st);
     add_sym(".END", P_END, S, &pseudo_section, &system_st);
@@ -396,10 +397,12 @@ void add_symbols(
     add_sym(".LIMIT", P_LIMIT, S, &pseudo_section, &system_st);
     add_sym(".LIST", P_LIST, S, &pseudo_section, &system_st);
     add_sym(".MCALL", P_MCALL, S, &pseudo_section, &system_st);
+    add_sym(".MDELE", P_MDELETE, S, &pseudo_section, &system_st);
     add_sym(".MEXIT", P_MEXIT, S, &pseudo_section, &system_st);
     add_sym(".NARG", P_NARG, S, &pseudo_section, &system_st);
     add_sym(".NCHR", P_NCHR, S, &pseudo_section, &system_st);
     add_sym(".NLIST", P_NLIST, S, &pseudo_section, &system_st);
+    add_sym(".NOCRO", P_NOCROSS, S, &pseudo_section, &system_st);
     add_sym(".NTYPE", P_NTYPE, S, &pseudo_section, &system_st);
     add_sym(".ODD", P_ODD, S, &pseudo_section, &system_st);
     add_sym(".PACKED", P_PACKED, S, &pseudo_section, &system_st);

@@ -293,6 +293,8 @@ O    75                                         .endc
                 case P_PAGE:
                 case P_PRINT:
                 case P_SBTTL:
+                case P_CROSS:
+                case P_NOCROSS:
                     return 1;          /* Accepted, ignored.  (An obvious
                                           need: get assembly listing
                                           controls working fully. ) */
@@ -708,6 +710,9 @@ O    75                                         .endc
                         return mac != NULL;
                     }
 
+                case P_MDELETE:
+                    return 1;   /* TODO: or should it just be a NOP? */
+                    
                 case P_MEXIT:
                     {
                         STREAM         *macstr;
@@ -1038,12 +1043,8 @@ O    75                                         .endc
 
                         label = get_symbol(cp, &cp, NULL);
                         if (label == NULL) {
-                            if (op->value == P_CSECT) {
-                                label = memcheck(strdup(". BLK."));
-                                unnamed_csect = 1;
-                            } else {
-                                label = memcheck(strdup(""));       /* Allow blank */
-                            }
+                            label = memcheck(strdup(". BLK."));
+                            unnamed_csect = 1;
                         }
 
                         sectsym = lookup_sym(label, &section_st);
