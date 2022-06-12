@@ -502,6 +502,7 @@ O    75                                         .endc
                             return 0;
                         }
 
+                        name = defext (name, "MAC");
                         my_searchenv(name, "INCLUDE", hitfile, sizeof(hitfile));
 
                         if (hitfile[0] == '\0') {
@@ -569,6 +570,7 @@ O    75                                         .endc
                         char            hitfile[FILENAME_MAX];
                         char           *name = getstring_fn(cp, &cp);
 
+                        name = defext (name, "MLB");
                         my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
 
                         if (hitfile[0]) {

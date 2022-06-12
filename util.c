@@ -314,3 +314,21 @@ void padto(
         *str++ = ' ', needspace--;
     *str = 0;
 }
+
+/* defext adds the supplied extension to the file name if it doesn't
+   already have one.  "ext" is the desired extension, without the
+   period.  The file name must be in a malloc'ed buffer.  The
+   resulting string address is returned. */
+char *defext (char *fn, const char *ext)
+{
+    char *ret;
+    
+    if (strchr (fn, '.'))
+        return fn;
+    ret = realloc (fn, strlen (fn) + strlen (ext) + 2);
+    if (ret == NULL)
+        return ret;
+    strcat (ret, ".");
+    strcat (ret, ext);
+    return ret;
+}
