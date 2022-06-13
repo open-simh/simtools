@@ -1,6 +1,3 @@
-#define MACRO11__C
-
-
 /*
     Assembler compatible with MACRO-11.
 
@@ -132,7 +129,7 @@ static void print_help(
     printf("    -l - enables listing to stdout.\n");
     printf("-m  load RSX-11 or RT-11 compatible macro library from which\n");
     printf("    .MCALLed macros can be found.\n");
-    printf("    Multiple allowed.\n");
+    printf("    Multiple allowed. Affected by any -rsx or -rt11 which come before.\n");
     printf("-o  gives the object file name (.OBJ)\n");
     printf("-p  gives the name of a directory in which .MCALLed macros may be found.\n");
     printf("    Sets environment variable \"MCALL\".\n");

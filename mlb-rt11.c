@@ -59,12 +59,20 @@ static void     mlb_rt11_extract(
     MLB *mlb);
 
 struct mlb_vtbl mlb_rt11_vtbl = {
-    mlb_rt11_open,
-    mlb_rt11_entry,
-    mlb_rt11_extract,
-    mlb_rt11_close,
+    .mlb_open    = mlb_rt11_open,
+    .mlb_entry   = mlb_rt11_entry,
+    .mlb_extract = mlb_rt11_extract,
+    .mlb_close   = mlb_rt11_close,
+    .mlb_is_rt11 = 1,
 };
 
+/*
+ * Format description:
+ * http://www.bitsavers.org/pdf/dec/pdp11/rt11/v5.6_Aug91/AA-PD6PA-TC_RT-11_Volume_and_File_Formats_Manual_Aug91.pdf
+ * pages 2-27 ff.
+ *
+ * A MLB Macro Library Header differs a lot from an Object Library Header.
+ */
 #define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
 
 /* BYTEPOS calculates the byte position within the macro libray file.

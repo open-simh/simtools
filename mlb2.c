@@ -35,6 +35,7 @@ DAMAGE.
 #include <string.h>
 #include "util.h"
 #include "mlb.h"
+#include "object.h"
 
 MLB_VTBL *mlb_vtbls[] = {
     &mlb_rsx_vtbl,
@@ -42,20 +43,41 @@ MLB_VTBL *mlb_vtbls[] = {
     NULL
 };
 
-MLB     *mlb_open(
+static MLB     *mlb_open_fmt(
     char *name,
-    int allow_object_library)
+    int allow_object_library,
+    int object_format)
 {
     MLB_VTBL *vtbl;
     MLB *mlb = NULL;
     int i;
 
     for (i = 0; (vtbl = mlb_vtbls[i]); i++) {
-        mlb = vtbl->mlb_open(name, allow_object_library);
-        if (mlb != NULL) {
-            mlb->name = memcheck(strdup(name));
-            break;
+        if (vtbl->mlb_is_rt11 == object_format) {
+            mlb = vtbl->mlb_open(name, allow_object_library);
+            if (mlb != NULL) {
+                mlb->name = memcheck(strdup(name));
+                break;
+            }
         }
+    }
+
+    return mlb;
+}
+
+MLB     *mlb_open(
+    char *name,
+    int allow_object_library)
+{
+    MLB *mlb = NULL;
+
+    /*
+     * First try the open function for the currently set object format.
+     * If that fails, try the other one.
+     */
+    mlb = mlb_open_fmt(name, allow_object_library, rt11);
+    if (mlb == NULL) {
+        mlb = mlb_open_fmt(name, allow_object_library, !rt11);
     }
 
     return mlb;
