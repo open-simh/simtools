@@ -568,7 +568,7 @@ O    75                                         .endc
                     }
 
                 case P_LIBRARY:
-                    if (pass == 0) {
+                    {
                         char            hitfile[FILENAME_MAX];
                         char           *name = getstring_fn(cp, &cp);
 
