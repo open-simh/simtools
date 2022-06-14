@@ -30,16 +30,26 @@ FILE           *lstfile = NULL;
 
 int             list_pass_0 = 0;/* Also list what happens during the first pass */
 
+static int      errline = 0;    /* Set if current line has an error */
 
+/* maybe_list returns TRUE if listing may happen for this line. */
+
+static int can_list(
+    void)
+{
+    int             ok = lstfile != NULL &&
+                         (pass > 0 || list_pass_0);
+
+    return ok;
+}
 
 /* do_list returns TRUE if listing is enabled. */
 
 static int dolist(
     void)
 {
-    int             ok = lstfile != NULL &&
-                         (pass > 0 || list_pass_0) &&
-                         list_level > 0;
+    int             ok = can_list () &&
+                         (list_level > 0 || errline);
 
     return ok;
 }
@@ -50,9 +60,11 @@ void list_source(
     STREAM *str,
     char *cp)
 {
-    if (dolist()) {
+    if (can_list()) {
         int             len = strcspn(cp, "\n");
 
+        /* Not an error yet */
+        errline = 0;
         /* Save the line text away for later... */
         if (listline)
             free(listline);
@@ -165,6 +177,8 @@ void report(
     if (!pass && list_pass_0 < 2)
         return;                        /* Don't report now. */
 
+    errline = 1;
+    
     if (str) {
         name = str->name;
         line = str->line;
