@@ -472,6 +472,7 @@ printflt(unsigned *flt, int size)
 
 #define PARSE_FLOAT_WITH_FLOATS         0
 #define PARSE_FLOAT_WITH_INTS           1
+#define PARSE_FLOAT_DIVIDE_BY_MULT_LOOP 0
 
 /* Parse PDP-11 64-bit floating point format. */
 /* Give a pointer to "size" words to receive the result. */
@@ -694,8 +695,7 @@ int parse_float(
             DF("dot: %c\n", *cp);
             ok_chars++;
             if (float_dot) {
-                // error...  printf("Error: repeated decimal separator\n");
-                return 0;
+                return 0;       /* Error: repeated decimal separator */
             }
             float_dot = 1;
             cp++;
@@ -758,6 +758,7 @@ int parse_float(
             /* Divide by 2 */
             float_buf >>= 1;
 
+#if PARSE_FLOAT_DIVIDE_BY_MULT_LOOP
             uint64_t float_save = float_buf;
             DUMP3;
             DF("float_save: %016llx\n", float_save);
@@ -777,6 +778,18 @@ int parse_float(
                 float_buf += float_save;
                 DF("Loop i=%2d: ", i); DUMP3;
             }
+#else
+            int round = float_buf % 5;
+            float_buf = float_buf / 5 * 8;
+            /*
+             * Try to fill in some of the lesser significant bits.
+             * This is not always bitwise identical to the original method
+             * but probably more accurate.
+             */
+            if (round) {
+                float_buf += round * 8 / 5;
+            }
+#endif
 
             /* It's not simply dividing by 5, it also multiplies by 8,
              * so we need to adjust the exponent here. */
