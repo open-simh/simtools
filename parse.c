@@ -662,7 +662,7 @@ int parse_float(
     }
     DF("float_sign: %d\n", float_sign);
 
-    for (;;) {
+    while (!EOL(*cp)) {
         if (isdigit(*cp)) {
             /* Can we multiply by 10? */
             DF("digit: %c\n", *cp);

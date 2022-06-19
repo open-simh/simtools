@@ -121,89 +121,178 @@
       99 000340 077777  177777  177777          .FLT4  170141183460469230564930741053754966016 ; 2**127-(2**70-2**64+2**62+2)
          000346 177777                  
      100                                
-     101                                        ; Several ways to define a name for the fpp registers
-     102                                
-     103        000000                  ac0 = r0
-     104        000001                  ac1 = %1
-     105        000002                  f2  = %2
-     106                                
-     107 000350 171003                          mulf    r3,ac0
-     108 000352 171102                          mulf    r2,ac1
-     109 000354 172227  041040                  ADDF    #^O41040,F2
-     110 000360 172127  040200                  addf    #1,ac1
-     111                                
-     112 000364 171003                          mulf    r3,ac0
-     113 000366 171102                          mulf    r2,ac1
-     114 000370 172227  041040                  addf    #^O41040,F2     ; taken literally
-     115 000374 172127  040200                  addf    #1,ac1          ;       as float
-     116 000400 172127  040200                  addf    #1.,ac1         ;       as float
-     117 000404 172127  040200                  addf    #1.0,ac1        ;       as float
-     118 000410 172127  000001                  addf    #^D1,ac1        ;       literally
-     119 000414 173027  000001                  subf    #<1>,ac0        ;       literally
-     120 000420 172127  000002                  addf    #<1+1>,ac1      ;       literally
-test-float.mac:121: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
-     121                                        subf    #<1.0>,ac0      ; error
-     122 000424 172127  040300                  addf    #1.5,ac1        ;       as float
-     123 000430 172127  140263                  addd    #-1.4,ac1       ;       as float
-     124 000434 173027  040200                  subf    #<^F 1.0>,ac0   ;       as float
-test-float.mac:125: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
-     125                                        subf    #<^D 1.0>,ac0   ; error
-     126 000440 173027  000001                  subf    #<^D 1>,ac0     ;       literally
-     127 000444 173027  000002                  subf    #^D<1+1>,ac0    ;       literally
-     128 000450 173027  000002                  subf    #^D 1+1 ,ac0    ;       literally
-     129 000454 173027  042572                  subf    #1e3,ac0        ;       as float
-     130 000460 173027  042572                  subf    #1e 3,ac0       ; accepted by MACRO11 as 1E3 (but not 1 e3, 1 e 3)
-     131        000001                  a = 1
-     132        000003                  e3 = 3
-     133 000464 173027  000001                  subf    #a,ac0          ; a interpreted as bit pattern
-     134 000470 173027  000001                  subf    #<a>,ac0        ; a interpreted as bit pattern
-     135 000474 173027  000003                  subf    #e3,ac0         ; e3 is the label
-test-float.mac:136: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
-     136                                        subf    #<1e3>,ac0      ; error N
-     137                                
-test-float.mac:138: ***ERROR Junk at end of line ('5            ; bad: ')
-     138 000500 170627  000002                  absf    #2.5            ; bad: operand is destination
-test-float.mac:139: ***ERROR Junk at end of line ('5            ; bad: ')
-     139 000504 170527  000002                  tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
-test-float.mac:140: ***ERROR Junk at end of line ('5        ; bad: junk')
-     140 000510 174027  000002                  stf     ac0,#2.5        ; bad: junk at end of line
-     141 000514 174027  000002                  stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
-     142                                
-     143                                        ; Test immediate source argument for instructions that have one (src or fsrc)
-     144                                
-     145 000520 172027  040200                  addd    #1,ac0          ; float
-     146 000524 172027  040200                  addf    #1,ac0          ; float
-     147 000530 173427  040200                  cmpd    #1,ac0          ; float
-     148 000534 173427  040200                  cmpf    #1,ac0          ; float
-     149 000540 174427  040200                  divd    #1,ac0          ; float
-     150 000544 174427  040200                  divf    #1,ac0          ; float
-     151 000550 177427  040200                  ldcdf   #1,ac0          ; float
-     152 000554 177427  040200                  ldcfd   #1,ac0          ; float
-     153 000560 177027  000001                  ldcid   #1,ac0          ; integer
-     154 000564 177027  000001                  ldcif   #1,ac0          ; integer
-     155 000570 177027  000001                  ldcld   #1,ac0          ; integer
-     156 000574 177027  000001                  ldclf   #1,ac0          ; integer
-     157 000600 172427  040200                  ldd     #1,ac0          ; float
-     158 000604 172427  040200                  ldf     #1,ac0          ; float
-     159 000610 176427  000001                  ldexp   #1,ac0          ; integer
-     160 000614 171427  040200                  modd    #1,ac0          ; float
-     161 000620 171427  040200                  modf    #1,ac0          ; float
-     162 000624 171027  040200                  muld    #1,ac0          ; float
-     163 000630 171027  040200                  mulf    #1,ac0          ; float
-     164 000634 173027  040200                  subd    #1,ac0          ; float
-     165 000640 173027  040200                  subf    #1,ac0          ; float
-     166                                
-     167                                        .end
-     167                                
+     101 000350 040200  000000  000000          .flt4  1.0000000000000000138777878078144567552953958511353  ; 0040200 0000000 0000000 0000000
+         000356 000000                  
+     102 000360 040200  000000  000000          .flt4  1.0000000000000000416333634234433702658861875534058  ; 0040200 0000000 0000000 0000001
+         000366 000001                  
+     103 000370 040177  177777  177777          .flt4  0.99999999999999997918331828827831486705690622329712 ; 0040177 0177777 0177777 0177776
+         000376 177776                  
+     104 000400 040177  177777  177777          .flt4  0.99999999999999999306110609609277162235230207443237 ; 0040177 0177777 0177777 0177777
+         000406 177777                  
+     105                                
+     106 000410 040200  000000  000000          .flt4  100E-2                   ; 040200 000000 000000 000000
+         000416 000000                  
+     107 000420 044303  050000  000000          .flt4  1.0E5                    ; 044303 050000 000000 000000
+         000426 000000                  
+     108 000430 050425  001371  000000          .flt4  1.0E10                   ; 050425 001371 000000 000000
+         000436 000000                  
+     109 000440 060655  074353  142654          .flt4  1.0E20                   ; 060655 074353 142654 061000
+         000446 061000                  
+     110 000450 071111  171311  146404          .flt4  1.0E30                   ; 071111 171311 146404 063517
+         000456 063517                  
+     111 000460 077626  073231  050265          .flt4  1.0E38                   ; 077626 073231 050265 006611
+         000466 006611                  
+     112                                
+     113 000470 034047  142654  043433          .flt4  1.0E-5                   ; 034047 142654 043433 043604
+         000476 043604                  
+     114 000500 027733  163376  147275          .flt4  1.0E-10                  ; 027733 163376 147275 166726
+         000506 166726                  
+     115 000510 017474  162410  062222          .flt4  1.0E-20                  ; 017474 162410 062222 010433
+         000516 010433                  
+     116 000520 007242  041137  173536          .flt4  1.0E-30                  ; 007242 041137 173536 012374
+         000526 012374                  
+     117 000530 000531  143734  166523          .flt4  1.0E-38                  ; 000531 143734 166523 143442
+         000536 143442                  
+     118                                
+     119 000540 057514  054000  000000          .flt4   3681129745421959167  ;                       057514 054000 000000 000000
+         000546 000000                  
+     120 000550 057514  054000  000000          .flt4   3681129745421959168  ; 0x3316000000000000    057514 054000 000000 000000
+         000556 000000                  
+     121 000560 057514  054000  000000          .flt4   3681129745421959169  ;                       057514 054000 000000 000000
+         000566 000000                  
+     122 000570 057514  054000  000000          .flt4   3681129745421959170  ;                       057514 054000 000000 000000
+         000576 000000                  
+     123                                
+     124 000600 060114  146000  000000          .flt4   14757170078986272767 ;                       060114 146000 000000 000000
+         000606 000000                  
+     125 000610 060114  146000  000000          .flt4   14757170078986272768 ; 0xCCCC000000000000    060114 146000 000000 000000
+         000616 000000                  
+     126 000620 060114  146000  000000          .flt4   14757170078986272769 ;                       060114 146000 000000 000000
+         000626 000000                  
+     127 000630 060114  146000  000000          .flt4   14757170078986272780 ;                       060114 146000 000000 000000
+         000636 000000                  
+     128                                
+     129 000640 040511  007732  121041          .flt4  3.1415926535897932384626433 ; 040511 007732 121041 064302
+         000646 064302                  
+     130                                
+     131                                        ; Try some possibly incomplete numbers
+     132                                
+test-float.mac:133: ***ERROR Bad floating point format
+     133 000650 000000  000000  000000          .flt4  +                ; bad
+         000656 000000                  
+     134 000660 040200  000000  000000          .flt4  +1               ; ok
+         000666 000000                  
+test-float.mac:135: ***ERROR Bad floating point format
+     135 000670 000000  000000  000000          .flt4  +E1              ; bad
+         000676 000000                  
+test-float.mac:136: ***ERROR Bad floating point format
+     136 000700 000000  000000  000000          .flt4  -                ; bad
+         000706 000000                  
+     137 000710 140200  000000  000000          .flt4  -1               ; ok
+         000716 000000                  
+     138 000720 140200  000000  000000          .flt4  -1.              ; ok
+         000726 000000                  
+test-float.mac:139: ***ERROR Bad floating point format
+     139 000730 000000  000000  000000          .flt4  -1..             ; bad
+         000736 000000                  
+test-float.mac:140: ***ERROR Bad floating point format
+     140 000740 000000  000000  000000          .flt4  -E1              ; bad
+         000746 000000                  
+     141 000750 000000  000000  000000          .flt4  +.               ; bad
+         000756 000000                  
+     142 000760 000000  000000  000000          .flt4  -.               ; bad
+         000766 000000                  
+     143 000770 000000  000000  000000          .flt4  .                ; bad
+         000776 000000                  
+test-float.mac:144: ***ERROR Bad floating point format
+     144 001000 000000  000000  000000          .flt4  ..               ; bad
+         001006 000000                  
+     145 001010 000000  000000  000000          .flt4  .E10             ; bad
+         001016 000000                  
+     146                                
+     147                                        ; Several ways to define a name for the fpp registers
+     148                                
+     149        000000                  ac0 = r0
+     150        000001                  ac1 = %1
+     151        000002                  f2  = %2
+     152                                
+     153 001020 171003                          mulf    r3,ac0
+     154 001022 171102                          mulf    r2,ac1
+     155 001024 172227  041040                  ADDF    #^O41040,F2
+     156 001030 172127  040200                  addf    #1,ac1
+     157                                
+     158 001034 171003                          mulf    r3,ac0
+     159 001036 171102                          mulf    r2,ac1
+     160 001040 172227  041040                  addf    #^O41040,F2     ; taken literally
+     161 001044 172127  040200                  addf    #1,ac1          ;       as float
+     162 001050 172127  040200                  addf    #1.,ac1         ;       as float
+     163 001054 172127  040200                  addf    #1.0,ac1        ;       as float
+     164 001060 172127  000001                  addf    #^D1,ac1        ;       literally
+     165 001064 173027  000001                  subf    #<1>,ac0        ;       literally
+     166 001070 172127  000002                  addf    #<1+1>,ac1      ;       literally
+test-float.mac:167: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
+     167                                        subf    #<1.0>,ac0      ; error
+     168 001074 172127  040300                  addf    #1.5,ac1        ;       as float
+     169 001100 172127  140263                  addd    #-1.4,ac1       ;       as float
+     170 001104 173027  040200                  subf    #<^F 1.0>,ac0   ;       as float
+test-float.mac:171: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
+     171                                        subf    #<^D 1.0>,ac0   ; error
+     172 001110 173027  000001                  subf    #<^D 1>,ac0     ;       literally
+     173 001114 173027  000002                  subf    #^D<1+1>,ac0    ;       literally
+     174 001120 173027  000002                  subf    #^D 1+1 ,ac0    ;       literally
+     175 001124 173027  042572                  subf    #1e3,ac0        ;       as float
+     176 001130 173027  042572                  subf    #1e 3,ac0       ; accepted by MACRO11 as 1E3 (but not 1 e3, 1 e 3)
+     177        000001                  a = 1
+     178        000003                  e3 = 3
+     179 001134 173027  000001                  subf    #a,ac0          ; a interpreted as bit pattern
+     180 001140 173027  000001                  subf    #<a>,ac0        ; a interpreted as bit pattern
+     181 001144 173027  000003                  subf    #e3,ac0         ; e3 is the label
+test-float.mac:182: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
+     182                                        subf    #<1e3>,ac0      ; error N
+     183                                
+test-float.mac:184: ***ERROR Junk at end of line ('5            ; bad: ')
+     184 001150 170627  000002                  absf    #2.5            ; bad: operand is destination
+test-float.mac:185: ***ERROR Junk at end of line ('5            ; bad: ')
+     185 001154 170527  000002                  tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
+test-float.mac:186: ***ERROR Junk at end of line ('5        ; bad: junk')
+     186 001160 174027  000002                  stf     ac0,#2.5        ; bad: junk at end of line
+     187 001164 174027  000002                  stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
+     188                                
+     189                                        ; Test immediate source argument for instructions that have one (src or fsrc)
+     190                                
+     191 001170 172027  040200                  addd    #1,ac0          ; float
+     192 001174 172027  040200                  addf    #1,ac0          ; float
+     193 001200 173427  040200                  cmpd    #1,ac0          ; float
+     194 001204 173427  040200                  cmpf    #1,ac0          ; float
+     195 001210 174427  040200                  divd    #1,ac0          ; float
+     196 001214 174427  040200                  divf    #1,ac0          ; float
+     197 001220 177427  040200                  ldcdf   #1,ac0          ; float
+     198 001224 177427  040200                  ldcfd   #1,ac0          ; float
+     199 001230 177027  000001                  ldcid   #1,ac0          ; integer
+     200 001234 177027  000001                  ldcif   #1,ac0          ; integer
+     201 001240 177027  000001                  ldcld   #1,ac0          ; integer
+     202 001244 177027  000001                  ldclf   #1,ac0          ; integer
+     203 001250 172427  040200                  ldd     #1,ac0          ; float
+     204 001254 172427  040200                  ldf     #1,ac0          ; float
+     205 001260 176427  000001                  ldexp   #1,ac0          ; integer
+     206 001264 171427  040200                  modd    #1,ac0          ; float
+     207 001270 171427  040200                  modf    #1,ac0          ; float
+     208 001274 171027  040200                  muld    #1,ac0          ; float
+     209 001300 171027  040200                  mulf    #1,ac0          ; float
+     210 001304 173027  040200                  subd    #1,ac0          ; float
+     211 001310 173027  040200                  subf    #1,ac0          ; float
+     212                                
+     213                                        .end
+     213                                
 
 
 Symbol table
 
-.       000644R      001 AC0   =%000000           E3    = 000003           
+.       001314R      001 AC0   =%000000           E3    = 000003           
 A     = 000001           AC1   =%000001           F2    =%000002           
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000644    001   (RW,I,LCL,REL,CON,NOSAV)
+        001314    001   (RW,I,LCL,REL,CON,NOSAV)

@@ -71,7 +71,20 @@ static int assemble(
         op = get_op(cp, &cp);          /* Look at operation code */
 
         /* FIXME: this code will blindly look into .REM commentary and
-           find operation codes.  Incidentally, so will read_body. */
+           find operation codes.  Incidentally, so will read_body().
+
+           That doesn't really matter, though, since the original also
+           did that (line 72 ends the suppressed conditional block):
+
+     69                                         .if NE,0
+     70                                         .rem    &
+     71                                 junk
+     72                                         .endc
+A    73 000144  000000G 000000G         more junk
+A    74 000150  000000G 000000G 000000G line that ends the comments with &
+        000156  000000G 000000G 000000C
+O    75                                         .endc
+         */
 
         if (op == NULL)
             return 1;                  /* Not found.  Don't care. */
@@ -341,20 +354,24 @@ static int assemble(
                     {
                         int             ok = 1;
 
-                        while (!EOL(*cp)) {
+                        while (ok && !EOL(*cp)) {
                             unsigned        flt[4];
 
                             if (parse_float(cp, &cp, (op->value == P_FLT4 ? 4 : 2), flt)) {
-                                /* Store the word values */
-                                store_word(stack->top, tr, 2, flt[0]);
-                                store_word(stack->top, tr, 2, flt[1]);
-                                if (op->value == P_FLT4) {
-                                    store_word(stack->top, tr, 2, flt[2]);
-                                    store_word(stack->top, tr, 2, flt[3]);
-                                }
+                                /* All is well */
                             } else {
                                 report(stack->top, "Bad floating point format\n");
-                                ok = 0;
+                                ok = 0;         /* Don't try to parse the rest of the line */
+                                flt[0] = flt[1] /* Store zeroes */
+                                       = flt[2]
+                                       = flt[3] = 0;
+                            }
+                            /* Store the word values */
+                            store_word(stack->top, tr, 2, flt[0]);
+                            store_word(stack->top, tr, 2, flt[1]);
+                            if (op->value == P_FLT4) {
+                                store_word(stack->top, tr, 2, flt[2]);
+                                store_word(stack->top, tr, 2, flt[3]);
                             }
                             cp = skipdelim(cp);
                         }
