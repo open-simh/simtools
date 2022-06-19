@@ -97,19 +97,19 @@
       82                                                                      ;                 V05.06
       83                                
       84 000240 040177                          .word ^F 0.994140625          ; (2**9-3)/2**9   040176  040177
-      85 000242 040176  100000  000000          .flt4    0.994140625
+      85 000242 040176  100000  000000          .flt4    0.994140625          ;                 same->  040176 100000 0 0
          000250 000000                  
       86                                
       87 000252 040200                          .word ^F 0.998046875          ; (2**9-1)/2**9   040177  040200
-      88 000254 040177  100000  000000          .flt4    0.998046875
+      88 000254 040177  100000  000000          .flt4    0.998046875	      ;                 same->  040177 100000 0 0
          000262 000000                  
       89                                
       90 000264 040201                          .word ^F 1.00390625           ; (2**8+1)/2**8   040200  040201
-      91 000266 040200  100000  000000          .flt4    1.00390625
+      91 000266 040200  100000  000000          .flt4    1.00390625	      ;                 same->  040200 100000 0 0
          000274 000000                  
       92                                
       93 000276 040202                          .word ^F 1.01171875           ; (2**8+3)/2**8   040201  040202
-      94 000300 040201  100000  000000          .flt4    1.01171875
+      94 000300 040201  100000  000000          .flt4    1.01171875	      ;                 same->  040201 100000 0 0
          000306 000000                  
       95                                
       96 000310 077777  177777  177777          .flt4 1.701411834604692307e+38 ; 077777 177777 177777 177777
@@ -152,47 +152,46 @@ test-float.mac:125: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid
      127 000444 173027  000002                  subf    #^D<1+1>,ac0    ;       literally
      128 000450 173027  000002                  subf    #^D 1+1 ,ac0    ;       literally
      129 000454 173027  042572                  subf    #1e3,ac0        ;       as float
-test-float.mac:130: ***ERROR Invalid syntax (comma expected)
-     130                                        subf    #1e 3,ac0       ; TODO: accepted by MACRO11 as 1E3 (but not 1 e3, 1 e 3)
+     130 000460 173027  042572                  subf    #1e 3,ac0       ; accepted by MACRO11 as 1E3 (but not 1 e3, 1 e 3)
      131        000001                  a = 1
      132        000003                  e3 = 3
-     133 000460 173027  000001                  subf    #a,ac0          ; a interpreted as bit pattern
-     134 000464 173027  000001                  subf    #<a>,ac0        ; a interpreted as bit pattern
-     135 000470 173027  000003                  subf    #e3,ac0         ; e3 is the label
+     133 000464 173027  000001                  subf    #a,ac0          ; a interpreted as bit pattern
+     134 000470 173027  000001                  subf    #<a>,ac0        ; a interpreted as bit pattern
+     135 000474 173027  000003                  subf    #e3,ac0         ; e3 is the label
 test-float.mac:136: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression after '#')
      136                                        subf    #<1e3>,ac0      ; error N
      137                                
 test-float.mac:138: ***ERROR Junk at end of line ('5            ; bad: ')
-     138 000474 170627  000002                  absf    #2.5            ; bad: operand is destination
+     138 000500 170627  000002                  absf    #2.5            ; bad: operand is destination
 test-float.mac:139: ***ERROR Junk at end of line ('5            ; bad: ')
-     139 000500 170527  000002                  tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
+     139 000504 170527  000002                  tstd    #2.5            ; bad: operand is considered FDST by the arch handbook
 test-float.mac:140: ***ERROR Junk at end of line ('5        ; bad: junk')
-     140 000504 174027  000002                  stf     ac0,#2.5        ; bad: junk at end of line
-     141 000510 174027  000002                  stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
+     140 000510 174027  000002                  stf     ac0,#2.5        ; bad: junk at end of line
+     141 000514 174027  000002                  stf     ac0,#2          ; doesn't makes sense but MACRO11 allows it
      142                                
      143                                        ; Test immediate source argument for instructions that have one (src or fsrc)
      144                                
-     145 000514 172027  040200                  addd    #1,ac0          ; float
-     146 000520 172027  040200                  addf    #1,ac0          ; float
-     147 000524 173427  040200                  cmpd    #1,ac0          ; float
-     148 000530 173427  040200                  cmpf    #1,ac0          ; float
-     149 000534 174427  040200                  divd    #1,ac0          ; float
-     150 000540 174427  040200                  divf    #1,ac0          ; float
-     151 000544 177427  040200                  ldcdf   #1,ac0          ; float
-     152 000550 177427  040200                  ldcfd   #1,ac0          ; float
-     153 000554 177027  000001                  ldcid   #1,ac0          ; integer
-     154 000560 177027  000001                  ldcif   #1,ac0          ; integer
-     155 000564 177027  000001                  ldcld   #1,ac0          ; integer
-     156 000570 177027  000001                  ldclf   #1,ac0          ; integer
-     157 000574 172427  040200                  ldd     #1,ac0          ; float
-     158 000600 172427  040200                  ldf     #1,ac0          ; float
-     159 000604 176427  000001                  ldexp   #1,ac0          ; integer
-     160 000610 171427  040200                  modd    #1,ac0          ; float
-     161 000614 171427  040200                  modf    #1,ac0          ; float
-     162 000620 171027  040200                  muld    #1,ac0          ; float
-     163 000624 171027  040200                  mulf    #1,ac0          ; float
-     164 000630 173027  040200                  subd    #1,ac0          ; float
-     165 000634 173027  040200                  subf    #1,ac0          ; float
+     145 000520 172027  040200                  addd    #1,ac0          ; float
+     146 000524 172027  040200                  addf    #1,ac0          ; float
+     147 000530 173427  040200                  cmpd    #1,ac0          ; float
+     148 000534 173427  040200                  cmpf    #1,ac0          ; float
+     149 000540 174427  040200                  divd    #1,ac0          ; float
+     150 000544 174427  040200                  divf    #1,ac0          ; float
+     151 000550 177427  040200                  ldcdf   #1,ac0          ; float
+     152 000554 177427  040200                  ldcfd   #1,ac0          ; float
+     153 000560 177027  000001                  ldcid   #1,ac0          ; integer
+     154 000564 177027  000001                  ldcif   #1,ac0          ; integer
+     155 000570 177027  000001                  ldcld   #1,ac0          ; integer
+     156 000574 177027  000001                  ldclf   #1,ac0          ; integer
+     157 000600 172427  040200                  ldd     #1,ac0          ; float
+     158 000604 172427  040200                  ldf     #1,ac0          ; float
+     159 000610 176427  000001                  ldexp   #1,ac0          ; integer
+     160 000614 171427  040200                  modd    #1,ac0          ; float
+     161 000620 171427  040200                  modf    #1,ac0          ; float
+     162 000624 171027  040200                  muld    #1,ac0          ; float
+     163 000630 171027  040200                  mulf    #1,ac0          ; float
+     164 000634 173027  040200                  subd    #1,ac0          ; float
+     165 000640 173027  040200                  subf    #1,ac0          ; float
      166                                
      167                                        .end
      167                                
@@ -200,11 +199,11 @@ test-float.mac:140: ***ERROR Junk at end of line ('5        ; bad: junk')
 
 Symbol table
 
-.       000640R      001 AC0   =%000000           E3    = 000003           
+.       000644R      001 AC0   =%000000           E3    = 000003           
 A     = 000001           AC1   =%000001           F2    =%000002           
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000640    001   (RW,I,LCL,REL,CON,NOSAV)
+        000644    001   (RW,I,LCL,REL,CON,NOSAV)
