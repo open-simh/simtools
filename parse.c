@@ -763,12 +763,34 @@ int parse_float(
             DUMP3;
             DF("float_save: %016llx\n", float_save);
 
-            /* Divide by 5:
-             * multiplying by (2**66 - 4) / 5 = 0xCCCCCCCCCCCCCCCC
-             * while dropping the 64 least significant bits.
-             * This is nearly exact but exact enough?
-             * Somehow there is another doubling in here, so the
-             * final result = start * 8 / 5.
+            /*
+             * Divide by 5: this is done by the trick of "dividing by
+             * multiplying". In order to keep as many significant bits as
+             * possible, we multiply by 8/5, and adjust the binary exponent to
+             * compensate for the factor of 8.
+             * The result is found when we drop the 64 low bits.
+             *
+             * So we multiply with the 65-bit number
+             *                     0x19999999999999999
+             *                     1 1001 1001 1001 ...
+             * which is 8 *          0011 0011 0011 ... aka 0x333...
+             * which is (2**64 - 1) / 5 aka 0xFFF... / 5.
+             *
+             * The rightmost (1 * float_save << 0) is contributed to the total
+             * because float_buf already contains that value.
+             * In loop i=32, (float_save << 3) is added:
+             *               due to the two extra conditional shifts.
+             * In loop i=31, (float_save << 4) is added.
+             * In loop i=30, (float_save << 7) is added.
+             * etc, etc,
+             * so forming the repeating bit-pattern 1100 of the multiplier.
+             *
+             * Instead of shifting float_save left, we shift float_buf right,
+             * which over time drops precisely the desired 64 low bits.
+             *
+             * This is nearly exact but exact enough.
+             *
+             * The final result = start * 8 / 5.
              */
             for (int i = 16 * 2; i > 0; i--) {
                 if ((i & 1) == 0) {             /* 42$ */
