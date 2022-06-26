@@ -834,7 +834,7 @@ do_mcalled_macro:
                                 report(stack->top, "Bad .IF expression\n");
                                 list_value(stack->top, 0);
                                 free_tree(tvalue);
-                                ok = FALSE;     /* Pick something. */
+                                ok = TRUE;     /* Pick something. */
                             } else {
                                 unsigned        word;
 
