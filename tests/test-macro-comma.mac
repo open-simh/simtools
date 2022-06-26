@@ -33,3 +33,21 @@ start:  tstarg          ; 0 args
         braket  ^/broken
         braket  <bro<ken>
         braket  <bro<ken> string
+
+;
+; Test that commas work with default arguments
+;
+        .macro  tstarg a1,a2=default,a3,a4
+        .narg   label	; second arg is "a2"
+        .endm
+
+start:  tstarg          ; 0 args
+        tstarg   123    ; 1 arg
+        tstarg   1,     ; 2 args
+        tstarg   ,2     ; 2 args
+        tstarg   ,      ; 2 args
+        tstarg   ,,     ; 3 args
+        tstarg   1,,    ; 3 args
+        tstarg   ,,3    ; 3 args
+        tstarg   1,,3   ; 3 args
+        tstarg   1,2,3  ; 3 args

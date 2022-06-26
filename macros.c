@@ -503,9 +503,15 @@ STREAM         *expandmacro(
             if (macarg == NULL)
                 break;                 /* Don't pick up any more arguments. */
 
+            nextcp = skipwhite (cp);
             arg = new_arg();
             arg->label = memcheck(strdup(macarg->label));       /* Copy the name */
-            arg->value = getstring_macarg(refstr, cp, &nextcp);
+            if (*nextcp != ',') {
+                arg->value = getstring_macarg(refstr, cp, &nextcp);
+            }
+            else {
+                arg->value = NULL;
+            }
             nargs++;                   /* Count nonkeyword arguments only. */
         }
 
@@ -527,9 +533,13 @@ STREAM         *expandmacro(
 
         for (macarg = mac->args; macarg != NULL; macarg = macarg->next) {
             arg = find_arg(args, macarg->label);
-            if (arg == NULL) {
-                arg = new_arg();
-                arg->label = memcheck(strdup(macarg->label));
+            if (arg == NULL || arg->value == NULL) {
+                int wasnull = 0;
+                if (arg == NULL) {
+                    wasnull = 1;
+                    arg = new_arg();
+                    arg->label = memcheck(strdup(macarg->label));
+                }
                 if (macarg->locsym) {
                     char            temp[32];
 
@@ -541,8 +551,10 @@ STREAM         *expandmacro(
                 } else
                     arg->value = memcheck(strdup(""));
 
-                arg->next = args;
-                args = arg;
+                if (wasnull) {
+                    arg->next = args;
+                    args = arg;
+                }
             }
         }
 
