@@ -71,6 +71,9 @@ BUFFER         *subst_args(
     BUFFER *text,
     ARG *args);
 
-
+int do_mcall (
+    char *label,
+    STACK *stack);
+ 
 
 #endif

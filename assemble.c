@@ -264,6 +264,7 @@ O    75                                         .endc
 
         /* Try to resolve macro */
 
+do_mcalled_macro:
         op = lookup_sym(label, &macro_st);
         if (op /*&& op->stmtno < stmtno*/) {
             STREAM         *macstr;
@@ -591,15 +592,6 @@ O    75                                         .endc
 
                 case P_MCALL:
                     {
-                        STREAM         *macstr;
-                        BUFFER         *macbuf;
-                        char           *maccp;
-                        int             saveline;
-                        MACRO          *mac;
-                        int             i;
-                        char            macfile[FILENAME_MAX];
-                        char            hitfile[FILENAME_MAX];
-
                         for (;;) {
                             cp = skipdelim(cp);
 
@@ -633,68 +625,8 @@ O    75                                         .endc
                                 continue;
                             }
 
-                            /* Find the macro in the list of included
-                               macro libraries */
-                            macbuf = NULL;
-                            for (i = 0; i < nr_mlbs; i++)
-                                if ((macbuf = mlb_entry(mlbs[i], label)) != NULL)
-                                    break;
-                            if (macbuf != NULL) {
-                                macstr = new_buffer_stream(macbuf, label);
-                                buffer_free(macbuf);
-                            } else {
-                                char *bufend = &macfile[sizeof(macfile)],
-                                     *end;
-                                end = stpncpy(macfile, label, sizeof(macfile) - 5);
-                                if (end >= bufend - 5) {
-                                    report(stack->top, ".MCALL: name too long: '%s'\n", label);
-                                    return 0;
-                                }
-                                stpncpy(end, ".MAC", bufend - end);
-                                my_searchenv(macfile, "MCALL", hitfile, sizeof(hitfile));
-                                if (hitfile[0])
-                                    macstr = new_file_stream(hitfile);
-                                else
-                                    macstr = NULL;
-                            }
-
-                            if (macstr != NULL) {
-                                for (;;) {
-                                    char           *mlabel;
-
-                                    maccp = macstr->vtbl->getline(macstr);
-                                    if (maccp == NULL)
-                                        break;
-                                    mlabel = get_symbol(maccp, &maccp, NULL);
-                                    if (mlabel == NULL)
-                                        continue;
-                                    op = lookup_sym(mlabel, &system_st);
-                                    free(mlabel);
-                                    if (op == NULL)
-                                        continue;
-                                    if (op->value == P_MACRO)
-                                        break;
-                                }
-
-                                if (maccp != NULL) {
-                                    STACK           macstack = {
-                                        macstr
-                                    };
-                                    int             savelist = list_level;
-
-                                    saveline = stmtno;
-                                    list_level = -1;
-                                    mac = defmacro(maccp, &macstack, CALLED_NOLIST);
-                                    if (mac == NULL) {
-                                        report(stack->top, "Failed to define macro called %s\n", label);
-                                    }
-
-                                    stmtno = saveline;
-                                    list_level = savelist;
-                                }
-
-                                macstr->vtbl->delete(macstr);
-                            } else
+                            /* Do the actual macro library search */
+                            if (!do_mcall (label, stack))
                                 report(stack->top, "MACRO %s not found\n", label);
 
                             free(label);
@@ -757,6 +689,8 @@ O    75                                         .endc
                             enabl_lc = 1;
                         } else if (strcmp(label, "LCM") == 0) {
                             enabl_lcm = 1;
+                        } else if (strcmp(label, "MCL") == 0) {
+                            enabl_mcl = 1;
                         }
                         free(label);
                         cp = skipdelim(cp);
@@ -778,6 +712,8 @@ O    75                                         .endc
                             enabl_lc = 0;
                         } else if (strcmp(label, "LCM") == 0) {
                             enabl_lcm = 0;
+                        } else if (strcmp(label, "MCL") == 0) {
+                            enabl_mcl = 0;
                         }
                         free(label);
                         cp = skipdelim(cp);
@@ -1853,6 +1789,16 @@ O    75                                         .endc
         }                              /* end if (op is a symbol) */
     }
 
+    /* If .ENABL MCL is in effect, try to define the symbol as a
+     * library macro if it is not a defined symbol. */
+    if (enabl_mcl) {
+        if (lookup_sym(label, &symbol_st) == NULL) {
+            if (do_mcall (label, stack)) {
+                goto do_mcalled_macro;
+            }
+        }
+    }
+        
     /* Only thing left is an implied .WORD directive */
     /*JH: fall through in case of illegal opcode, illegal label! */
     free(label);

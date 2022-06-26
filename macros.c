@@ -618,3 +618,81 @@ void free_macro(
     free_args(mac->args);
     free_sym(&mac->sym);
 }
+
+int do_mcall (char *label, STACK *stack)
+{
+    SYMBOL         *op;         /* The operation SYMBOL */
+    STREAM         *macstr;
+    BUFFER         *macbuf;
+    char           *maccp;
+    int             saveline;
+    MACRO          *mac;
+    int             i;
+    char            macfile[FILENAME_MAX];
+    char            hitfile[FILENAME_MAX];
+
+    /* Find the macro in the list of included
+       macro libraries */
+    macbuf = NULL;
+    for (i = 0; i < nr_mlbs; i++)
+        if ((macbuf = mlb_entry(mlbs[i], label)) != NULL)
+            break;
+    if (macbuf != NULL) {
+        macstr = new_buffer_stream(macbuf, label);
+        buffer_free(macbuf);
+    } else {
+        char *bufend = &macfile[sizeof(macfile)],
+                       *end;
+        end = stpncpy(macfile, label, sizeof(macfile) - 5);
+        if (end >= bufend - 5) {
+            report(stack->top, ".MCALL: name too long: '%s'\n", label);
+            return 0;
+        }
+        stpncpy(end, ".MAC", bufend - end);
+        my_searchenv(macfile, "MCALL", hitfile, sizeof(hitfile));
+        if (hitfile[0])
+            macstr = new_file_stream(hitfile);
+        else
+            macstr = NULL;
+    }
+
+    if (macstr != NULL) {
+        for (;;) {
+            char           *mlabel;
+
+            maccp = macstr->vtbl->getline(macstr);
+            if (maccp == NULL)
+                break;
+            mlabel = get_symbol(maccp, &maccp, NULL);
+            if (mlabel == NULL)
+                continue;
+            op = lookup_sym(mlabel, &system_st);
+            free(mlabel);
+            if (op == NULL)
+                continue;
+            if (op->value == P_MACRO)
+                break;
+        }
+
+        if (maccp != NULL) {
+            STACK           macstack = {
+                macstr
+            };
+            int             savelist = list_level;
+
+            saveline = stmtno;
+            list_level = -1;
+            mac = defmacro(maccp, &macstack, CALLED_NOLIST);
+            if (mac == NULL) {
+                report(stack->top, "Failed to define macro called %s\n", label);
+            }
+
+            stmtno = saveline;
+            list_level = savelist;
+        }
+
+        macstr->vtbl->delete(macstr);
+        return 1;
+    }
+    return 0;
+}

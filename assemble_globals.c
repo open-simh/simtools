@@ -40,6 +40,9 @@ int             enabl_lc = 1;   /* If lowercase disabled, convert assembler
 int             enabl_lcm = 0;  /* If lowercase disabled, .IF IDN/DIF are
                                    case-sensitive. */
 
+int             enabl_mcl = 0;  /* When set, unknown symbols are looked up
+                                   as if .MCALL <sym> had been done. */
+
 int             suppressed = 0; /* Assembly suppressed by failed conditional */
 
 
