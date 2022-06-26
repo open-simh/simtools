@@ -193,6 +193,29 @@ STREAM_VTBL     irp_stream_vtbl = {
     irp_stream_delete, irp_stream_getline, buffer_stream_rewind
 };
 
+/* We occasionally see .IRP with the formal name in angle brackets.  I
+ * have no idea why, but it appears to be legal.  So allow that.  Not
+ * sure if it should be allowed elsewhere, e.g., in .MACRO.  For now,
+ * don't.  */
+static char *get_irp_sym (char *cp, char **endcp, int *islocal)
+{
+    char *ret = NULL;
+    
+    cp = skipwhite(cp);
+    if (*cp == '<') {
+        ret = get_symbol (cp + 1, &cp, islocal);
+        if (*cp++ != '>') {
+            *endcp = cp;
+            return NULL;
+        }
+    }
+    else {
+        ret = get_symbol (cp, &cp, islocal);
+    }
+    *endcp = cp;
+    return ret;
+}
+
 /* expand_irp is called when a .IRP is encountered in the input. */
 
 STREAM         *expand_irp(
@@ -205,7 +228,7 @@ STREAM         *expand_irp(
     int             levelmod = 0;
     IRP_STREAM     *str;
 
-    label = get_symbol(cp, &cp, NULL);
+    label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
         report(stack->top, "Illegal .IRP syntax\n");
         return NULL;
@@ -335,7 +358,7 @@ STREAM         *expand_irpc(
     int             levelmod = 0;
     IRPC_STREAM    *str;
 
-    label = get_symbol(cp, &cp, NULL);
+    label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
         report(stack->top, "Illegal .IRPC syntax\n");
         return NULL;
