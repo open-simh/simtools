@@ -349,6 +349,9 @@ do_mcalled_macro:
                             report(stack->top, "Illegal radix\n");
                             return 0;
                         }
+                        /* Sometimes a decimal point appears after the value */
+                        if (*cp == '.')
+                            cp++;
                         return CHECK_EOL;
                     }
 
