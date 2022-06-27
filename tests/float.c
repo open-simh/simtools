@@ -702,7 +702,7 @@ int parse_float_m3(
                  *                     0x19999999999999999
                  *                     1 1001 1001 1001 ...
                  * which is 8 *          0011 0011 0011 ... aka 0x333...
-                 * which is (2**64 - 1) / 5.
+                 * which is (2**64 - 1) / 5 aka 0xFFF... / 5.
                  */
                 uint64_t result = hi + float_save;
                 if (result == float_buf) {
@@ -715,14 +715,18 @@ int parse_float_m3(
                 }
             }
 #endif
-#if 1   /* Try other methods to calculate the same thing more directly */
+#if 0   /* Try other methods to calculate the same thing more directly */
             {
                 uint64_t result = float_save / 5 * 8;
                 /* Try to fill in some of the lesser significant bits */
                 int round = float_save % 5;
                 if (round) {
+                    // If round == 2, sometimes 2 needs to be added instead,
+                    // to match the original calculation.
                     result += round * 8 / 5;
                 } else {
+                    // decrement to match the original calculation, but
+                    // the end result is ok without that.
                     //result--;
                 }
 # if 0
@@ -738,7 +742,7 @@ int parse_float_m3(
                 DUMP3;
             }
 #endif
-#if 0
+#if 1
             {
                 __uint128_t big = (__uint128_t)float_save << 3;
 
