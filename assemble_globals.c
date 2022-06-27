@@ -59,7 +59,7 @@ int             sect_sp;        /* Stack pointer */
 
 char           *module_name = NULL;     /* The module name (taken from the 'TITLE'); */
 
-char           *ident = NULL;   /* .IDENT name */
+unsigned       *ident = NULL;   /* Encoded .IDENT name */
 
 EX_TREE        *xfer_address = NULL;    /* The transfer address */
 

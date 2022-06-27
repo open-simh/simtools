@@ -66,7 +66,7 @@ extern int      sect_sp;        /* Stack pointer */
 
 extern char    *module_name;    /* The module name (taken from the 'TITLE'); */
 
-extern char    *ident;          /* .IDENT name */
+extern unsigned *ident;         /* .IDENT name (encoded RAD50 value) */
 
 extern EX_TREE *xfer_address;   /* The transfer address */
 

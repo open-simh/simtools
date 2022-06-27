@@ -27,6 +27,79 @@
 
 #define CHECK_EOL       check_eol(stack, cp)
 
+/* assemble a rad50 value (some number of words). */
+static unsigned * assemble_rad50 (
+    char *cp,
+    int max,
+    int *count,
+    STACK *stack)
+{
+    char           *radstr;
+    unsigned       *ret;
+    int             i, len, wcnt;
+
+    /*
+     * Allocate storage sufficient for the rest of
+     * the line.
+     */
+    radstr = memcheck(malloc(strlen(cp)));
+    len = 0;
+
+    do {
+        cp = skipwhite(cp);
+        if (*cp == '<') {
+            EX_TREE        *value;
+            /* A byte value */
+            value = parse_unary_expr(cp, 0);
+            cp = value->cp;
+            if (value->type != EX_LIT) {
+                report(stack->top, "expression must be constant\n");
+                radstr[len++] = 0;
+            } else if (value->data.lit >= 050) {
+                report(stack->top, "invalid character value %o\n", value->data.lit);
+                radstr[len++] = 0;
+            } else {
+                radstr[len++] = value->data.lit;
+            }
+            free_tree(value);
+        } else {
+            char            quote = *cp++;
+
+            while (*cp && *cp != '\n' && *cp != quote) {
+                int         ch = ascii2rad50(*cp++);
+
+                if (ch == -1) {
+                    report(stack->top, "invalid character '%c'\n", cp[-1]);
+                    radstr[len++] = 0;
+                } else {
+                    radstr[len++] = ch;
+                }
+
+            }
+            cp++;  /* Skip closing quote */
+        }
+
+        cp = skipwhite(cp);
+    } while (!EOL(*cp));
+
+    wcnt = (len + 2) / 3;
+    if (max && max < wcnt)
+        wcnt = max;
+    if (count != NULL)
+        *count = wcnt;
+    
+    ret = memcheck (malloc (wcnt * sizeof (int)));
+    for (i = 0; i < wcnt; i++) {
+        int word = packrad50word(radstr + i * 3, len - (i * 3));
+        ret[i] = word;
+    }
+    for (; i < max; i++)
+        ret[i] = 0;
+
+    free(radstr);
+    return ret;
+}
+
 /* assemble - read a line from the input stack, assemble it. */
 
 /* This function is way way too large, because I just coded most of
@@ -315,29 +388,11 @@ do_mcalled_macro:
                     return 1;
 
                 case P_IDENT:
-                    {
-                        char            endc[6];
-                        int             len;
+                    if (ident)          /* An existing ident? */
+                        free(ident);    /* Discard it. */
 
-                        cp = skipwhite(cp);
-                        endc[0] = *cp++;
-                        endc[1] = '\n';
-                        endc[2] = 0;
-                        len = (int) strcspn(cp, endc);
-                        if (len > 6)
-                            len = 6;
-
-                        if (ident)     /* An existing ident? */
-                            free(ident);        /* Discard it. */
-
-                        ident = memcheck(malloc(len + 1));
-                        memcpy(ident, cp, len);
-                        ident[len] = 0;
-                        upcase(ident);
-
-                        cp += len + 1;
-                        return CHECK_EOL;
-                    }
+                    ident = assemble_rad50 (cp, 2, NULL, stack);
+                    return 1;
 
                 case P_RADIX:
                     {
@@ -1208,59 +1263,15 @@ do_mcalled_macro:
                         DOT++;         /* Fix it */
                     }
                     {
-                        char           *radstr;
-                        int             i, len;
-
-                        /*
-                         * Allocate storage sufficient for the rest of
-                         * the line.
-                         */
-                        radstr = memcheck(malloc(strlen(cp)));
-                        len = 0;
-
-                        do {
-                            cp = skipwhite(cp);
-                            if (*cp == '<') {
-                                EX_TREE        *value;
-                                /* A byte value */
-                                value = parse_unary_expr(cp, 0);
-                                cp = value->cp;
-                                if (value->type != EX_LIT) {
-                                    report(stack->top, "expression must be constant\n");
-                                    radstr[len++] = 0;
-                                } else if (value->data.lit >= 050) {
-                                    report(stack->top, "invalid character value %o\n", value->data.lit);
-                                    radstr[len++] = 0;
-                                } else {
-                                    radstr[len++] = value->data.lit;
-                                }
-                                free_tree(value);
-                            } else {
-                                char            quote = *cp++;
-
-                                while (*cp && *cp != '\n' && *cp != quote) {
-                                    int         ch = ascii2rad50(*cp++);
-
-                                    if (ch == -1) {
-                                        report(stack->top, "invalid character '%c'\n", cp[-1]);
-                                        radstr[len++] = 0;
-                                    } else {
-                                        radstr[len++] = ch;
-                                    }
-
-                                }
-                                cp++;  /* Skip closing quote */
-                            }
-
-                            cp = skipwhite(cp);
-                        } while (!EOL(*cp));
-
-                        for (i = 0; i < len; i += 3) {
-                            int word = packrad50word(radstr + i, len - i);
-                            store_word(stack->top, tr, 2, word);
+                        int i, count;
+                        unsigned *rad50;
+                        
+                        /* Now assemble the argument */
+                        rad50 = assemble_rad50 (cp, 0, &count, stack);
+                        for (i = 0; i < count; i++) {
+                            store_word (stack->top, tr, 2, rad50[i]);
                         }
-
-                        free(radstr);
+                        free (rad50);
                     }
                     return 1;
 

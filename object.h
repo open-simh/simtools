@@ -161,7 +161,7 @@ int             gsd_psect(
     int size);
 int             gsd_ident(
     GSD * gsd,
-    char *name);
+    unsigned *name);
 int             gsd_virt(
     GSD * gsd,
     char *name,
