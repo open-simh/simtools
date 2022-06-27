@@ -83,16 +83,19 @@ static unsigned * assemble_rad50 (
     } while (!EOL(*cp));
 
     wcnt = (len + 2) / 3;
+    /* Return at most "max" words, if specified */
     if (max && max < wcnt)
         wcnt = max;
     if (count != NULL)
         *count = wcnt;
-    
-    ret = memcheck (malloc (wcnt * sizeof (int)));
+
+    /* Allocate space for actual or max words, whichever is larger */
+    ret = memcheck (malloc (((wcnt < max) ? max : wcnt) * sizeof (int)));
     for (i = 0; i < wcnt; i++) {
         int word = packrad50word(radstr + i * 3, len - (i * 3));
         ret[i] = word;
     }
+    /* If max is specified, zero fill */
     for (; i < max; i++)
         ret[i] = 0;
 
