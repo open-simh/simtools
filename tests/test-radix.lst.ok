@@ -1,0 +1,38 @@
+       1                                ;;;;;
+       2                                ;
+       3                                ; Test .radix directive
+       4                                ;
+       5        000010                  	.RADIX	8
+       6 000000 000010                  	.WORD	10
+       7        000012                  	.RADIX	10
+       8 000002 000012                  	.WORD	10
+       9                                	.RADIX			;Default is 8
+      10 000004 000010                  	.WORD	10
+      11        000002                  	.RADIX	2
+      12 000006 000002                  	.WORD	10
+      13        000020                  	.RADIX	16
+      14 000010 000020                  	.WORD	10
+      15                                ; Odd but valid
+      16        000010                  	.RADIX	^O10		;Octal 10, i.e., 8
+      17 000012 000010                  	.WORD	10
+      18        000012                  	.RADIX	5+5
+      19 000014 000012                  	.WORD	10
+      20                                ; Errors
+test-radix.mac:21: ***ERROR Argument to .RADIX must be 2, 8, 10, or 16
+      21        000007                  	.RADIX	7
+      22 000016 000012                  	.WORD	10		;Radix is unchanged after error
+test-radix.mac:23: ***ERROR Argument to .RADIX must be constant
+      23                                	.RADIX	.
+      24 000020 000012                  	.WORD	10
+      24                                
+
+
+Symbol table
+
+.       000022R      001 
+
+
+Program sections:
+
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
+        000022    001   (RW,I,LCL,REL,CON,NOSAV)

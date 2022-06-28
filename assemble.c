@@ -400,17 +400,36 @@ do_mcalled_macro:
                 case P_RADIX:
                     {
                         int             old_radix = radix;
+                        EX_TREE        *value;
+                        int             ok = 1;
 
-                        radix = strtoul(cp, &cp, 10);
-                        if (radix != 8 && radix != 10 && radix != 16 && radix != 2) {
-                            radix = old_radix;
-                            report(stack->top, "Illegal radix\n");
-                            return 0;
+                        cp = skipwhite(cp);
+                        if (EOL(*cp)) {
+                            /* If no argument, assume 8 */
+                            radix = 8;
+                            return 1;
                         }
-                        /* Sometimes a decimal point appears after the value */
-                        if (*cp == '.')
-                            cp++;
-                        return CHECK_EOL;
+                        /* Parse the argument in decimal radix */
+                        radix = 10;
+                        value = parse_expr(cp, 0);
+                        cp = value->cp;
+
+                        if (value->type != EX_LIT) {
+                            report(stack->top, "Argument to .RADIX must be constant\n");
+                            radix = old_radix;
+                            ok = 0;
+                        } else {
+                            radix = value->data.lit;
+                            list_value(stack->top, radix);
+                            if (radix != 8 && radix != 10 &&
+                                radix != 2 && radix != 16) {
+                                radix = old_radix;
+                                report(stack->top, "Argument to .RADIX must be 2, 8, 10, or 16\n");
+                                ok = 0;
+                            }
+                        }
+                        free_tree(value);
+                        return ok && CHECK_EOL;
                     }
 
                 case P_FLT4:
