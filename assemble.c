@@ -1059,34 +1059,29 @@ do_mcalled_macro:
                         SYMBOL         *sectsym;
                         SECTION        *sect;
                         unsigned int    old_flags = ~0u;
-                        int             unnamed_csect = 0;
 
                         label = get_symbol(cp, &cp, NULL);
                         if (label == NULL) {
-                            label = memcheck(strdup(". BLK."));
-                            unnamed_csect = 1;
+                            sect = &blank_section;
                         }
+                        else {
+                            sectsym = lookup_sym(label, &section_st);
+                            if (sectsym) {
+                                sect = sectsym->section;
+                                free(label);
+                                old_flags = sect->flags;
+                            } else {
+                                sect = new_section();
+                                sect->label = label;
+                                sect->flags = 0;
+                                sect->pc = 0;
+                                sect->size = 0;
+                                sect->type = SECTION_USER;
+                                sections[sector++] = sect;
+                                sectsym = add_sym(label, 0, SYMBOLFLAG_DEFINITION, sect, &section_st);
 
-                        sectsym = lookup_sym(label, &section_st);
-                        if (sectsym) {
-                            sect = sectsym->section;
-                            free(label);
-                            old_flags = sect->flags;
-                        } else {
-                            sect = new_section();
-                            sect->label = label;
-                            sect->flags = 0;
-                            sect->pc = 0;
-                            sect->size = 0;
-                            sect->type = SECTION_USER;
-                            sections[sector++] = sect;
-                            sectsym = add_sym(label, 0, SYMBOLFLAG_DEFINITION, sect, &section_st);
-
-                            /* page 6-41 table 6-5 */
-                            if (op->value == P_PSECT) {
-                                sect->flags |= PSECT_REL;
-                            } else if (op->value == P_CSECT) {
-                                if (unnamed_csect) {
+                                /* page 6-41 table 6-5 */
+                                if (op->value == P_PSECT) {
                                     sect->flags |= PSECT_REL;
                                 } else {
                                     sect->flags |= PSECT_REL | PSECT_COM | PSECT_GBL;
