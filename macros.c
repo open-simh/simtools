@@ -478,15 +478,19 @@ STREAM         *expandmacro(
         label = get_symbol(cp, &nextcp, NULL);
         if (label && (nextcp = skipwhite(nextcp), *nextcp == '=') && (macarg = find_arg(mac->args, label))) {
             /* Check if I've already got a value for it */
-            if (find_arg(args, label) != NULL) {
-                report(refstr, "Duplicate submission of keyword " "argument %s\n", label);
-                free(label);
-                free_args(args);
-                return NULL;
+            if ((arg = find_arg(args, label)) != NULL) {
+                /* Duplicate is legal; the last one wins. */
+                if (arg->value) {
+                    free (arg->value);
+                    arg->value = NULL;
+                }
             }
-
-            arg = new_arg();
-            arg->label = label;
+            else {
+                arg = new_arg();
+                arg->label = label;
+                arg->next = args;
+                args = arg;
+            }
             nextcp = skipwhite(nextcp + 1);
             arg->value = getstring_macarg(refstr, nextcp, &nextcp);
         } else {
@@ -506,6 +510,8 @@ STREAM         *expandmacro(
             nextcp = skipwhite (cp);
             arg = new_arg();
             arg->label = memcheck(strdup(macarg->label));       /* Copy the name */
+            arg->next = args;
+            args = arg;
             if (*nextcp != ',') {
                 arg->value = getstring_macarg(refstr, cp, &nextcp);
             }
@@ -514,9 +520,6 @@ STREAM         *expandmacro(
             }
             nargs++;                   /* Count nonkeyword arguments only. */
         }
-
-        arg->next = args;
-        args = arg;
 
         /* If there is a trailing comma, there is an empty last argument */
         cp = skipdelim_comma(nextcp, &onemore);

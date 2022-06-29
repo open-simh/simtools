@@ -350,6 +350,10 @@ do_mcalled_macro:
             list_location(stack->top, DOT);
 
             macstr = expandmacro(stack->top, (MACRO *) op, ncp);
+            if (macstr == NULL) {
+                /* Error in expanding the macro, stop now. */
+                return 0;
+            }
 
             stack_push(stack, macstr); /* Push macro expansion
                                           onto input stream */
