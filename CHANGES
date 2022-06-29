@@ -6,7 +6,7 @@
         - Replace the floating point parser by a version which is based on
           integer math only, because the Apple M1 doesn't have the required
           long double support in its compiler.
-        11 changes from Paul Koning that add some features which help to
+        12 changes from Paul Koning that add some features which help to
         assemble RSTS/E sources:
         - Add default extensions to .include, .library
         - Fix .psect without argument, add (ignored) pseudo ops .mdelete,
@@ -20,10 +20,11 @@
         - Treat unexpected .IF argument as true, not false.  This appears to
           be what the reference assembler does, at least it is necessary for
           certain RSTS source files to assemble without error.
-        - Allow explicit decimal point after .RADIX argument.
         - Allow formal name of .IRP and .IRPC to be enclosed in < >.
         - Just like .RAD50, .IDENT accepts an argument that can contain not
           just delimited string characters but also values in < >.
+        - Allow expression (with constant value) in .RADIX
+        - Bugfixes in macro expansion, incl duplicate named arguments
 
 05.01.2022: Rhialto
         version 0.7.2:
