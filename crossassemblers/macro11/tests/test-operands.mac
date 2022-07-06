@@ -18,13 +18,13 @@
         emt     1
         emt     255.
         emt     256.            ; too large
-        emt     .               ; must be literal
+        emt     .               ; allowed though strange
 
         trap    0
         trap    1
         trap    255.
         trap    256.            ; too large
-        trap    .               ; must be literal
+        trap    .               ; allowed though strange
 
 ; OC_1GEN
 

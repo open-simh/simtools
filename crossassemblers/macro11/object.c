@@ -159,22 +159,20 @@ int gsd_flush(
 /* 1 byte type */
 /* 2 bytes value */
 
-static int gsd_write(
+
+static int gsd_write2(
     GSD * gsd,
-    char *name,
+    unsigned *radtbl,
     int flags,
     int type,
     int value)
 {
     char           *cp;
-    unsigned        radtbl[2];
 
     if (gsd->offset > (int)sizeof(gsd->buf) - 8) {
         if (!gsd_flush(gsd))
             return 0;
     }
-
-    rad50x2(name, radtbl);
 
     cp = gsd->buf + gsd->offset;
     *cp++ = radtbl[0] & 0xff;
@@ -191,6 +189,19 @@ static int gsd_write(
     gsd->offset += 8;
 
     return 1;
+}
+
+static int gsd_write(
+    GSD * gsd,
+    char *name,
+    int flags,
+    int type,
+    int value)
+{
+    unsigned        radtbl[2];
+
+    rad50x2(name, radtbl);
+    return gsd_write2 (gsd, radtbl, flags, type, value);
 }
 
 /* gsd_mod - Write module name to GSD */
@@ -258,9 +269,9 @@ int gsd_psect(
 /* Write program ident to GSD */
 int gsd_ident(
     GSD * gsd,
-    char *name)
+    unsigned *name)
 {
-    return gsd_write(gsd, name, 0, GSD_IDENT, 0);
+    return gsd_write2(gsd, name, 0, GSD_IDENT, 0);
 }
 
 /* Write virtual array declaration to GSD */

@@ -417,7 +417,6 @@ int get_fp_src_mode(
 }
 
 #define DEBUG_FLOAT     0
-#if DEBUG_FLOAT
 
 void
 printflt(unsigned *flt, int size)
@@ -434,9 +433,10 @@ printflt(unsigned *flt, int size)
     printf("\n");
 }
 
-#define DF(x)   printf x
+#if DEBUG_FLOAT
+#define DF(...)   printf(__VA_ARGS__)
 #else
-#define DF(x)
+#define DF(...)
 #endif
 
 /*
@@ -470,12 +470,18 @@ printflt(unsigned *flt, int size)
 # define FREXP                  frexp
 #endif
 
+#define PARSE_FLOAT_WITH_FLOATS         0
+#define PARSE_FLOAT_WITH_INTS           1
+#define PARSE_FLOAT_DIVIDE_BY_MULT_LOOP 0
 
 /* Parse PDP-11 64-bit floating point format. */
 /* Give a pointer to "size" words to receive the result. */
 /* Note: there are probably degenerate cases that store incorrect
    results.  For example, I think rounding up a FLT2 might cause
    exponent overflow.  Sorry. */
+
+#if PARSE_FLOAT_WITH_FLOATS
+
 /* Note also that the full 56 bits of precision probably aren't always
    available on the source platform, given the widespread application
    of IEEE floating point formats, so expect some differences.  Sorry
@@ -502,8 +508,8 @@ int parse_float(
     i = sscanf(cp, SCANF_FMT "%n", &d, &n);
     if (i == 0)
         return 0;                      /* Wasn't able to convert */
-    DF(("LDBL_MANT_DIG: %d\n", LDBL_MANT_DIG));
-    DF(("%Lf input: %s", d, cp));
+    DF("LDBL_MANT_DIG: %d\n", LDBL_MANT_DIG);
+    DF("%Lf input: %s", d, cp);
 
     cp += n;
     if (endp)
@@ -517,13 +523,13 @@ int parse_float(
     }
 
     frac = FREXP(d, &sexp);            /* Separate into exponent and mantissa */
-    DF(("frac: %Lf %La sexp: %d\n", frac, frac, sexp));
+    DF("frac: %Lf %La sexp: %d\n", frac, frac, sexp);
     if (sexp < -127 || sexp > 127)
         return 0;                      /* Exponent out of range. */
 
     uexp = sexp + 128;                  /* Make excess-128 mode */
     uexp &= 0xff;                       /* express in 8 bits */
-    DF(("uexp: %02x\n", uexp));
+    DF("uexp: %02x\n", uexp);
 
     /*
      * frexp guarantees its fractional return value is
@@ -555,8 +561,8 @@ int parse_float(
 
     /* The following big literal is 2 to the 57th power: */
     ufrac = (uint64_t) (frac * 144115188075855872.0); /* Align fraction bits */
-    DF(("ufrac: %016lx\n", ufrac));
-    DF(("56   : %016lx\n", (1UL<<57) - 2));
+    DF("ufrac: %016lx\n", ufrac);
+    DF("56   : %016lx\n", (1UL<<57) - 2);
 
     /*
      * ufrac is now >= 2**56 and < 2**57.
@@ -589,14 +595,14 @@ int parse_float(
 
     onehalf = 1ULL << (16 * (4-size));
     ufrac += onehalf;
-    DF(("onehalf=%016lx, ufrac+onehalf: %016lx\n", onehalf, ufrac));
+    DF("onehalf=%016lx, ufrac+onehalf: %016lx\n", onehalf, ufrac);
 
     /* Did it roll up to a value 2**56? */
     if ((ufrac >> 57) > 0) {           /* Overflow? */
         if (uexp < 0xFF) {
             ufrac >>= 1;               /* Normalize */
             uexp++;
-            DF(("ufrac: %016lx  uexp: %02x (normalized)\n", ufrac, uexp));
+            DF("ufrac: %016lx  uexp: %02x (normalized)\n", ufrac, uexp);
         } else {
             /*
              * If rounding and then normalisation would cause the exponent to
@@ -606,7 +612,7 @@ int parse_float(
              * readable to just undo it here.
              */
             ufrac -= onehalf;
-            DF(("don't round: exponent overflow"));
+            DF("don't round: exponent overflow\n");
         }
     }
 
@@ -623,6 +629,298 @@ int parse_float(
 
     return 1;
 }
+
+#elif PARSE_FLOAT_WITH_INTS
+
+#define DUMP3 DF("exp: %d. %d  %016llx\n", \
+                    float_dec_exponent, float_bin_exponent, float_buf)
+/*
+ * Parse floating point denotations using integer operations only.
+ * Follows the reference version's implementation fairly closely.
+ */
+int parse_float(
+    char *cp,
+    char **endp,
+    int size,
+    unsigned *flt)
+{
+    int float_sign = 0;
+    int float_dot = 0;
+    int float_dec_exponent = 0;
+    int float_bin_exponent = 0;
+    int ok_chars = 0;
+    uint64_t float_buf = 0;
+
+    float_bin_exponent = 65;
+
+    cp = skipwhite(cp);
+
+    if (*cp == '+') {
+        cp++;
+    } else if (*cp == '-') {
+        float_sign = 1;
+        cp++;
+    }
+    DF("float_sign: %d\n", float_sign);
+
+    while (!EOL(*cp)) {
+        if (isdigit(*cp)) {
+            /* Can we multiply by 10? */
+            DF("digit: %c\n", *cp);
+            ok_chars++;
+            if (float_buf & 0xF800000000000000ULL) { /* [0] & 0174000, 0xF800 */
+                /* No, that would overflow */
+                float_dec_exponent++; /* no, compensate for the snub */
+                /*
+                 * Explanation of the above comment:
+                 * - after the decimal separator, we should ignore extra digits
+                 *   completely. Since float_dot == -1, the exponent will be
+                 *   decremented below, and compensate for that here.
+                 * - before the decimal separator, we don't add the digit
+                 *   (which would overflow) so we lose some lesser significant
+                 *   bits. float_dot == 0 in this case, and we do want the
+                 *   exponent increased to compensate for the ignored digit.
+                 * So in both cases the right thing happens.
+                 */
+            } else {
+                /* Multiply by 10 */
+                float_buf *= 10;
+                /* Add digit */
+                float_buf += *cp - '0';
+            }
+            float_dec_exponent -= float_dot;
+            DUMP3;
+            cp++;
+        } else if (*cp == '.') {
+            DF("dot: %c\n", *cp);
+            ok_chars++;
+            if (float_dot) {
+                return 0;       /* Error: repeated decimal separator */
+            }
+            float_dot = 1;
+            cp++;
+        } else {
+            DF("Other char: %c\n", *cp);
+            if (ok_chars == 0) {
+                return 0;       /* No valid number found */
+            }
+            break;
+        }
+    }
+
+    if (toupper(*cp) == 'E') {
+        cp++;
+        int exp = strtol(cp, &cp, 10);
+
+        float_dec_exponent += exp;
+        DF("E%d -> dec_exp %d\n", exp, float_dec_exponent);
+    }
+
+    if (endp)
+        *endp = cp;
+
+    /* FLTG3 */
+    if (float_buf) {
+        /* Non-zero */
+        DF("Non-zero: decimal exponent: %d\n", float_dec_exponent);
+        while (float_dec_exponent > 0) { /* 31$ */
+            DUMP3;
+            if (float_buf <= 0x3316000000000000ULL) { /* 031426, 13078, 0x3316, 65390 / 5 */
+                /* Multiply by 5 and 2 */
+                DF("Multiply by 5 and 2\n");
+                float_buf *= 5;
+                float_bin_exponent++;
+                DUMP3;
+            } else {
+                /* Multiply by 5/4 and 8 32$ */
+                DF("Multiply by 5/4 and 8\n");
+                if (float_buf >= 0xCCCC000000000000ULL) {
+                    float_buf >>= 1;
+                    float_bin_exponent++;
+                }
+                float_buf += (float_buf >> 2);
+                float_bin_exponent += 3;
+                DUMP3;
+            }
+            float_dec_exponent--;
+        }
+
+        while (float_dec_exponent < 0) { /* 41$ ish */
+            DUMP3;
+            DF("Prepare for division by left-shifting the bits\n");
+            /* Prepare for division by left-shifting the bits */
+            while (((float_buf >> 63) & 1) == 0) {     /* 41$ */
+                float_bin_exponent--;                  /* 40$ */
+                float_buf <<= 1;
+                DUMP3;
+            }
+
+            /* Divide by 2 */
+            float_buf >>= 1;
+
+#if PARSE_FLOAT_DIVIDE_BY_MULT_LOOP
+            uint64_t float_save = float_buf;
+            DUMP3;
+            DF("float_save: %016llx\n", float_save);
+
+            /*
+             * Divide by 5: this is done by the trick of "dividing by
+             * multiplying". In order to keep as many significant bits as
+             * possible, we multiply by 8/5, and adjust the binary exponent to
+             * compensate for the factor of 8.
+             * The result is found when we drop the 64 low bits.
+             *
+             * So we multiply with the 65-bit number
+             *                     0x19999999999999999
+             *                     1 1001 1001 1001 ...
+             * which is 8 *          0011 0011 0011 ... aka 0x333...
+             * which is (2**64 - 1) / 5 aka 0xFFF... / 5.
+             *
+             * The rightmost (1 * float_save << 0) is contributed to the total
+             * because float_buf already contains that value.
+             * In loop i=32, (float_save << 3) is added:
+             *               due to the two extra conditional shifts.
+             * In loop i=31, (float_save << 4) is added.
+             * In loop i=30, (float_save << 7) is added.
+             * etc, etc,
+             * so forming the repeating bit-pattern 1100 of the multiplier.
+             *
+             * Instead of shifting float_save left, we shift float_buf right,
+             * which over time drops precisely the desired 64 low bits.
+             *
+             * This is nearly exact but exact enough.
+             *
+             * The final result = start * 8 / 5.
+             */
+            for (int i = 16 * 2; i > 0; i--) {
+                if ((i & 1) == 0) {             /* 42$ */
+                    float_buf >>= 2;
+                }
+                float_buf >>= 1;                /* 43$ */
+                float_buf += float_save;
+                DF("Loop i=%2d: ", i); DUMP3;
+            }
+#else
+            int round = float_buf % 5;
+            float_buf = float_buf / 5 * 8;
+            /*
+             * Try to fill in some of the lesser significant bits.
+             * This is not always bitwise identical to the original method
+             * but probably more accurate.
+             */
+            if (round) {
+                float_buf += round * 8 / 5;
+            }
+#endif
+
+            /* It's not simply dividing by 5, it also multiplies by 8,
+             * so we need to adjust the exponent here. */
+            float_bin_exponent -= 3;
+            float_dec_exponent++;
+            DUMP3;
+        }
+
+        /* Normalize the mantissa: shift a single 1 out to the left */
+        DF("Normalize the mantissa: shift a single 1 out to the left\n");
+        int carry;
+        do {
+            /* FLTG5 */
+            float_bin_exponent--;
+            carry = (float_buf >> 63) & 1;
+            float_buf <<= 1;
+            DUMP3;
+        } while (carry == 0);
+
+        /* Set excess 128. */
+        DF("Set excess 128.\n");
+        float_bin_exponent += 0200;
+        DUMP3;
+
+        if (float_bin_exponent & 0xFF00) {
+            /* Error N. Underflow. 2$ */
+            report(NULL, "Error N (underflow)\n");
+            return 0;
+        }
+
+        /* Shift right 9 positions to make room for sign and exponent 3$ */
+        DF("Shift right 9 positions to make room for sign and exponent\n");
+        int round = (float_buf >> 8) & 0x0001;
+        float_buf >>= 9;
+        float_buf |= (uint64_t)float_bin_exponent << (64-9);
+        DUMP3;
+
+        /*
+         * This rounding step seems always needed to make the result the same
+         * as the implementation with long doubles.
+         *
+         * This may be because of the slight imprecision of the divisions by 10?
+         *
+         * It is needed to get some exact results for values that are indeed
+         * exactly representable. Examples:
+         *
+         * (2**9-3)/2**9 = 0.994140625 = 0,11111101
+         *                 407e 7fff ffff ffff -> 407e 8000 0000 0000 (correct)
+         * 1.00 (or 100E-2) divides 100 by 100 and gets
+         *                 407f ffff ffff ffff -> 4080 0000 0000 0000 (correct)
+         *
+         * The reference implementation omits this rounding for size != 4:
+         * it has only one rounding step, which always depends on the size.
+         */
+        float_buf += round;
+        DF("round: size = 4, round = %d\n", round);
+
+        /* Round (there is a truncation option to omit this step) */
+        if (1) {
+            uint64_t onehalf;
+
+            if (size < 4) {
+                /* 1 << 31 or 1 << 47 */
+                onehalf = 1ULL << ((16 * (4-size)) - 1);
+                DF("round: size = %d, onehalf = %016llx\n", size, onehalf);
+                float_buf += onehalf;
+                DUMP3;
+
+                /* The rounding bit is the lesser significant bit that's just
+                 * outside the returned result. If we round, we add it to the
+                 * returned value.
+                 *
+                 * If there is a carry-out of the mantissa, it gets added to
+                 * the exponent (increasing it by 1).
+                 *
+                 * If that also overflows, we truely have overflow.
+                 */
+            }
+
+            DF("After rounding\n");
+            DUMP3;
+        }
+
+        if (float_buf & 0x8000000000000000ULL) {
+            // 6$ error T: exponent overflow
+            report(NULL, "error T: exponent overflow\n");
+            return 0;
+        }
+
+        /* 7$ */
+        float_buf |= (uint64_t)float_sign << 63;
+        DF("Put in float_sign: "); DUMP3;
+    }
+
+    /* Now put together the result from the parts */
+    flt[0] = (float_buf >> 48) & 0xFFFF;
+    if (size > 1) {
+        flt[1] = (float_buf >> 32) & 0xFFFF;
+        if (size > 2) {
+            flt[2] = (float_buf >> 16) & 0xFFFF;
+            flt[3] = (float_buf >>  0) & 0xFFFF;
+        }
+    }
+
+    return 1;
+}
+#else
+# error How are you going to parse floats?
+#endif
 
 
 /* The recursive-descent expression parser parse_expr. */
@@ -743,23 +1041,23 @@ char           *get_symbol(
 {
     int             len;
     char           *symcp;
-    int             digits = 0;
+    int             start_digit = 0;
+    int             not_digits = 0;
 
     cp = skipwhite(cp);                /* Skip leading whitespace */
 
     if (!issym((unsigned char)*cp))
         return NULL;
 
-    digits = 0;
     if (isdigit((unsigned char)*cp))
-        digits = 2;                    /* Think about digit count */
+        start_digit = 1;
 
     for (symcp = cp + 1; issym((unsigned char)*symcp); symcp++) {
         if (!isdigit((unsigned char)*symcp)) /* Not a digit? */
-            digits--;                  /* Make a note. */
+            not_digits++;                    /* Make a note. */
     }
 
-    if (digits == 2)
+    if (start_digit && not_digits == 0)
         return NULL;                   /* Not a symbol, it's a digit string */
 
     if (endp)
@@ -780,9 +1078,9 @@ char           *get_symbol(
     if (islocal) {
         *islocal = 0;
 
-        /* Turn to local label format */
-        if (digits == 1) {
-            if (symcp[len - 1] == '$') {
+        /* Check if local label format */
+        if (start_digit) {
+            if (not_digits == 1 && symcp[len - 1] == '$') {
                 char           *newsym = memcheck(malloc(32));  /* Overkill */
 
                 sprintf(newsym, "%ld$%d", strtol(symcp, NULL, 10), lsb);
@@ -792,8 +1090,7 @@ char           *get_symbol(
                 }
                 free(symcp);
                 symcp = newsym;
-                if (islocal)
-                    *islocal = SYMBOLFLAG_LOCAL;
+                *islocal = SYMBOLFLAG_LOCAL;
                 lsb_used++;
             } else {
                 free(symcp);
@@ -801,8 +1098,8 @@ char           *get_symbol(
             }
         }
     } else {
-        /* disallow local label format */
-        if (isdigit((unsigned char)*symcp)) {
+        /* Disallow local label format */
+        if (start_digit) {
             free(symcp);
             return NULL;
         }

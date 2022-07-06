@@ -27,6 +27,82 @@
 
 #define CHECK_EOL       check_eol(stack, cp)
 
+/* assemble a rad50 value (some number of words). */
+static unsigned * assemble_rad50 (
+    char *cp,
+    int max,
+    int *count,
+    STACK *stack)
+{
+    char           *radstr;
+    unsigned       *ret;
+    int             i, len, wcnt;
+
+    /*
+     * Allocate storage sufficient for the rest of
+     * the line.
+     */
+    radstr = memcheck(malloc(strlen(cp)));
+    len = 0;
+
+    do {
+        cp = skipwhite(cp);
+        if (*cp == '<') {
+            EX_TREE        *value;
+            /* A byte value */
+            value = parse_unary_expr(cp, 0);
+            cp = value->cp;
+            if (value->type != EX_LIT) {
+                report(stack->top, "expression must be constant\n");
+                radstr[len++] = 0;
+            } else if (value->data.lit >= 050) {
+                report(stack->top, "invalid character value %o\n", value->data.lit);
+                radstr[len++] = 0;
+            } else {
+                radstr[len++] = value->data.lit;
+            }
+            free_tree(value);
+        } else {
+            char            quote = *cp++;
+
+            while (*cp && *cp != '\n' && *cp != quote) {
+                int         ch = ascii2rad50(*cp++);
+
+                if (ch == -1) {
+                    report(stack->top, "invalid character '%c'\n", cp[-1]);
+                    radstr[len++] = 0;
+                } else {
+                    radstr[len++] = ch;
+                }
+
+            }
+            cp++;  /* Skip closing quote */
+        }
+
+        cp = skipwhite(cp);
+    } while (!EOL(*cp));
+
+    wcnt = (len + 2) / 3;
+    /* Return at most "max" words, if specified */
+    if (max && max < wcnt)
+        wcnt = max;
+    if (count != NULL)
+        *count = wcnt;
+
+    /* Allocate space for actual or max words, whichever is larger */
+    ret = memcheck (malloc (((wcnt < max) ? max : wcnt) * sizeof (int)));
+    for (i = 0; i < wcnt; i++) {
+        int word = packrad50word(radstr + i * 3, len - (i * 3));
+        ret[i] = word;
+    }
+    /* If max is specified, zero fill */
+    for (; i < max; i++)
+        ret[i] = 0;
+
+    free(radstr);
+    return ret;
+}
+
 /* assemble - read a line from the input stack, assemble it. */
 
 /* This function is way way too large, because I just coded most of
@@ -45,7 +121,7 @@ static int assemble(
     int             local;      /* Whether a label is a local label or
                                    not */
 
-    line = stack_gets(stack);
+    line = stack_getline(stack);
     if (line == NULL)
         return -1;                     /* Return code for EOF. */
 
@@ -71,7 +147,20 @@ static int assemble(
         op = get_op(cp, &cp);          /* Look at operation code */
 
         /* FIXME: this code will blindly look into .REM commentary and
-           find operation codes.  Incidentally, so will read_body. */
+           find operation codes.  Incidentally, so will read_body().
+
+           That doesn't really matter, though, since the original also
+           did that (line 72 ends the suppressed conditional block):
+
+     69                                         .if NE,0
+     70                                         .rem    &
+     71                                 junk
+     72                                         .endc
+A    73 000144  000000G 000000G         more junk
+A    74 000150  000000G 000000G 000000G line that ends the comments with &
+        000156  000000G 000000G 000000C
+O    75                                         .endc
+         */
 
         if (op == NULL)
             return 1;                  /* Not found.  Don't care. */
@@ -251,6 +340,7 @@ static int assemble(
 
         /* Try to resolve macro */
 
+do_mcalled_macro:
         op = lookup_sym(label, &macro_st);
         if (op /*&& op->stmtno < stmtno*/) {
             STREAM         *macstr;
@@ -260,6 +350,10 @@ static int assemble(
             list_location(stack->top, DOT);
 
             macstr = expandmacro(stack->top, (MACRO *) op, ncp);
+            if (macstr == NULL) {
+                /* Error in expanding the macro, stop now. */
+                return 0;
+            }
 
             stack_push(stack, macstr); /* Push macro expansion
                                           onto input stream */
@@ -280,6 +374,8 @@ static int assemble(
                 case P_PAGE:
                 case P_PRINT:
                 case P_SBTTL:
+                case P_CROSS:
+                case P_NOCROSS:
                     return 1;          /* Accepted, ignored.  (An obvious
                                           need: get assembly listing
                                           controls working fully. ) */
@@ -299,41 +395,45 @@ static int assemble(
                     return 1;
 
                 case P_IDENT:
-                    {
-                        char            endc[6];
-                        int             len;
+                    if (ident)          /* An existing ident? */
+                        free(ident);    /* Discard it. */
 
-                        cp = skipwhite(cp);
-                        endc[0] = *cp++;
-                        endc[1] = '\n';
-                        endc[2] = 0;
-                        len = (int) strcspn(cp, endc);
-                        if (len > 6)
-                            len = 6;
-
-                        if (ident)     /* An existing ident? */
-                            free(ident);        /* Discard it. */
-
-                        ident = memcheck(malloc(len + 1));
-                        memcpy(ident, cp, len);
-                        ident[len] = 0;
-                        upcase(ident);
-
-                        cp += len + 1;
-                        return CHECK_EOL;
-                    }
+                    ident = assemble_rad50 (cp, 2, NULL, stack);
+                    return 1;
 
                 case P_RADIX:
                     {
                         int             old_radix = radix;
+                        EX_TREE        *value;
+                        int             ok = 1;
 
-                        radix = strtoul(cp, &cp, 10);
-                        if (radix != 8 && radix != 10 && radix != 16 && radix != 2) {
-                            radix = old_radix;
-                            report(stack->top, "Illegal radix\n");
-                            return 0;
+                        cp = skipwhite(cp);
+                        if (EOL(*cp)) {
+                            /* If no argument, assume 8 */
+                            radix = 8;
+                            return 1;
                         }
-                        return CHECK_EOL;
+                        /* Parse the argument in decimal radix */
+                        radix = 10;
+                        value = parse_expr(cp, 0);
+                        cp = value->cp;
+
+                        if (value->type != EX_LIT) {
+                            report(stack->top, "Argument to .RADIX must be constant\n");
+                            radix = old_radix;
+                            ok = 0;
+                        } else {
+                            radix = value->data.lit;
+                            list_value(stack->top, radix);
+                            if (radix != 8 && radix != 10 &&
+                                radix != 2 && radix != 16) {
+                                radix = old_radix;
+                                report(stack->top, "Argument to .RADIX must be 2, 8, 10, or 16\n");
+                                ok = 0;
+                            }
+                        }
+                        free_tree(value);
+                        return ok && CHECK_EOL;
                     }
 
                 case P_FLT4:
@@ -341,20 +441,24 @@ static int assemble(
                     {
                         int             ok = 1;
 
-                        while (!EOL(*cp)) {
+                        while (ok && !EOL(*cp)) {
                             unsigned        flt[4];
 
                             if (parse_float(cp, &cp, (op->value == P_FLT4 ? 4 : 2), flt)) {
-                                /* Store the word values */
-                                store_word(stack->top, tr, 2, flt[0]);
-                                store_word(stack->top, tr, 2, flt[1]);
-                                if (op->value == P_FLT4) {
-                                    store_word(stack->top, tr, 2, flt[2]);
-                                    store_word(stack->top, tr, 2, flt[3]);
-                                }
+                                /* All is well */
                             } else {
                                 report(stack->top, "Bad floating point format\n");
-                                ok = 0;
+                                ok = 0;         /* Don't try to parse the rest of the line */
+                                flt[0] = flt[1] /* Store zeroes */
+                                       = flt[2]
+                                       = flt[3] = 0;
+                            }
+                            /* Store the word values */
+                            store_word(stack->top, tr, 2, flt[0]);
+                            store_word(stack->top, tr, 2, flt[1]);
+                            if (op->value == P_FLT4) {
+                                store_word(stack->top, tr, 2, flt[2]);
+                                store_word(stack->top, tr, 2, flt[3]);
                             }
                             cp = skipdelim(cp);
                         }
@@ -485,6 +589,7 @@ static int assemble(
                             return 0;
                         }
 
+                        name = defext (name, "MAC");
                         my_searchenv(name, "INCLUDE", hitfile, sizeof(hitfile));
 
                         if (hitfile[0] == '\0') {
@@ -522,7 +627,7 @@ static int assemble(
                             cp += strcspn(cp, quote);
                             if (*cp == quote[0])
                                 break; /* Found closing quote */
-                            cp = stack_gets(stack);     /* Read next input line */
+                            cp = stack_getline(stack);     /* Read next input line */
                             if (cp == NULL)
                                 break; /* EOF */
                         }
@@ -548,10 +653,11 @@ static int assemble(
                     }
 
                 case P_LIBRARY:
-                    if (pass == 0) {
+                    {
                         char            hitfile[FILENAME_MAX];
                         char           *name = getstring_fn(cp, &cp);
 
+                        name = defext (name, "MLB");
                         my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
 
                         if (hitfile[0]) {
@@ -570,15 +676,6 @@ static int assemble(
 
                 case P_MCALL:
                     {
-                        STREAM         *macstr;
-                        BUFFER         *macbuf;
-                        char           *maccp;
-                        int             saveline;
-                        MACRO          *mac;
-                        int             i;
-                        char            macfile[FILENAME_MAX];
-                        char            hitfile[FILENAME_MAX];
-
                         for (;;) {
                             cp = skipdelim(cp);
 
@@ -612,68 +709,8 @@ static int assemble(
                                 continue;
                             }
 
-                            /* Find the macro in the list of included
-                               macro libraries */
-                            macbuf = NULL;
-                            for (i = 0; i < nr_mlbs; i++)
-                                if ((macbuf = mlb_entry(mlbs[i], label)) != NULL)
-                                    break;
-                            if (macbuf != NULL) {
-                                macstr = new_buffer_stream(macbuf, label);
-                                buffer_free(macbuf);
-                            } else {
-                                char *bufend = &macfile[sizeof(macfile)],
-                                     *end;
-                                end = stpncpy(macfile, label, sizeof(macfile) - 5);
-                                if (end >= bufend - 5) {
-                                    report(stack->top, ".MCALL: name too long: '%s'\n", label);
-                                    return 0;
-                                }
-                                stpncpy(end, ".MAC", bufend - end);
-                                my_searchenv(macfile, "MCALL", hitfile, sizeof(hitfile));
-                                if (hitfile[0])
-                                    macstr = new_file_stream(hitfile);
-                                else
-                                    macstr = NULL;
-                            }
-
-                            if (macstr != NULL) {
-                                for (;;) {
-                                    char           *mlabel;
-
-                                    maccp = macstr->vtbl->gets(macstr);
-                                    if (maccp == NULL)
-                                        break;
-                                    mlabel = get_symbol(maccp, &maccp, NULL);
-                                    if (mlabel == NULL)
-                                        continue;
-                                    op = lookup_sym(mlabel, &system_st);
-                                    free(mlabel);
-                                    if (op == NULL)
-                                        continue;
-                                    if (op->value == P_MACRO)
-                                        break;
-                                }
-
-                                if (maccp != NULL) {
-                                    STACK           macstack = {
-                                        macstr
-                                    };
-                                    int             savelist = list_level;
-
-                                    saveline = stmtno;
-                                    list_level = -1;
-                                    mac = defmacro(maccp, &macstack, CALLED_NOLIST);
-                                    if (mac == NULL) {
-                                        report(stack->top, "Failed to define macro called %s\n", label);
-                                    }
-
-                                    stmtno = saveline;
-                                    list_level = savelist;
-                                }
-
-                                macstr->vtbl->delete(macstr);
-                            } else
+                            /* Do the actual macro library search */
+                            if (!do_mcall (label, stack))
                                 report(stack->top, "MACRO %s not found\n", label);
 
                             free(label);
@@ -689,6 +726,9 @@ static int assemble(
                         return mac != NULL;
                     }
 
+                case P_MDELETE:
+                    return 1;   /* TODO: or should it just be a NOP? */
+                    
                 case P_MEXIT:
                     {
                         STREAM         *macstr;
@@ -733,6 +773,8 @@ static int assemble(
                             enabl_lc = 1;
                         } else if (strcmp(label, "LCM") == 0) {
                             enabl_lcm = 1;
+                        } else if (strcmp(label, "MCL") == 0) {
+                            enabl_mcl = 1;
                         }
                         free(label);
                         cp = skipdelim(cp);
@@ -754,6 +796,8 @@ static int assemble(
                             enabl_lc = 0;
                         } else if (strcmp(label, "LCM") == 0) {
                             enabl_lcm = 0;
+                        } else if (strcmp(label, "MCL") == 0) {
+                            enabl_mcl = 0;
                         }
                         free(label);
                         cp = skipdelim(cp);
@@ -874,7 +918,7 @@ static int assemble(
                                 report(stack->top, "Bad .IF expression\n");
                                 list_value(stack->top, 0);
                                 free_tree(tvalue);
-                                ok = FALSE;     /* Pick something. */
+                                ok = TRUE;     /* Pick something. */
                             } else {
                                 unsigned        word;
 
@@ -1015,38 +1059,29 @@ static int assemble(
                         SYMBOL         *sectsym;
                         SECTION        *sect;
                         unsigned int    old_flags = ~0u;
-                        int             unnamed_csect = 0;
 
                         label = get_symbol(cp, &cp, NULL);
                         if (label == NULL) {
-                            if (op->value == P_CSECT) {
-                                label = memcheck(strdup(". BLK."));
-                                unnamed_csect = 1;
-                            } else {
-                                label = memcheck(strdup(""));       /* Allow blank */
-                            }
+                            sect = &blank_section;
                         }
+                        else {
+                            sectsym = lookup_sym(label, &section_st);
+                            if (sectsym) {
+                                sect = sectsym->section;
+                                free(label);
+                                old_flags = sect->flags;
+                            } else {
+                                sect = new_section();
+                                sect->label = label;
+                                sect->flags = 0;
+                                sect->pc = 0;
+                                sect->size = 0;
+                                sect->type = SECTION_USER;
+                                sections[sector++] = sect;
+                                sectsym = add_sym(label, 0, SYMBOLFLAG_DEFINITION, sect, &section_st);
 
-                        sectsym = lookup_sym(label, &section_st);
-                        if (sectsym) {
-                            sect = sectsym->section;
-                            free(label);
-                            old_flags = sect->flags;
-                        } else {
-                            sect = new_section();
-                            sect->label = label;
-                            sect->flags = 0;
-                            sect->pc = 0;
-                            sect->size = 0;
-                            sect->type = SECTION_USER;
-                            sections[sector++] = sect;
-                            sectsym = add_sym(label, 0, SYMBOLFLAG_DEFINITION, sect, &section_st);
-
-                            /* page 6-41 table 6-5 */
-                            if (op->value == P_PSECT) {
-                                sect->flags |= PSECT_REL;
-                            } else if (op->value == P_CSECT) {
-                                if (unnamed_csect) {
+                                /* page 6-41 table 6-5 */
+                                if (op->value == P_PSECT) {
                                     sect->flags |= PSECT_REL;
                                 } else {
                                     sect->flags |= PSECT_REL | PSECT_COM | PSECT_GBL;
@@ -1249,59 +1284,15 @@ static int assemble(
                         DOT++;         /* Fix it */
                     }
                     {
-                        char           *radstr;
-                        int             i, len;
-
-                        /*
-                         * Allocate storage sufficient for the rest of
-                         * the line.
-                         */
-                        radstr = memcheck(malloc(strlen(cp)));
-                        len = 0;
-
-                        do {
-                            cp = skipwhite(cp);
-                            if (*cp == '<') {
-                                EX_TREE        *value;
-                                /* A byte value */
-                                value = parse_unary_expr(cp, 0);
-                                cp = value->cp;
-                                if (value->type != EX_LIT) {
-                                    report(stack->top, "expression must be constant\n");
-                                    radstr[len++] = 0;
-                                } else if (value->data.lit >= 050) {
-                                    report(stack->top, "invalid character value %o\n", value->data.lit);
-                                    radstr[len++] = 0;
-                                } else {
-                                    radstr[len++] = value->data.lit;
-                                }
-                                free_tree(value);
-                            } else {
-                                char            quote = *cp++;
-
-                                while (*cp && *cp != '\n' && *cp != quote) {
-                                    int         ch = ascii2rad50(*cp++);
-
-                                    if (ch == -1) {
-                                        report(stack->top, "invalid character '%c'\n", cp[-1]);
-                                        radstr[len++] = 0;
-                                    } else {
-                                        radstr[len++] = ch;
-                                    }
-
-                                }
-                                cp++;  /* Skip closing quote */
-                            }
-
-                            cp = skipwhite(cp);
-                        } while (!EOL(*cp));
-
-                        for (i = 0; i < len; i += 3) {
-                            int word = packrad50word(radstr + i, len - i);
-                            store_word(stack->top, tr, 2, word);
+                        int i, count;
+                        unsigned *rad50;
+                        
+                        /* Now assemble the argument */
+                        rad50 = assemble_rad50 (cp, 0, &count, stack);
+                        for (i = 0; i < count; i++) {
+                            store_word (stack->top, tr, 2, rad50[i]);
                         }
-
-                        free(radstr);
+                        free (rad50);
                     }
                     return 1;
 
@@ -1327,29 +1318,40 @@ static int assemble(
                     case OC_MARK:
                         /* MARK, EMT, TRAP */  {
                             EX_TREE        *value;
-                            unsigned        word;
 
                             cp = skipwhite(cp);
-                            if (*cp == '#')
-                                cp++;  /* Allow the hash, but
-                                          don't require it */
-                            value = parse_expr(cp, 0);
-                            cp = value->cp;
-                            if (value->type != EX_LIT) {
-                                report(stack->top, "Instruction requires simple literal operand\n");
-                                word = op->value;
-                            } else {
-                                unsigned int max = (op->value == I_MARK)? 077 : 0377;
-
-                                if (value->data.lit > max) {
-                                    report(stack->top, "Literal operand too large (%d. > %d.)\n", value->data.lit, max);
-                                    value->data.lit = max;
-                                }
-                                word = op->value | value->data.lit;
+                            if (EOL (*cp)) {
+                                /* Default argument is 0 */
+                                store_word (stack->top, tr, 2, op->value);
                             }
+                            else {
+                                if (*cp == '#')
+                                    cp++;  /* Allow the hash, but
+                                              don't require it */
+                                value = parse_expr(cp, 0);
+                                cp = value->cp;
+                                if (value->type != EX_LIT) {
+                                    if (op->value == I_MARK) {
+                                        report(stack->top, "Instruction requires " "simple literal operand\n");
+                                        store_word(stack->top, tr, 2, op->value);
+                                    }
+                                    else {
+                                        /* EMT, TRAP: handle as two bytes */
+                                        store_value (stack, tr, 1, value);
+                                        store_word (stack->top, tr, 1, op->value >> 8);
+                                    }
+                                } else {
+                                    unsigned v = value->data.lit;
+                                    unsigned int max = (op->value == I_MARK)? 077 : 0377;
 
-                            store_word(stack->top, tr, 2, word);
-                            free_tree(value);
+                                    if (v > max) {
+                                        report(stack->top, "Literal operand too large (%d. > %d.)\n", value->data.lit, max);
+                                        v = max;
+                                    }
+                                    store_word(stack->top, tr, 2, op->value | v);
+                                }
+                                free_tree(value);
+                            }
                         }
                         return CHECK_EOL;
 
@@ -1822,6 +1824,16 @@ static int assemble(
         }                              /* end if (op is a symbol) */
     }
 
+    /* If .ENABL MCL is in effect, try to define the symbol as a
+     * library macro if it is not a defined symbol. */
+    if (enabl_mcl) {
+        if (lookup_sym(label, &symbol_st) == NULL) {
+            if (do_mcall (label, stack)) {
+                goto do_mcalled_macro;
+            }
+        }
+    }
+        
     /* Only thing left is an implied .WORD directive */
     /*JH: fall through in case of illegal opcode, illegal label! */
     free(label);

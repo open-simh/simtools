@@ -40,12 +40,11 @@ DAMAGE.
 #include <string.h>
 
 #include "rad50.h"
-
 #include "stream2.h"
-
 #include "mlb.h"
-
 #include "util.h"
+
+#define MLBDEBUG_OPEN           0
 
 static MLB     *mlb_rt11_open(
     char *name,
@@ -59,11 +58,22 @@ static void     mlb_rt11_extract(
     MLB *mlb);
 
 struct mlb_vtbl mlb_rt11_vtbl = {
-    mlb_rt11_open,
-    mlb_rt11_entry,
-    mlb_rt11_extract,
-    mlb_rt11_close,
+    .mlb_open    = mlb_rt11_open,
+    .mlb_entry   = mlb_rt11_entry,
+    .mlb_extract = mlb_rt11_extract,
+    .mlb_close   = mlb_rt11_close,
+    .mlb_is_rt11 = 1,
 };
+
+/*
+ * Format description:
+ * http://www.bitsavers.org/pdf/dec/pdp11/rt11/v5.6_Aug91/AA-PD6PA-TC_RT-11_Volume_and_File_Formats_Manual_Aug91.pdf
+ * pages 2-27 ff.
+ *
+ * A MLB Macro Library Header differs a lot from an Object Library Header.
+ */
+
+#define BLOCKSIZE               512
 
 #define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
 
@@ -72,7 +82,8 @@ struct mlb_vtbl mlb_rt11_vtbl = {
    be able to calculate the entries' sizes, which isn't actually
    stored in the directory. */
 
-#define BYTEPOS(rec) ((WORD((rec)+4) & 32767) * 512 + (WORD((rec)+6) & 511))
+#define BYTEPOS(rec) ((WORD((rec)+4) & 32767) * BLOCKSIZE + \
+                      (WORD((rec)+6) & 511))
 
 /* compare_position is the qsort callback function that compares byte
    locations within the macro library */
@@ -116,6 +127,9 @@ MLB            *mlb_rt11_open(
     unsigned        start_block;
     int             i;
 
+#if MLBDEBUG_OPEN
+    fprintf(stderr, "mlb_rt11_open('%s', %d)\n", name, allow_object_library);
+#endif
     (void)allow_object_library;         /* This parameter is not supported */
     mlb->vtbl = &mlb_rt11_vtbl;
     mlb->directory = NULL;
@@ -129,14 +143,12 @@ MLB            *mlb_rt11_open(
     buff = memcheck(malloc(044));      /* Size of MLB library header */
 
     if (fread(buff, 1, 044, mlb->fp) < 044) {
-        mlb_rt11_close(mlb);
-        free(buff);
-        return NULL;
+        goto error;                    /* Nope. */
     }
 
-    if (WORD(buff) != 01001) {         /* Is this really a macro library? */
-        mlb_rt11_close(mlb);           /* Nope. */
-        return NULL;
+    if (WORD(buff) != 01001 ||
+        WORD(buff + 2) != 0500) {      /* Is this really a macro library? */
+        goto error;                    /* Nope. */
     }
 
     entsize = WORD(buff + 032);        /* The size of each macro directory
@@ -145,17 +157,34 @@ MLB            *mlb_rt11_open(
     start_block = WORD(buff + 034);    /* The start RT-11 block of the
                                           directory */
 
+    if (entsize < 8) {                 /* Is this really a macro library? */
+        fprintf(stderr, "mlb_rt11_open error: entsize too small: %d\n", entsize);
+        goto error;                    /* Nope. */
+    }
+
+    if (start_block < 1) {             /* Is this really a macro library? */
+        fprintf(stderr, "mlb_rt11_open error: start_block too small: %d\n", start_block);
+        goto error;                    /* Nope. */
+    }
+
+#if MLBDEBUG_OPEN
+    fprintf(stderr, "entsize=%d, nr_entries=%d, start_block=%d\n",
+            entsize, nr_entries, start_block);
+#endif
     free(buff);                        /* Done with that header. */
 
     /* Allocate a buffer for the disk directory */
     buff = memcheck(malloc(nr_entries * entsize));
-    fseek(mlb->fp, start_block * 512, SEEK_SET);        /* Go to the directory */
+    /* Go to the directory */
+    if (fseek(mlb->fp, start_block * BLOCKSIZE, SEEK_SET) == -1) {
+        fprintf(stderr, "mlb_rt11_open error: seek error: %d\n", start_block * BLOCKSIZE);
+        goto error;
+    }
 
     /* Read the disk directory */
     if (fread(buff, entsize, nr_entries, mlb->fp) < nr_entries) {
-        mlb_rt11_close(mlb);           /* Sorry, read error. */
-        free(buff);
-        return NULL;
+        fprintf(stderr, "mlb_rt11_open error: fread: not enough entries\n");
+        goto error;                    /* Sorry, read error. */
     }
 
     /* Shift occupied directory entries to the front of the array
@@ -166,11 +195,14 @@ MLB            *mlb_rt11_open(
         for (i = 0, j = nr_entries; i < j; i++) {
             char           *ent1,
                            *ent2;
+            int             w1, w2;
 
             ent1 = buff + (i * entsize);
+            w1 = WORD(ent1);
+            w2 = WORD(ent1 + 2);
             /* Unused entries have 0177777 0177777 for the RAD50 name,
                which is not legal RAD50. */
-            if (WORD(ent1) == 0177777 && WORD(ent1 + 2) == 0177777) {
+            if (w1 == 0177777 && w2 == 0177777) {
                 while (--j > i
                        && (ent2 = buff + (j * entsize), WORD(ent2) == 0177777 && WORD(ent2 + 2) == 0177777)) ;
                 if (j <= i)
@@ -179,12 +211,24 @@ MLB            *mlb_rt11_open(
                                                    into unused entry's
                                                    space */
                 memset(ent2, 0377, entsize);    /* Mark entry unused */
+            } else {
+                if (w1 == 0000000 && w2 == 0000000) {
+                    fprintf(stderr, "mlb_rt11_open error: bad file, null name\n");
+                    goto error;
+                }
             }
         }
 
         /* Now i contains the actual number of entries. */
 
         mlb->nentries = i;
+#if MLBDEBUG_OPEN
+        fprintf(stderr, "mlb->nentries=%d\n",  mlb->nentries);
+#endif
+        if (mlb->nentries == 0) {
+            fprintf(stderr, "mlb_rt11_open error: no entries\n");
+            goto error;
+        }
 
         /* Sort the array by file position */
 
@@ -193,6 +237,11 @@ MLB            *mlb_rt11_open(
         /* Now, allocate my in-memory directory */
         mlb->directory = memcheck(malloc(sizeof(MLBENT) * mlb->nentries));
         memset(mlb->directory, 0, sizeof(MLBENT) * mlb->nentries);
+
+        unsigned long   max_filepos;
+
+        fseek(mlb->fp, 0, SEEK_END);
+        max_filepos = ftell(mlb->fp);
 
         /* Build in-memory directory */
         for (j = 0; j < i; j++) {
@@ -206,17 +255,25 @@ MLB            *mlb_rt11_open(
             radname[6] = 0;
 
             trim(radname);
+            if (radname[0] == '\0' || strchr(radname, ' ')) {
+                fprintf(stderr, "mlb_rt11_open error: entry with space in name\n");
+                goto error;
+            }
 
             mlb->directory[j].label = memcheck(strdup(radname));
             mlb->directory[j].position = BYTEPOS(ent);
+
+            if (mlb->directory[j].position > max_filepos) {
+                fprintf(stderr, "mlb_rt11_open error: entry past EOF\n");
+                goto error;
+            }
+
             if (j < i - 1) {
                 mlb->directory[j].length = BYTEPOS(ent + entsize) - BYTEPOS(ent);
             } else {
-                unsigned long   max;
+                unsigned long   max = max_filepos;
                 char            c;
 
-                fseek(mlb->fp, 0, SEEK_END);
-                max = ftell(mlb->fp);
                 /* Look for last non-zero */
                 do {
                     max--;
@@ -226,6 +283,13 @@ MLB            *mlb_rt11_open(
                 max++;
                 mlb->directory[j].length = max - BYTEPOS(ent);
             }
+#if MLBDEBUG_OPEN
+            fprintf(stderr, "entry #%d '%s' %ld length %d\n",
+                    j,
+                    mlb->directory[j].label,
+                    mlb->directory[j].position,
+                    mlb->directory[j].length);
+#endif
         }
 
         free(buff);
@@ -233,6 +297,14 @@ MLB            *mlb_rt11_open(
 
     /* Done.  Return the struct that represents the opened MLB. */
     return mlb;
+
+error:
+#if MLBDEBUG_OPEN
+    fprintf(stderr, "(mlb_rt11_open closing '%s' due to errors)\n", name);
+#endif
+    mlb_rt11_close(mlb);      /* Sorry, bad file. */
+    free(buff);
+    return NULL;
 }
 
 /* mlb_rt11_close discards MLB and closes the file. */

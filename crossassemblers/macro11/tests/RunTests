@@ -30,9 +30,11 @@ TESTS="test-asciz \
     test-prec \
     test-psect \
     test-rad50 \
+    test-radix \
     test-reg \
     test-reloc \
     test-rept \
+    test-syntax \
     test-ua-pl \
     test-undef \
     test-word-comma"

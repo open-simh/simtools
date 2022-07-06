@@ -87,5 +87,6 @@ void            padto(
 void           *memcheck(
     void *ptr);
 
+char *defext (char *fn, const char *ext);
 
 #endif /* UTIL__H */

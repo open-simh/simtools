@@ -110,6 +110,10 @@ Options:
     -m macname      Gives a macro library name.
                     Up to 32 macro libraries may be specified, one per
                     -m option.
+                    The current object file format (default, or from
+                    -rt11 or -rsx before this option) is used first to
+                    read the file; if this fails, the other format is
+                    tried.
                     Note: unlike MACRO.SAV, SYSMAC.SML is not
                     automatically included; you must name it.
 

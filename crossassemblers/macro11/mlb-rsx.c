@@ -156,6 +156,9 @@ DAMAGE.
 #include "mlb.h"
 #include "util.h"
 
+#define MLBDEBUG_OPEN           0
+#define MLBDEBUG_ENTRY          0
+
 static MLB     *mlb_rsx_open(
     char *name,
     int allow_object_library);
@@ -168,10 +171,11 @@ static void     mlb_rsx_extract(
     MLB *mlb);
 
 struct mlb_vtbl mlb_rsx_vtbl = {
-    mlb_rsx_open,
-    mlb_rsx_entry,
-    mlb_rsx_extract,
-    mlb_rsx_close,
+    .mlb_open    = mlb_rsx_open,
+    .mlb_entry   = mlb_rsx_entry,
+    .mlb_extract = mlb_rsx_extract,
+    .mlb_close   = mlb_rsx_close,
+    .mlb_is_rt11 = 0,
 };
 
 #define BLOCKSIZE               512
@@ -201,7 +205,7 @@ MLB            *mlb_rsx_open(
     int allow_objlib)
 {
     MLB            *mlb = memcheck(malloc(sizeof(MLB)));
-    char           *buff;
+    char           *buff = NULL;
     unsigned        entsize;
     unsigned        nr_entries;
     unsigned        start_block;
@@ -210,6 +214,9 @@ MLB            *mlb_rsx_open(
     mlb->vtbl = &mlb_rsx_vtbl;
     mlb->directory = NULL;
 
+#if MLBDEBUG_OPEN
+    fprintf(stderr, "mlb_rsx_open('%s', %d)\n", name, allow_objlib);
+#endif
     mlb->fp = fopen(name, "rb");
     if (mlb->fp == NULL) {
         mlb_rsx_close(mlb);
@@ -219,20 +226,16 @@ MLB            *mlb_rsx_open(
     buff = memcheck(malloc(060));      /* Size of MLB library header */
 
     if (fread(buff, 1, 060, mlb->fp) < 060) {
-        fprintf(stderr, "error: can't read full header\n");
-        mlb_rsx_close(mlb);
-        free(buff);
-        return NULL;
+        fprintf(stderr, "mlb_rsx_open error: can't read full header\n");
+        goto error;
     }
 
     mlb->is_objlib = 0;
     if (allow_objlib && WORD(buff) == 01000) { /* Is it an object library? */
         mlb->is_objlib = 1;
     } else if (WORD(buff) != 01001) {  /* Is this really a macro library? */
-        /* fprintf(stderr, "error: first word not correct value\n"); */
-        mlb_rsx_close(mlb);            /* Nope. */
-        free(buff);
-        return NULL;
+        /* fprintf(stderr, "mlb_rsx_open error: first word not correct value\n"); */
+        goto error;
     }
 
     entsize = buff[032];               /* The size of each macro directory
@@ -242,24 +245,33 @@ MLB            *mlb_rsx_open(
                                           directory */
 
     if (entsize < 8) {                 /* Is this really a macro library? */
-        mlb_rsx_close(mlb);            /* Nope. */
-        fprintf(stderr, "error: entsize too small: %d\n", entsize);
-        return NULL;
+        fprintf(stderr, "mlb_rsx_open error: entsize too small: %d\n", entsize);
+        goto error;
     }
 
-//    fprintf(stderr, "entsize=%d, nr_entries=%d, start_block=%d\n",
-//            entsize, nr_entries, start_block);
+    if (start_block < 1) {             /* Is this really a macro library? */
+        fprintf(stderr, "mlb_rsx_open error: start_block too small: %d\n", start_block);
+        goto error;
+    }
+
+#if MLBDEBUG_OPEN
+    fprintf(stderr, "entsize=%d, nr_entries=%d, start_block=%d\n",
+            entsize, nr_entries, start_block);
+#endif
     free(buff);                        /* Done with that header. */
 
     /* Allocate a buffer for the disk directory */
     buff = memcheck(malloc(nr_entries * entsize));
-    fseek(mlb->fp, start_block * BLOCKSIZE, SEEK_SET);        /* Go to the directory */
+    /* Go to the directory */
+    if (fseek(mlb->fp, start_block * BLOCKSIZE, SEEK_SET) == -1) {
+        fprintf(stderr, "mlb_rsx_open error: seek error: %d\n", start_block * BLOCKSIZE);
+        goto error;
+    }
 
     /* Read the disk directory */
     if (fread(buff, entsize, nr_entries, mlb->fp) < nr_entries) {
-        mlb_rsx_close(mlb);            /* Sorry, read error. */
-        free(buff);
-        return NULL;
+        fprintf(stderr, "mlb_rsx_open error: fread: not enough entries\n");
+        goto error;
     }
 
     /* Shift occupied directory entries to the front of the array */
@@ -269,11 +281,15 @@ MLB            *mlb_rsx_open(
         for (i = 0, j = nr_entries; i < j; i++) {
             char           *ent1,
                            *ent2;
+            int             w1, w2;
 
             ent1 = buff + (i * entsize);
             /* Unused entries have 0177777 0177777 for the RAD50 name,
                which is not legal RAD50. */
-            if (WORD(ent1) == 0177777 && WORD(ent1 + 2) == 0177777) {
+            w1 = WORD(ent1);
+            w2 = WORD(ent1 + 2);
+
+            if (w1 == 0177777 && w2 == 0177777) {
                 while (--j > i
                        && (ent2 = buff + (j * entsize), WORD(ent2) == 0177777 && WORD(ent2 + 2) == 0177777)) ;
                 if (j <= i)
@@ -283,15 +299,31 @@ MLB            *mlb_rsx_open(
                                                    space */
                 memset(ent2, 0377, entsize);    /* Mark entry unused */
             } else {
-//            fprintf(stderr, "entry %d:  %02x%02x.%02x%02x\n",
-//                    i, ent1[5] & 0xFF, ent1[4] & 0xFF, ent1[7] & 0xFF, ent1[6] & 0xFF);
+#if MLBDEBUG_OPEN
+                fprintf(stderr, "entry %d:  %02x%02x.%02x%02x\n",
+                    i, ent1[5] & 0xFF, ent1[4] & 0xFF, ent1[7] & 0xFF, ent1[6] & 0xFF);
+#endif
+                /*
+                 * 00 00 rad50-decodes to spaces, which are not a
+                 * valid name for a macro or object file.
+                 */
+                if (w1 == 0000000 && w2 == 0000000) {
+                    fprintf(stderr, "mlb_rsx_open error: bad file, null name\n");
+                    goto error;
+                }
             }
         }
 
         /* Now i contains the actual number of entries. */
 
         mlb->nentries = i;
-//        fprintf(stderr, " mlb->nentries=%d\n",  mlb->nentries);
+#if MLBDEBUG_OPEN
+        fprintf(stderr, "mlb->nentries=%d\n",  mlb->nentries);
+#endif
+        if (mlb->nentries == 0) {
+            fprintf(stderr, "mlb_rsx_open error: no entries\n");
+            goto error;
+        }
 
         /* Now, allocate my in-memory directory */
         mlb->directory = memcheck(malloc(sizeof(MLBENT) * mlb->nentries));
@@ -308,15 +340,28 @@ MLB            *mlb_rsx_open(
             unrad50(WORD(ent + 2), radname + 3);
             radname[6] = 0;
 
-//            fprintf(stderr, "entry %d: \"%s\" %02x%02x.%02x%02x\n",
-//                    j, radname,
-//                    ent[5] & 0xFF, ent[4] & 0xFF, ent[7] & 0xFF, ent[6] & 0xFF);
+#if MLBDEBUG_OPEN
+            fprintf(stderr, "entry %d: \"%s\" %02x%02x.%02x%02x\n",
+                    j, radname,
+                    ent[5] & 0xFF, ent[4] & 0xFF, ent[7] & 0xFF, ent[6] & 0xFF);
+#endif
             trim(radname);
+            if (radname[0] == '\0' || strchr(radname, ' ')) {
+                fprintf(stderr, "mlb_rsx_open error: entry with space in name\n");
+                goto error;
+            }
 
             mlb->directory[j].label = memcheck(strdup(radname));
             mlb->directory[j].position = BYTEPOS(ent);
-//            fprintf(stderr, "entry %d: \"%s\" bytepos=%d\n", j, mlb->directory[j].label, mlb->directory[j].position);
+#if MLBDEBUG_OPEN
+            fprintf(stderr, "entry %d: \"%s\" bytepos=%ld\n", j, mlb->directory[j].label, mlb->directory[j].position);
+#endif
             mlb->directory[j].length = -1;
+
+            if (mlb->directory[j].position < BLOCKSIZE) {
+                fprintf(stderr, "mlb_rsx_open error: bad entry: position\n");
+                goto error;
+            }
         }
 
         free(buff);
@@ -324,6 +369,14 @@ MLB            *mlb_rsx_open(
 
     /* Done.  Return the struct that represents the opened MLB. */
     return mlb;
+
+error:
+#if MLBDEBUG_OPEN
+    fprintf(stderr, "(mlb_rsx_open closing '%s' due to errors)\n", name);
+#endif
+    mlb_rsx_close(mlb);      /* Sorry, bad file. */
+    free(buff);
+    return NULL;
 }
 
 /* mlb_rsx_close discards MLB and closes the file. */
@@ -367,28 +420,38 @@ BUFFER         *mlb_rsx_entry(
     }
 
     if (i >= mlb->nentries) {
-//        fprintf(stderr, "mlb_rsx_entry: %s not found\n", name);
+#if MLBDEBUG_ENTRY
+        fprintf(stderr, "mlb_rsx_entry: %s not found\n", name);
+#endif
         return NULL;
     }
 
     fseek(mlb->fp, ent->position, SEEK_SET);
-//    fprintf(stderr, "mlb_rsx_entry: %s at position %ld\n", name, (long)ent->position);
+#if MLBDEBUG_ENTRY
+    fprintf(stderr, "mlb_rsx_entry: %s at position %ld\n", name, (long)ent->position);
+#endif
 
 #define MODULE_HEADER_SIZE      022
 
     if (fread(module_header, MODULE_HEADER_SIZE, 1, mlb->fp) < 1) {
-//        fprintf(stderr, "mlb_rsx_entry: %s at position %lx can't read 022 bytes\n", name, (long)ent->position);
+#if MLBDEBUG_ENTRY
+        fprintf(stderr, "mlb_rsx_entry: %s at position %lx can't read 022 bytes\n", name, (long)ent->position);
+#endif
         return NULL;
     }
 
-//    for (i = 0; i < MODULE_HEADER_SIZE; i++) {
-//        fprintf(stderr, "%02x ", module_header[i]);
-//    }
-//    fprintf(stderr, "\n");
+#if MLBDEBUG_ENTRY
+    for (i = 0; i < MODULE_HEADER_SIZE; i++) {
+        fprintf(stderr, "%02x ", module_header[i]);
+    }
+    fprintf(stderr, "\n");
+#endif
     ent->length = (WORD(module_header + 04) << 16) +
                    WORD(module_header + 06);
     ent->length -= MODULE_HEADER_SIZE; /* length is including this header */
-//    fprintf(stderr, "mlb_rsx_entry: %s at position %lx length = %d\n", name, (long)ent->position, ent->length);
+#if MLBDEBUG_ENTRY
+    fprintf(stderr, "mlb_rsx_entry: %s at position %lx length = %d\n", name, (long)ent->position, ent->length);
+#endif
 
     if (module_header[02] == 1) {
         fprintf(stderr, "mlb_rsx_entry: %s at position %lx deleted entry\n", name, (long)ent->position);
@@ -418,19 +481,25 @@ BUFFER         *mlb_rsx_entry(
         i = fread(bp, 1, ent->length, mlb->fp);
         bp += i;
     } else if (module_header[0] & 0x10) {
-//        fprintf(stderr, "mlb_rsx_entry: %s at position %lx variable length records\n", name, (long)ent->position);
+#if MLBDEBUG_ENTRY
+        fprintf(stderr, "mlb_rsx_entry: %s at position %lx variable length records\n", name, (long)ent->position);
+#endif
         /* Variable length records with size before them */
         i = ent->length;
         while (i > 0) {
             int length;
 
-//            fprintf(stderr, "file offset:$%lx\n", (long)ftell(mlb->fp));
+#if MLBDEBUG_ENTRY
+            fprintf(stderr, "file offset:$%lx\n", (long)ftell(mlb->fp));
+#endif
             c = fgetc(mlb->fp);            /* Get low byte of length */
             length = c & 0xFF;
             c = fgetc(mlb->fp);            /* Get high byte */
             length += (c & 0xFF) << 8;
             i -= 2;
-//            fprintf(stderr, "line length: %d $%x\n", length, length);
+#if MLBDEBUG_ENTRY
+            fprintf(stderr, "line length: %d $%x\n", length, length);
+#endif
 
             /* Odd lengths are padded with an extra 0 byte */
             int padded = length & 1;
@@ -441,7 +510,9 @@ BUFFER         *mlb_rsx_entry(
 
             while (length > 0) {
                 c = fgetc(mlb->fp);        /* Get macro byte */
-                //fprintf(stderr, "%02x %c length=%d\n", c, c, length);
+#if MLBDEBUG_ENTRY
+                fprintf(stderr, "%02x %c length=%d\n", c, c, length);
+#endif
                 i--;
                 length--;
                 if (c == '\r' || c == 0)   /* If it's a carriage return or 0,
@@ -452,12 +523,16 @@ BUFFER         *mlb_rsx_entry(
             *bp++ = '\n';
             if (padded) {
                 c = fgetc(mlb->fp);        /* Get pad byte; need not be 0. */
-                //fprintf(stderr, "pad byte %02x %c length=%d\n", c, c, length);
+#if MLBDEBUG_ENTRY
+                fprintf(stderr, "pad byte %02x %c length=%d\n", c, c, length);
+#endif
                 i--;
             }
         }
     } else {
-//        fprintf(stderr, "mlb_rsx_entry: %s at position %lx byte stream records\n", name, (long)ent->position);
+#if MLBDEBUG_ENTRY
+        fprintf(stderr, "mlb_rsx_entry: %s at position %lx byte stream records\n", name, (long)ent->position);
+#endif
         for (i = 0; i < ent->length; i++) {
             c = fgetc(mlb->fp);            /* Get macro byte */
             if (c == '\r' || c == 0)       /* If it's a carriage return or 0,

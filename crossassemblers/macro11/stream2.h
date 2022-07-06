@@ -40,15 +40,12 @@ DAMAGE.
 struct stream;
 
 typedef struct stream_vtbl {
-    void            (
-    *delete)        (
-    struct stream * stream);    /* Destructor */
-    char           *(
-    *gets)          (
-    struct stream * stream);    /* "gets" function */
-    void            (
-    *rewind)        (
-    struct stream * stream);    /* "rewind" function */
+    void            (*delete)(
+        struct stream *stream);    /* Destructor */
+    char           *(*getline)(
+        struct stream *stream);    /* "getline" function */
+    void            (*rewind)(
+        struct stream *stream);    /* "rewind" function */
 } STREAM_VTBL;
 
 typedef struct stream {
@@ -114,7 +111,7 @@ void            buffer_stream_construct(
     BUFFER_STREAM * bstr,
     BUFFER *buf,
     char *name);
-char           *buffer_stream_gets(
+char           *buffer_stream_getline(
     STREAM *str);
 void            buffer_stream_delete(
     STREAM *str);
@@ -131,7 +128,7 @@ void            stack_push(
     STREAM *str);
 void            stack_pop(
     STACK *stack);
-char           *stack_gets(
+char           *stack_getline(
     STACK *stack);
 
 #endif /* STREAM2_H */

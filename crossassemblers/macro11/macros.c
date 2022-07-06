@@ -40,7 +40,7 @@ void macro_stream_delete(
 }
 
 STREAM_VTBL     macro_stream_vtbl = {
-    macro_stream_delete, buffer_stream_gets, buffer_stream_rewind
+    macro_stream_delete, buffer_stream_getline, buffer_stream_rewind
 };
 
 STREAM         *new_macro_stream(
@@ -85,7 +85,7 @@ void read_body(
         char           *nextline;
         char           *cp;
 
-        nextline = stack_gets(stack);  /* Now read the line */
+        nextline = stack_getline(stack);  /* Now read the line */
         if (nextline == NULL) {        /* End of file. */
             report(stack->top, "Macro body of '%s' not closed\n", name);
             break;
@@ -478,15 +478,19 @@ STREAM         *expandmacro(
         label = get_symbol(cp, &nextcp, NULL);
         if (label && (nextcp = skipwhite(nextcp), *nextcp == '=') && (macarg = find_arg(mac->args, label))) {
             /* Check if I've already got a value for it */
-            if (find_arg(args, label) != NULL) {
-                report(refstr, "Duplicate submission of keyword " "argument %s\n", label);
-                free(label);
-                free_args(args);
-                return NULL;
+            if ((arg = find_arg(args, label)) != NULL) {
+                /* Duplicate is legal; the last one wins. */
+                if (arg->value) {
+                    free (arg->value);
+                    arg->value = NULL;
+                }
             }
-
-            arg = new_arg();
-            arg->label = label;
+            else {
+                arg = new_arg();
+                arg->label = label;
+                arg->next = args;
+                args = arg;
+            }
             nextcp = skipwhite(nextcp + 1);
             arg->value = getstring_macarg(refstr, nextcp, &nextcp);
         } else {
@@ -503,14 +507,19 @@ STREAM         *expandmacro(
             if (macarg == NULL)
                 break;                 /* Don't pick up any more arguments. */
 
+            nextcp = skipwhite (cp);
             arg = new_arg();
             arg->label = memcheck(strdup(macarg->label));       /* Copy the name */
-            arg->value = getstring_macarg(refstr, cp, &nextcp);
+            arg->next = args;
+            args = arg;
+            if (*nextcp != ',') {
+                arg->value = getstring_macarg(refstr, cp, &nextcp);
+            }
+            else {
+                arg->value = NULL;
+            }
             nargs++;                   /* Count nonkeyword arguments only. */
         }
-
-        arg->next = args;
-        args = arg;
 
         /* If there is a trailing comma, there is an empty last argument */
         cp = skipdelim_comma(nextcp, &onemore);
@@ -527,9 +536,13 @@ STREAM         *expandmacro(
 
         for (macarg = mac->args; macarg != NULL; macarg = macarg->next) {
             arg = find_arg(args, macarg->label);
-            if (arg == NULL) {
-                arg = new_arg();
-                arg->label = memcheck(strdup(macarg->label));
+            if (arg == NULL || arg->value == NULL) {
+                int wasnull = 0;
+                if (arg == NULL) {
+                    wasnull = 1;
+                    arg = new_arg();
+                    arg->label = memcheck(strdup(macarg->label));
+                }
                 if (macarg->locsym) {
                     char            temp[32];
 
@@ -541,8 +554,10 @@ STREAM         *expandmacro(
                 } else
                     arg->value = memcheck(strdup(""));
 
-                arg->next = args;
-                args = arg;
+                if (wasnull) {
+                    arg->next = args;
+                    args = arg;
+                }
             }
         }
 
@@ -605,4 +620,82 @@ void free_macro(
     }
     free_args(mac->args);
     free_sym(&mac->sym);
+}
+
+int do_mcall (char *label, STACK *stack)
+{
+    SYMBOL         *op;         /* The operation SYMBOL */
+    STREAM         *macstr;
+    BUFFER         *macbuf;
+    char           *maccp;
+    int             saveline;
+    MACRO          *mac;
+    int             i;
+    char            macfile[FILENAME_MAX];
+    char            hitfile[FILENAME_MAX];
+
+    /* Find the macro in the list of included
+       macro libraries */
+    macbuf = NULL;
+    for (i = 0; i < nr_mlbs; i++)
+        if ((macbuf = mlb_entry(mlbs[i], label)) != NULL)
+            break;
+    if (macbuf != NULL) {
+        macstr = new_buffer_stream(macbuf, label);
+        buffer_free(macbuf);
+    } else {
+        char *bufend = &macfile[sizeof(macfile)],
+                       *end;
+        end = stpncpy(macfile, label, sizeof(macfile) - 5);
+        if (end >= bufend - 5) {
+            report(stack->top, ".MCALL: name too long: '%s'\n", label);
+            return 0;
+        }
+        stpncpy(end, ".MAC", bufend - end);
+        my_searchenv(macfile, "MCALL", hitfile, sizeof(hitfile));
+        if (hitfile[0])
+            macstr = new_file_stream(hitfile);
+        else
+            macstr = NULL;
+    }
+
+    if (macstr != NULL) {
+        for (;;) {
+            char           *mlabel;
+
+            maccp = macstr->vtbl->getline(macstr);
+            if (maccp == NULL)
+                break;
+            mlabel = get_symbol(maccp, &maccp, NULL);
+            if (mlabel == NULL)
+                continue;
+            op = lookup_sym(mlabel, &system_st);
+            free(mlabel);
+            if (op == NULL)
+                continue;
+            if (op->value == P_MACRO)
+                break;
+        }
+
+        if (maccp != NULL) {
+            STACK           macstack = {
+                macstr
+            };
+            int             savelist = list_level;
+
+            saveline = stmtno;
+            list_level = -1;
+            mac = defmacro(maccp, &macstack, CALLED_NOLIST);
+            if (mac == NULL) {
+                report(stack->top, "Failed to define macro called %s\n", label);
+            }
+
+            stmtno = saveline;
+            list_level = savelist;
+        }
+
+        macstr->vtbl->delete(macstr);
+        return 1;
+    }
+    return 0;
 }

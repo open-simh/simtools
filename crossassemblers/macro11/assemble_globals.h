@@ -55,6 +55,8 @@ extern int      suppressed;     /* Assembly suppressed by failed conditional */
 extern MLB     *mlbs[MAX_MLBS]; /* macro libraries specified on the command line */
 extern int      nr_mlbs;        /* Number of macro libraries */
 
+extern int      enabl_mcl;      /* If MCALL of unknown symbols is enabled. */
+
 extern COND     conds[MAX_CONDS];       /* Stack of recent conditions */
 extern int      last_cond;      /* 0 means no stacked cond. */
 
@@ -64,7 +66,7 @@ extern int      sect_sp;        /* Stack pointer */
 
 extern char    *module_name;    /* The module name (taken from the 'TITLE'); */
 
-extern char    *ident;          /* .IDENT name */
+extern unsigned *ident;         /* .IDENT name (encoded RAD50 value) */
 
 extern EX_TREE *xfer_address;   /* The transfer address */
 

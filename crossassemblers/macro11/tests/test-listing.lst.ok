@@ -4,13 +4,13 @@
        4                                ;
        5                                
        6                                ; This should get listed (list_level 1)
-       7                                	.nlist
+       9                                	.list
       10                                ; This should get listed (list_level 1)
       11                                	.list
       12                                ; This should get listed (list_level 2)
       13                                	.nlist
       14                                ; This should get listed (list_level 1)
-      15                                	.nlist
+      21                                	.list
       22                                ; This should get listed (list_level 1)
       22                                
 

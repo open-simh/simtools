@@ -62,6 +62,7 @@ typedef struct mlb_vtbl {
     BUFFER *(*mlb_entry)(MLB *mlb, char *name);
     void (*mlb_extract)(MLB *mlb);
     void (*mlb_close)(MLB *mlb);
+    int mlb_is_rt11;
 } MLB_VTBL;
 
 extern MLB     *mlb_open(

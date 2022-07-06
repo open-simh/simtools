@@ -40,6 +40,9 @@ int             enabl_lc = 1;   /* If lowercase disabled, convert assembler
 int             enabl_lcm = 0;  /* If lowercase disabled, .IF IDN/DIF are
                                    case-sensitive. */
 
+int             enabl_mcl = 0;  /* When set, unknown symbols are looked up
+                                   as if .MCALL <sym> had been done. */
+
 int             suppressed = 0; /* Assembly suppressed by failed conditional */
 
 
@@ -56,7 +59,7 @@ int             sect_sp;        /* Stack pointer */
 
 char           *module_name = NULL;     /* The module name (taken from the 'TITLE'); */
 
-char           *ident = NULL;   /* .IDENT name */
+unsigned       *ident = NULL;   /* Encoded .IDENT name */
 
 EX_TREE        *xfer_address = NULL;    /* The transfer address */
 

@@ -1,0 +1,64 @@
+       1                                ;;;;
+       2                                ;
+       3                                ; Test some aspects of syntax.
+       4                                ;
+       5                                ; Reference MACRO11 does very weird things with these errors.
+       6                                ; Fortunately I don't plan to produce exactly the same results in case of errors.
+       7                                ; It seems to recognise an operand where there is none (or none yet)...
+       8                                ;
+       9                                ; AQ   37 000022  012767  000004  177772          mov     #4..,r0
+      10                                ; AQ   38 000030  012767  000011  177772          mov     #9..,r0
+      11                                ; AQ   39 000036  012767  000004  000000G         mov     #4.$,r0
+      12                                ; AQU  40 000044  012767  000000  177772          mov     #4$.,r0
+      13                                ;      41
+      14                                ; A    42 000052  012767  000004  177772          mov     #4..
+      15                                ; A    43 000060  012767  000004  000000G         mov     #4.$
+      16                                ; AU   44 000066  012767  000000  177772          mov     #4$.
+      17                                
+test-syntax.mac:18: ***ERROR Invalid syntax (comma expected)
+      18                                	mov	#4..,r0		; bad syntax
+test-syntax.mac:19: ***ERROR Invalid syntax (comma expected)
+      19                                	mov	#4$.,r0		; bad syntax
+test-syntax.mac:20: ***ERROR Invalid syntax (comma expected)
+      20                                	mov	#4.$,r0		; bad syntax
+test-syntax.mac:21: ***ERROR Invalid syntax (comma expected)
+      21                                	mov	#4$$,r0		; bad syntax
+      22                                
+test-syntax.mac:23: ***ERROR Invalid syntax (comma expected)
+      23                                	mov	#4..		; bad syntax
+test-syntax.mac:24: ***ERROR Invalid syntax (comma expected)
+      24                                	mov	#4$.		; bad syntax
+test-syntax.mac:25: ***ERROR Invalid syntax (comma expected)
+      25                                	mov	#4.$		; bad syntax
+test-syntax.mac:26: ***ERROR Invalid syntax (comma expected)
+      26                                	mov	#4$$		; bad syntax
+      27                                
+      28                                ;; page 2-4:
+      29                                ;; Multiple expressions used in the operand field of a MACRO-11 statement
+      30                                ;; must be separated by a comma;
+      31                                ;; multiple symbols similarly must be delimited by a valid separator
+      32                                ;; (a comma, tab, and/or space).
+      33                                ;; When the operator field contains an op code, associated operands are
+      34                                ;; always expressions, ...
+      35                                
+      36        000001                  a=1
+test-syntax.mac:37: ***ERROR Invalid syntax (comma expected)
+      37                                        mov     #4 r0
+test-syntax.mac:38: ***ERROR Invalid syntax (comma expected)
+      38                                        mov     a r0
+      39                                
+      40                                ;; page 2-3:
+      41                                ;; An operator is terminated by a space, tab, or any non-Radix-50 character,
+      42 000000 017700  000001'                 mov@a,r0
+      42                                
+
+
+Symbol table
+
+.       000004R      001 A     = 000001           
+
+
+Program sections:
+
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
+        000004    001   (RW,I,LCL,REL,CON,NOSAV)
