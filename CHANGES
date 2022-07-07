@@ -1,4 +1,4 @@
-??.??.2022: Rhialto
+07.07.2022: Rhialto
         version 0.8:
         - Improve parsing of symbols, e.g. `4..` is not a symbol.
         - More careful file format checking of .MLB files, so that you can
@@ -6,7 +6,7 @@
         - Replace the floating point parser by a version which is based on
           integer math only, because the Apple M1 doesn't have the required
           long double support in its compiler.
-        12 changes from Paul Koning that add some features which help to
+        13 changes from Paul Koning that add some features which help to
         assemble RSTS/E sources:
         - Add default extensions to .include, .library
         - Fix .psect without argument, add (ignored) pseudo ops .mdelete,
@@ -25,6 +25,7 @@
           just delimited string characters but also values in < >.
         - Allow expression (with constant value) in .RADIX
         - Bugfixes in macro expansion, incl duplicate named arguments
+        - Fix references to blank section: Its name is empty, not ". BLK."
 
 05.01.2022: Rhialto
         version 0.7.2:
