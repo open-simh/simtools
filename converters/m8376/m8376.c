@@ -38,6 +38,9 @@ char fname[256];
 int c, i, j;
 unsigned int wd[1024];
 
+(void) argc;
+(void) argv;
+
 for (i = 0; i < 8; i++) {
 	sprintf (fname, "C:\\temp\\m8376\\m8376e%03d.bin", fnum[i]);
 	fi[i] = fopen (fname, "rb");
