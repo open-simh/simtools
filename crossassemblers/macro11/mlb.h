@@ -40,23 +40,43 @@ DAMAGE.
 
 /* Routines to open and read entries from a macro library */
 
-typedef struct mlbent
-{
-	char *label;
-	unsigned long position;
-	int length;
+typedef struct mlbent {
+    char           *label;
+    unsigned long   position;
+    int             length;
 } MLBENT;
 
-typedef struct mlb
-{
-	FILE *fp;
-	MLBENT *directory;
-	int nentries;
+struct mlb_vtbl;
+
+typedef struct mlb {
+    struct mlb_vtbl *vtbl;
+    char           *name;
+    FILE           *fp;
+    MLBENT         *directory;
+    int             nentries;
+    int             is_objlib;     /* is really an object library */
 } MLB;
 
-extern MLB *mlb_open(char *name);
-extern BUFFER *mlb_entry(MLB *mlb, char *name);
-extern void mlb_close(MLB *mlb);
-extern void mlb_extract(MLB *mlb);
+typedef struct mlb_vtbl {
+    MLB *(*mlb_open)(char *name, int allow_object_library);
+    BUFFER *(*mlb_entry)(MLB *mlb, char *name);
+    void (*mlb_extract)(MLB *mlb);
+    void (*mlb_close)(MLB *mlb);
+    int mlb_is_rt11;
+} MLB_VTBL;
+
+extern MLB     *mlb_open(
+    char *name,
+    int allow_object_library);
+extern BUFFER  *mlb_entry(
+    MLB *mlb,
+    char *name);
+extern void     mlb_close(
+    MLB *mlb);
+extern void     mlb_extract(
+    MLB *mlb);
+
+extern struct mlb_vtbl mlb_rsx_vtbl;
+extern struct mlb_vtbl mlb_rt11_vtbl;
 
 #endif /* MLB_H */

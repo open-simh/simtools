@@ -1,6 +1,8 @@
 \#*
 *~
 *.bak
+*.d
+*.dep
 *.o
 *.orig
 *.vhd

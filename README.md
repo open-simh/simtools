@@ -50,7 +50,7 @@ hpasm | Assembler for the HP2100
 macro1 | Assembler for the PDP-1
 macro7 | Assembler for the PDP-7
 macro8x | Assembler for the PDP-8
-macro11 | Assembler for the PDP-11
+macro11 | Assembler for the PDP-11. Synchronized from git `https://gitlab.com/Rhialto/macro11.git`; most recently from tag `macro11-v0.7.2`.
 
 ## Extracters
 
@@ -66,6 +66,7 @@ mmdir | List directory of Interdata MDM tape
 mtdump | Dump the record structure of a SIMH, E11, TPC, or P7B
 ods2 | Directory, Copy & Search commands for VMS ODS2 disk images
 rawcopy | Create SIMH disk image from physical media on RAW device.
+rstsflx | Manipulate PDP11 RSTS file systems.
 sdsdump | Disassemble SDS SDS paper tape
 tpdump | Dump files on IBM 1401 tape
 

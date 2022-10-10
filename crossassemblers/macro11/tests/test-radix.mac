@@ -1,0 +1,24 @@
+;;;;;
+;
+; Test .radix directive
+;
+	.RADIX	8
+	.WORD	10
+	.RADIX	10
+	.WORD	10
+	.RADIX			;Default is 8
+	.WORD	10
+	.RADIX	2
+	.WORD	10
+	.RADIX	16
+	.WORD	10
+; Odd but valid
+	.RADIX	^O10		;Octal 10, i.e., 8
+	.WORD	10
+	.RADIX	5+5
+	.WORD	10
+; Errors
+	.RADIX	7
+	.WORD	10		;Radix is unchanged after error
+	.RADIX	.
+	.WORD	10

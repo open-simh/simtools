@@ -1,3 +1,6 @@
+#define UTIL__C
+
+
 /* Some generally useful routines */
 /* The majority of the non-portable code is in here. */
 
@@ -39,8 +42,9 @@ DAMAGE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
-#include "util.h"
+#include "util.h"                      /* own defintions */
 
 #ifdef WIN32
 #include <sys/types.h>
@@ -51,55 +55,73 @@ DAMAGE.
 #include <unistd.h>
 #endif
 
-/* Sure, the library typically provides some kind of
-	ultoa or _ultoa function.  But since it's merely typical
-	and not standard, and since the function is so simple,
-	I'll write my own.
+static void my_searchenv1(
+    char *name,
+    char *envname,
+    char *hitfile,
+    int hitlen);
 
-	It's significant feature is that it'll produce representations in
-	any number base from 2 to 36.
+static void my_searchenv2(
+    char *name,
+    char *envname,
+    char *hitfile,
+    int hitlen);
+
+/* Sure, the library typically provides some kind of
+    ultoa or _ultoa function.  But since it's merely typical
+    and not standard, and since the function is so simple,
+    I'll write my own.
+
+    It's significant feature is that it'll produce representations in
+    any number base from 2 to 36.
 */
 
-char *my_ultoa(unsigned long val, char *buf, unsigned int base)
+char           *my_ultoa(
+    unsigned long val,
+    char *buf,
+    unsigned int base)
 {
-	static char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-	char *strt = buf, *end;
+    static char     digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    char           *strt = buf,
+            *end;
 
-	do
-	{
-		*buf++ = digits[val % base];
-		val /= base;
-	} while(val != 0);
+    do {
+        *buf++ = digits[val % base];
+        val /= base;
+    } while (val != 0);
 
-	*buf = 0;			/* delimit */
-	end = buf+1;
+    *buf = 0;                          /* delimit */
+    end = buf + 1;
 
-	/* Now reverse the bytes */
+    /* Now reverse the bytes */
 
-	while(buf > strt)
-	{
-		char temp;
-		temp = *--buf;
-		*buf = *strt;
-		*strt++ = temp;
-	}
+    while (buf > strt) {
+        char            temp;
 
-	return end;
+        temp = *--buf;
+        *buf = *strt;
+        *strt++ = temp;
+    }
+
+    return end;
 }
 
 /* Ditto my_ultoa.  This actually emits
-	a signed representation in other number bases. */
+    a signed representation in other number bases. */
 
-char *my_ltoa(long val, char *buf, unsigned int base)
+char           *my_ltoa(
+    long val,
+    char *buf,
+    unsigned int base)
 {
-	unsigned long uval;
+    unsigned long   uval;
 
-	if(val < 0)
-		uval = -val, *buf++ = '-';
-	else
-		uval = val;
+    if (val < 0)
+        uval = -val, *buf++ = '-';
+    else
+        uval = val;
 
-	return my_ultoa(uval, buf, base);
+    return my_ultoa(uval, buf, base);
 }
 
 /*
@@ -108,65 +130,205 @@ char *my_ltoa(long val, char *buf, unsigned int base)
   environment variable.  I duplicate that function for portability.
   Note also that mine avoids destination buffer overruns.
 
-  Note: uses strtok.  This means it'll screw you up if you
-  expect your strtok context to remain intact when you use
-  this function.
+  Added functionality to lowercase the file name and to remove the
+  device name and directory.
 */
 
-void my_searchenv(char *name, char *envname, char *hitfile, int hitlen)
+void my_searchenv(
+    char *name,
+    char *envname,
+    char *hitfile,
+    int hitlen)
 {
-	char *env;
-	char *envcopy;
-	char *cp;
+    my_searchenv1(name, envname, hitfile, hitlen);
+    if (*hitfile) {
+        return;
+    }
 
-	*hitfile = 0;				/* Default failure indication */
+    char *copy = memcheck(strdup(name));
+    downcase(copy);
+    my_searchenv1(copy, envname, hitfile, hitlen);
+    free(copy);
+}
 
-	/* Note: If the given name is absolute, then don't search the
-	   path, but use it as is. */
+static void my_searchenv1(
+    char *name,
+    char *envname,
+    char *hitfile,
+    int hitlen)
+{
+    my_searchenv2(name, envname, hitfile, hitlen);
+    if (*hitfile) {
+        return;
+    }
 
-	if(
+    /*
+     * Parse DEV:[DIR]NAME
+     * while re-trying the search after DEV: and after [DIR].
+     *
+     * Let's not be too critical about the characters we allow in those.
+     */
+    char *p = name;
+    char c;
+
+    while ((c = *p++)) {
+        if (c == ':') {
+            my_searchenv2(p, envname, hitfile, hitlen);
+            if (*hitfile) {
+                return;
+            }
+        }
+        if (c == '[') {
+            char *enddir = strchr(p, ']');
+            if (enddir == NULL) {
+                return; /* weird syntax */
+            }
+            p = enddir + 1;
+            my_searchenv2(p, envname, hitfile, hitlen);
+            return;
+        }
+    }
+
+    return;
+}
+
+static void my_searchenv2(
+    char *name,
+    char *envname,
+    char *hitfile,
+    int hitlen)
+{
+    char           *env;
+    char           *envcopy;
+    char           *envcopy2;
+    char           *cp;
+    char           *last;
+
+    *hitfile = 0;                      /* Default failure indication */
+
+    /* Note: If the given name is absolute, then don't search the
+       path, but use it as is. */
+
+    if (
 #ifdef WIN32
-		strchr(name, ':') != NULL || /* Contain a drive spec? */
-		name[0] == '\\' ||		/* Start with absolute ref? */
+           strchr(name, ':') != NULL || /* Contain a drive spec? */
+           name[0] == '\\' ||          /* Start with absolute ref? */
 #endif
-		name[0] == '/')			/* Start with absolute ref? */
-	{
-		strncpy(hitfile, name, hitlen);	/* Copy to target */
-		return;
-	}
+           name[0] == '/') {           /* Start with absolute ref? */
+        strncpy(hitfile, name, hitlen); /* Copy to target */
+        return;
+    }
 
-	env = getenv(envname);
-	if(env == NULL)
-		return;					/* Variable not defined, no search. */
+    env = getenv(envname);
+    if (env == NULL) {                 /* If not defined, search in */
+        env = ".";                     /* current directory */
+    }
 
-	envcopy = strdup(env);		/* strtok destroys it's text
-								   argument.  I don't want the return
-								   value from getenv destroyed. */
+    envcopy = strdup(env);             /* strtok destroys its text
+                                          argument.  I don't want the return
+                                          value from getenv destroyed. */
 
-	while((cp = strtok(envcopy, PATHSEP)) != NULL)
-	{
-		struct stat info;
-		char *concat = malloc(strlen(cp) + strlen(name) + 2);
-		if(concat == NULL)
-		{
-			free(envcopy);
-			return;
-		}
-		strcpy(concat, cp);
-		if(concat[strlen(concat)-1] != '/')
-			strcat(concat, "/");
-		strcat(concat, name);
-		if(!stat(concat, &info))
-		{
-			/* Copy the file name to hitfile.  Assure that it's really
-			   zero-delimited. */
-			strncpy(hitfile, concat, hitlen-1);
-			hitfile[hitlen-1] = 0;
-			free(envcopy);
-			return;
-		}
-	}
+    envcopy2 = envcopy;
+    while ((cp = strtok_r(envcopy2, PATHSEP, &last)) != NULL) {
+        struct stat     info;
+        char           *concat = malloc(strlen(cp) + strlen(name) + 2);
 
-	/* If I fall out of that loop, then hitfile indicates no match,
-	   and return. */
+        if (concat == NULL) {
+            free(envcopy);
+            return;
+        }
+        strcpy(concat, cp);
+        if (concat[strlen(concat) - 1] != '/')
+            strcat(concat, "/");
+        strcat(concat, name);
+        if (!stat(concat, &info)) {
+            /* Copy the file name to hitfile.  Assure that it's really
+               zero-delimited. */
+            strncpy(hitfile, concat, hitlen - 1);
+            hitfile[hitlen - 1] = 0;
+
+            free(envcopy);
+            free(concat);
+
+            return;
+        }
+
+        free(concat);
+        envcopy2 = NULL;
+    }
+
+    /* If I fall out of that loop, then hitfile indicates no match,
+       and return. */
+    free(envcopy);
+}
+
+
+
+
+/* memcheck - crash out if a pointer (returned from malloc) is NULL. */
+
+void           *memcheck(
+    void *ptr)
+{
+    if (ptr == NULL) {
+        fprintf(stderr, "Out of memory.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return ptr;
+}
+
+/* upcase turns a string to upper case */
+
+void upcase(
+    char *str)
+{
+    while (*str) {
+        *str = toupper((unsigned char)*str);
+        str++;
+    }
+}
+
+/* downcase turns a string to lower case */
+
+void downcase(
+    char *str)
+{
+    while (*str) {
+        *str = tolower((unsigned char)*str);
+        str++;
+    }
+}
+
+/* padto adds blanks to the end of a string until it's the given
+   length. */
+
+void padto(
+    char *str,
+    int to)
+{
+    int             needspace = to - strlen(str);
+
+    str += strlen(str);
+    while (needspace > 0)
+        *str++ = ' ', needspace--;
+    *str = 0;
+}
+
+/* defext adds the supplied extension to the file name if it doesn't
+   already have one.  "ext" is the desired extension, without the
+   period.  The file name must be in a malloc'ed buffer.  The
+   resulting string address is returned. */
+char *defext (char *fn, const char *ext)
+{
+    char *ret;
+    
+    if (strchr (fn, '.'))
+        return fn;
+    ret = realloc (fn, strlen (fn) + strlen (ext) + 2);
+    if (ret == NULL)
+        return ret;
+    strcat (ret, ".");
+    strcat (ret, ext);
+    return ret;
 }

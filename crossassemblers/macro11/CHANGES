@@ -1,0 +1,137 @@
+07.07.2022: Rhialto
+        version 0.8:
+        - Improve parsing of symbols, e.g. `4..` is not a symbol.
+        - More careful file format checking of .MLB files, so that you can
+          use either RSX or RT format .MLB files, and autodetection works.
+        - Replace the floating point parser by a version which is based on
+          integer math only, because the Apple M1 doesn't have the required
+          long double support in its compiler.
+        13 changes from Paul Koning that add some features which help to
+        assemble RSTS/E sources:
+        - Add default extensions to .include, .library
+        - Fix .psect without argument, add (ignored) pseudo ops .mdelete,
+          .cross, .nocross
+        - Allow TRAP without argument, or with non-literal argument
+        - Fix .library pseudo
+        - Always list lines that have an error
+        - Fix macro calls with omitted argument that has a default value,
+          followed by additional (not omitted) arguments.
+        - Implement .ENABLE MCL
+        - Treat unexpected .IF argument as true, not false.  This appears to
+          be what the reference assembler does, at least it is necessary for
+          certain RSTS source files to assemble without error.
+        - Allow formal name of .IRP and .IRPC to be enclosed in < >.
+        - Just like .RAD50, .IDENT accepts an argument that can contain not
+          just delimited string characters but also values in < >.
+        - Allow expression (with constant value) in .RADIX
+        - Bugfixes in macro expansion, incl duplicate named arguments
+        - Fix references to blank section: Its name is empty, not ". BLK."
+
+05.01.2022: Rhialto
+        version 0.7.2:
+        - Improved error messages for bad addressing modes
+          (due to gitlab issue #10)
+        - Undefined symbols are now listed in the symbol table.
+        - The weird way the unary "operator" % works in expressions is
+          now implemented.
+          The docs on page 3-8/9 aren't very precise but testing showed
+          that any expression with a register in it can be used as a
+          register, and (if used to define a symbol) is listed in the
+          symbol table as such. %3+1 is <%3>+1 is R4.
+        - Fixed registers being used in .word or immediate operands:
+          no longer generated as being relocatable expressions.
+        - 'make tests' works more portably.
+
+16.05.2021: Rhialto
+        version 0.7.1:
+        - Fixed immediate source operand of LDEXP, LD[IL][FD]
+          which is an integer, unlike several other FPP instructions.
+          (gitlab issue #7)
+        - Start each pass with .DSABL LSB (gitlab issue #8)
+
+19.03.2021: Rhialto
+        version 0.7:
+        - Fixed the end-of-line check for MARK, EMT, TRAP.
+        - Left/right shift operator _; disabled when the -yus option is used.
+          Contributed by Stephen Casner.
+        - Added some missing instructions: LDCFD, CSM, TSTSET, WRTLCK.
+
+13.02.2021: Rhialto
+        version 0.6:
+        - Fixed rounding issues with floating point literals.
+        - Fixed FPP instructions which take fp immediate operands.
+        - Fixed bounds check on FPP AC0-3 operands.
+        - Fix listing to show a % before values that represent a register
+          number.
+        - Added checks for junk text following correct code. This revealed
+          some small other issues, now fixed.
+        - Added CIS instructions; as an extension, for the Inline variants
+          you can specify the descriptor addresses etc as arguments to
+          the instruction (much like an implied .word).
+
+25.04.2020: Rhialto
+        version 0.5:
+        - Fixed bug with checking addressing mode for JSR and bugs
+          with .REPT 0, unneeded relocation on pc-relative mode.
+        - Very simple .LIST and .NLIST implementation.
+        - Add ^pl and ^ph expressions from 2.11BSD's m11.
+        - Object-ified macro libraries with an eye to support the .sml
+          files from 2.11BSD's m11. But since the given file does not 
+          just contain .MACROs (it even contains conditionals) I'm not
+          sure how it is supposed to work.
+        - Added 2.11BSD/m11 as test files. To make this reasonable, a
+          few small features they use have been recognized and ignored.
+        - Add -rsx and -rt11 to switch object file format (from Kevin Handy)
+        - Add obj2bin from https://github.com/AK6DN/obj2bin.git
+
+09.11.2015: Rhialto
+        version 0.4:
+        - Fixed various bugs. The most notable was extensive use-
+          after-free in the expression tree, which crashed on NetBSD but
+          apparently not on other  systems.
+        - Lots of changes to make this MACRO11 more like the MACRO11 of
+          RSX-11M+ 4.6. I used Kermit-11 source files for comparison.
+          "The Manual" I'm refering to is
+          AA-KX10A-TC_PDP-11_MACRO-11_Reference_Manual_May88.pdf at
+          www.bitsavers.org/pdf/dec/pdp11/rsx11/RSX11Mplus_V4.x/4a/ and
+          I use an installed system to double-check.
+
+----------- Joerg Hoppe's entries ------------------
+
+19.4.2009: JH
+        version 0.3
+        - bugfix: Illegal labels and illegal opcodes are processed as
+          "implied .WORD" directives.
+          Expression errors in "do_word()" did not process any input character,
+          so parser did go into an endless loop.
+        - Switchable syntax extensions with -yxx options:
+          symbol len can be adjusted with "-ysl" command line option.
+          "-yus" option allows underscore "_" char in symbols.
+          This was needed to process code generated by my favorite disassembler.
+        - command line help added (-h option)
+
+17.4.2009: JH
+        version 0.3
+        - ".INCLUDE" re-enabled
+        - refactoring: big 6000+ lines "macro11.c" split into 10 modules.
+
+15.4.2009: JH
+        Begin rework by Joerg Hoppe (j_hoppe@t-online.de)
+        All my changes are marked with "/*JH: .. */" comments
+
+
+----------- Richard Krebiehls entries ------------------
+
+
+15-July-2001
+        version 0.2
+        removed references to snprintf from dumpobj.c and
+        mlb.c for portability
+        fixed a type cast warning in dumpobj.c compare_gsdlines
+        Removed strcasecmp from macro11.c for portability
+        Removed references to wnewmem.c from makefile (isn't needed)
+        makefile more compatible with non-gnu make and compiler
+        main prints version 0.2
+
+14-July-2001
+        First release, version 0.1.
