@@ -1,5 +1,46 @@
+# executables
 ods2
 makehelp
 genmsg
+
+# Miscellaneous test data, just-in-case stuff
 testdata
 attic
+*.iso
+*.simh_dsk
+*.vhd
+
+# Intermediate and loadable library files
+*.mt
+*.md
+*.mdf
+*.hlb
+
+*.d
+*.dep
+
+*.o
+*.obj
+*.exe
+*.tmp
+
+# Editor crumbs
+*.bak
+*~
+\~AutoRecover.*
+\#*
+*.swp
+*.orig
+.gdb_history
+
+# Help compiler listings
+*.lst
+
+# These are cleaned, but are easier to build on Unix & use for VS builds
+# vms_messages_*.msg
+# ssdef.h
+# ssdef.msg
+!default.md
+
+# Mountpoints used for testing
+pc/*
