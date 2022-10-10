@@ -14,7 +14,10 @@
  *       ODS2 is distributed freely for all members of the
  *       VMS community to use. However all derived works
  *       must maintain comments in their source to acknowledge
- *       the contibution of the original author.
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
  */
 
 
@@ -24,7 +27,7 @@
 #ifdef DEBUG_BUILD
 #define MODULE_IDENT "Debug build"
 #else
-#define MODULE_IDENT "v3.0"
+#define MODULE_IDENT "V3.0"
 #endif
 
 #define MODULE_NAME  ODS2
@@ -34,12 +37,16 @@
 
 
 /* Modified by:
+ *   Oct 2022 Timothe Litt <litt@acm _ddot_ org>
+ *      Remove readline due to license issues, editline instead.
+ *      Deal with deprecated ftime.
  *   Feb 2016 Timothe Litt <litt at acm _ddot_ org>
  *      Bug fixes, readline support, build on NT without wnaspi32,
  *      Decode error messages, patch from vms2linux.de. VS project files.
  *      Rework command parsing and help.  Bugs, bugs & bugs.  Merge
  *      code from Larry Baker, USGS.  Add initialize volume, spawn,
- *      and more.  See git commit history for details.
+ *      and more.  Make file creation/writes work. See git commit
+ *      history for details.
  *
  *      V3.0 - Merge and adapt code from Larry Baker's V2.0
  *

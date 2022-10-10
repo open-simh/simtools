@@ -9,7 +9,11 @@
 
 CCFLAGS = -O4 -g
 
-#LDLIBS = -lreadline -ltermcap
+#LDLIBS = -ledit -ltermcap
+
+# Default language
+
+ODS2LANG = en_us
 
 # Object file extension
 OBJ = .OBJ
@@ -19,14 +23,24 @@ EXE = .EXE
 DELETE = DELETE
 GEN = ";*"
 
+RUN = mcr sys$disk:[]
+
+COPY = COPY
+
+LN = COPY
+
 # Physical I/O module
 PHYSIO = phyvms
 
 TOPMAKE = makefile.vms
 
+SED = sed
+DEPENDS = makefile.depends
+MAKEDEPEND = makedepend
+
 all:
 
 clean:
-	$(DELETE) *.$(OBJ)$(GEN),*.$(EXE)$(GEN)
+	$(DELETE) *.$(OBJ)$(GEN),*.$(EXE)$(GEN), $.mt$(GEN), *.mdf$(GEN)
 
 include makefile.generic

@@ -1,25 +1,38 @@
 /* PHYNT.C     Physical I/O module for Windows NT */
 
-/* Win9X code now included with code to automatically determine
-   if we are running under WinNT...
+/* This is part of ODS2 written by Paul Nankervis,
+ * email address:  Paulnank@au1.ibm.com
+ *
+ * ODS2 is distributed freely for all members of the
+ * VMS community to use. However all derived works
+ * must maintain comments in their source to acknowledge
+ * the contributions of the original author and
+ * subsequent contributors.   This is free software; no
+ * warranty is offered,  and while we believe it to be useful,
+ * you use it at your own risk.
+ */
 
-   W98 seems to have a performance problem where the
-   INT25 call are VERY slow!!! */
+/* Win9X code now included with code to automatically determine
+ * if we are running under WinNT...
+ *
+ * W98 seems to have a performance problem where the
+ * INT25 call are VERY slow!!!
+ */
 
 
 
 /* This version built and tested under Visual C++ 6.0 and LCC.
-   To support CD drives this version requires ASPI run-time
-   support.. Windows 95/98 come with ASPI but NT/2000 require
-   that a version of ASPI be install and started before running
-   this program!!   (One verion is NTASPI available from
-   www.symbios.com)
-
-  Note: As of 2016, www.symbios.com is a financial site.  You
-  may be able to obtain ASPI from someplace else, but the code
-  to use it may be stale.  On more recent windows, you can simply
-  use the NT drive letter, which will do physical I/O to the device.
-  */
+ * To support CD drives this version requires ASPI run-time
+ * support.. Windows 95/98 come with ASPI but NT/2000 require
+ * that a version of ASPI be install and started before running
+ * this program!!   (One verion is NTASPI available from
+ * www.symbios.com)
+ *
+ *Note: As of 2016, www.symbios.com is a financial site.  You
+ *may be able to obtain ASPI from someplace else, but the code
+ *to use it may be stale.  On more recent windows, you can simply
+ *use the NT drive letter, which will do physical I/O to the device.
+ */
 
 #if !defined( DEBUG ) && defined( DEBUG_PHYNT )
 #define DEBUG DEBUG_PHYNT
@@ -38,9 +51,9 @@
 
 #include <windows.h>
 #include <winioctl.h>
-#include <shlwapi.h>            /* PathSearchAndQualify() */
 
 #include "ods2.h"
+#include "cmddef.h"
 #include "device.h"
 #include "phyio.h"
 #include "ssdef.h"
@@ -95,21 +108,21 @@ static unsigned write_count = 0;
 static unsigned is_NT = 2;
 
 /*
-        To read from CD ASPI run-time support is required (wnaspi32.dll).
-        NT does not come with ASPI support so you need to install it first.
-        (ASPI is also required for things like Digital Audio Extraction
-        and was origionally loaded on my machine to make MP3 audio files.)
-        One downside is that ASPI on NT does not have a way to match SCSI
-        adapters and units to a system device. So this program works by
-        finding the first CD like unit on the system and using it - that
-        may NOT be what you want if you have several CD drives! And finally
-        there are CD drives and there are CD drives. From what I can tell
-        many simply won't work with this (or other!) code. Naturally if
-        you find a better way please let me know... Paulnank@au1.ibm.com
-*/
+ *      To read from CD ASPI run-time support is required (wnaspi32.dll).
+ *      NT does not come with ASPI support so you need to install it first.
+ *      (ASPI is also required for things like Digital Audio Extraction
+ *      and was origionally loaded on my machine to make MP3 audio files.)
+ *      One downside is that ASPI on NT does not have a way to match SCSI
+ *      adapters and units to a system device. So this program works by
+ *      finding the first CD like unit on the system and using it - that
+ *      may NOT be what you want if you have several CD drives! And finally
+ *      there are CD drives and there are CD drives. From what I can tell
+ *      many simply won't work with this (or other!) code. Naturally if
+ *      you find a better way please let me know... Paulnank@au1.ibm.com
+ */
 
 #ifdef USE_ASPI
-#define DEV_USES_ASPI( dev ) ( dev->drive > 2 )
+#define DEV_USES_ASPI( dev ) ( dev->drive > ('C' - 'A') )
 #else
 #define DEV_USES_ASPI( dev ) FALSE
 #endif
@@ -125,16 +138,16 @@ static unsigned ASPI_TargStat = 0;     /* Temporary status indicator */
 static HANDLE ASPI_event;              /* Windows event for ASPI wait */
 static SRB_ExecSCSICmd ASPI_srb;       /* SRB buffer for ASPI commands */
 
-static unsigned aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
-                              BYTE *BufPointer, BYTE CDBLen, BYTE CDBByte );
-static unsigned aspi_read( short bus, short id, unsigned sector,
-                           unsigned bytespersector, char *buffer );
-static unsigned aspi_write( short bus, short id, unsigned sector,
+static vmscond_t aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
+                               BYTE *BufPointer, BYTE CDBLen, BYTE CDBByte );
+static vmscond_t aspi_read( short bus, short id, unsigned sector,
                             unsigned bytespersector, char *buffer );
-static unsigned aspi_identify( short bus, short id, unsigned *sectors,
-                               unsigned *bytespersector );
-static unsigned aspi_initialize( short *dev_type, short *dev_bus,
-                                 short *dev_id );
+static vmscond_t aspi_write( short bus, short id, unsigned sector,
+                             unsigned bytespersector, char *buffer );
+static vmscond_t aspi_identify( short bus, short id, unsigned *sectors,
+                                unsigned *bytespersector );
+static vmscond_t aspi_initialize( short *dev_type, short *dev_bus,
+                                  short *dev_id );
 #endif
 
 static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
@@ -143,20 +156,19 @@ static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
 static BOOL LockVolume( struct DEV *dev );
 static BOOL UnlockVolume( struct DEV *dev );
 static void getsysversion( void );
-static unsigned phy_getsect( struct DEV *dev, unsigned sector );
-static unsigned phy_putsect( struct DEV *dev, unsigned sector );
+static vmscond_t phy_getsect( struct DEV *dev, unsigned sector );
+static vmscond_t phy_putsect( struct DEV *dev, unsigned sector );
 
-static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                            char *buffer );
-static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                             const char *buffer );
+static vmscond_t phyio_read( struct DEV *dev, unsigned block, unsigned length,
+                             char *buffer );
+static vmscond_t phyio_write( struct DEV *dev, unsigned block, unsigned length,
+                              const char *buffer );
 
 #ifdef USE_ASPI
 /************************************************************* aspi_execute() */
 
-static unsigned aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
-                              BYTE *BufPointer, BYTE CDBLen, BYTE CDBByte ) {
-
+static vmscond_t aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
+                               BYTE *BufPointer, BYTE CDBLen, BYTE CDBByte ) {
     ASPI_srb.SRB_Cmd = SC_EXEC_SCSI_CMD;
     ASPI_srb.SRB_Status = SS_PENDING;
     ASPI_srb.SRB_HaId = bus;
@@ -173,7 +185,7 @@ static unsigned aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
     ASPI_srb.SRB_TargStat = 0;
     ASPI_srb.SRB_PostProc = ASPI_event;
     ASPI_srb.SRB_Rsvd2 = NULL;
-    memset( ASPI_srb.SRB_Rsvd3, 0 ,sizeof( ASPI_srb.SRB_Rsvd3 ) );
+    memset( ASPI_srb.SRB_Rsvd3, 0 , sizeof( ASPI_srb.SRB_Rsvd3 ) );
     ASPI_srb.CDBByte[0] = CDBByte;
     SendASPI32Command( &ASPI_srb );       /* Perform the command... */
     while ( ASPI_srb.SRB_Status == SS_PENDING ) {
@@ -193,9 +205,8 @@ static unsigned aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
 
 /* Read a sector using ASPI... */
 
-static unsigned aspi_read( short bus, short id, unsigned sector,
-                           unsigned bytespersector, char *buffer ) {
-
+static vmscond_t aspi_read( short bus, short id, unsigned sector,
+                            unsigned bytespersector, char *buffer ) {
     ASPI_srb.CDBByte[1] = 0;
     ASPI_srb.CDBByte[2] = ( sector >> 24 )       ;
     ASPI_srb.CDBByte[3] = ( sector >> 16 ) & 0xff;
@@ -213,9 +224,8 @@ static unsigned aspi_read( short bus, short id, unsigned sector,
 
 /* Write a sector using ASPI... */
 
-static unsigned aspi_write( short bus, short id, unsigned sector,
-                            unsigned bytespersector, char *buffer ) {
-
+static vmscond_t aspi_write( short bus, short id, unsigned sector,
+                             unsigned bytespersector, char *buffer ) {
     ASPI_srb.CDBByte[1] = 0;
     ASPI_srb.CDBByte[2] = ( sector >> 24 )       ;
     ASPI_srb.CDBByte[3] = ( sector >> 16 ) & 0xff;
@@ -233,10 +243,9 @@ static unsigned aspi_write( short bus, short id, unsigned sector,
 
 /* Routine to identify a device found by ASPI */
 
-static unsigned aspi_identify( short bus, short id, unsigned *sectors,
-                               unsigned *bytespersector ) {
-
-    unsigned sts;
+static vmscond_t aspi_identify( short bus, short id, unsigned *sectors,
+                                unsigned *bytespersector ) {
+    vmscond_t sts;
     struct SCSI_Inquiry {
         unsigned char device;
         unsigned char dev_qual2;
@@ -256,32 +265,29 @@ static unsigned aspi_identify( short bus, short id, unsigned *sectors,
     ASPI_srb.CDBByte[3] = 0;
     ASPI_srb.CDBByte[4] = sizeof( InquiryBuffer );
     ASPI_srb.CDBByte[5] = 0;
-    sts = aspi_execute( bus, id, SRB_DIR_IN, sizeof( InquiryBuffer ),
-                        (BYTE *) &InquiryBuffer, 6, SCSI_INQUIRY );
-    if ( sts & STS$M_SUCCESS ) {
+    if( $SUCCESSFUL(sts = aspi_execute( bus, id, SRB_DIR_IN, sizeof( InquiryBuffer ),
+                                        (BYTE *) &InquiryBuffer, 6, SCSI_INQUIRY )) ) {
         ASPI_srb.CDBByte[1] = 0;/* SCSI TEST if ready packet */
         ASPI_srb.CDBByte[2] = 0;
         ASPI_srb.CDBByte[3] = 0;
         ASPI_srb.CDBByte[4] = 0;
         ASPI_srb.CDBByte[5] = 0;
-        sts = aspi_execute( bus, id, 0, 0, NULL, 6, SCSI_TST_U_RDY );
-        if ( !( sts & STS$M_SUCCESS ) ) {
+        if( $FAILS(sts = aspi_execute( bus, id, 0, 0, NULL, 6, SCSI_TST_U_RDY )) ) {
             ASPI_srb.CDBByte[1] = 0;    /* SCSI START STOP packet */
             ASPI_srb.CDBByte[2] = 0;
             ASPI_srb.CDBByte[3] = 0;
             ASPI_srb.CDBByte[4] = 1;    /* Start unit */
             ASPI_srb.CDBByte[5] = 0;
-            sts = aspi_execute( bus, id, 0, 0, NULL, 6 ,SCSI_START_STP );
+            sts = aspi_execute( bus, id, 0, 0, NULL, 6 , SCSI_START_STP );
         }
-        if ( sts & STS$M_SUCCESS ) {
+        if( $SUCCESSFUL(sts) ) {
             struct {
                 unsigned char blocks[4];
                 unsigned char sectsz[4];
             } CapBuffer;
             memset( ASPI_srb.CDBByte, 0, sizeof( ASPI_srb.CDBByte ) );
-            sts = aspi_execute( bus, id, SRB_DIR_IN, sizeof( CapBuffer ),
-                                (BYTE *) &CapBuffer, 10, SCSI_RD_CAPAC );
-            if ( sts & STS$M_SUCCESS ) {
+            if( $SUCCESSFUL(sts = aspi_execute( bus, id, SRB_DIR_IN, sizeof( CapBuffer ),
+                                                (BYTE *) &CapBuffer, 10, SCSI_RD_CAPAC )) ) {
                 *sectors        = ( CapBuffer.blocks[0] << 24 ) |
                                   ( CapBuffer.blocks[1] << 16 ) |
                                   ( CapBuffer.blocks[2] <<  8 ) |
@@ -293,13 +299,13 @@ static unsigned aspi_identify( short bus, short id, unsigned *sectors,
             }
         }
         printf( "ASPI (Bus %d,ID %d) %8.8s %16.16s %4.4s %s %d\n",
-                bus, id, InquiryBuffer.vendor,InquiryBuffer.product,
+                bus, id, InquiryBuffer.vendor, InquiryBuffer.product,
                 InquiryBuffer.revision,
                 ( InquiryBuffer.dev_qual2 & 0x80 ) ? "Removable" : "Fixed",
                 *bytespersector );
 
     }
-    if ( !( sts & STS$M_SUCCESS ) ) {
+    if( $FAILED(sts) ) {
         int i;
         printf( "ASPI Error sense %x %x %x - ",
                 ASPI_status, ASPI_HaStat, ASPI_TargStat );
@@ -315,9 +321,8 @@ static unsigned aspi_identify( short bus, short id, unsigned *sectors,
 
 /* Get ASPI ready and locate the next ASPI drive... */
 
-static unsigned aspi_initialize( short *dev_type, short *dev_bus,
-                                 short *dev_id ) {
-
+static vmscond_t aspi_initialize( short *dev_type, short *dev_bus,
+                                  short *dev_id ) {
     short aspi_bus, aspi_id;
     unsigned aspi_devcount;
     DWORD ASPIStatus;
@@ -374,17 +379,16 @@ static unsigned aspi_initialize( short *dev_type, short *dev_bus,
 
 /* NT Get disk or CD geometry... */
 
-static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
-                             unsigned *bytespersector ) {
-
+static BOOL GetDiskGeometry( struct DEV *dev, uint32_t *sectors,
+                             uint32_t *bytespersector ) {
     BOOL result;
 
 #ifdef USE_ASPI
     if ( DEV_USES_ASPI( dev ) ) {
-        unsigned sts;
+        vmscond_t sts;
         sts = aspi_identify( dev->API.ASPI.bus, dev->API.ASPI.id,
                              sectors, bytespersector );
-        result = sts & STS$M_SUCCESS;
+        result = $SUCCESSFUL(sts);
     } else
 #endif
    {
@@ -394,6 +398,7 @@ static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
             /* WinNT */
 
             DISK_GEOMETRY Geometry;
+            memset( &Geometry, 0, sizeof(Geometry) );
             result =
                 DeviceIoControl( dev->API.Win32.handle,    /* hDevice         */
                                                            /* dwIoControlCode */
@@ -419,10 +424,10 @@ static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
                                    );
             }
             if ( result ) {
-                *sectors = (unsigned int)(Geometry.Cylinders.QuadPart * /* In theory, this can overfolow */
-                                          Geometry.TracksPerCylinder *
-                                          Geometry.SectorsPerTrack);
-                *bytespersector = (unsigned int) Geometry.BytesPerSector;
+                *sectors = (uint32_t)(Geometry.Cylinders.QuadPart * /* In theory, this can overfolow */
+                                      Geometry.TracksPerCylinder *
+                                      Geometry.SectorsPerTrack);
+                *bytespersector = (uint32_t) Geometry.BytesPerSector;
             }
 
         } else {
@@ -456,7 +461,7 @@ static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
                                          &TotalNumberOfBytes,
                                          &TotalNumberOfFreeBytes
                                        ) ) {
-                    *sectors = (unsigned int)(TotalNumberOfBytes.QuadPart / BytesPerSector);
+                    *sectors = (uint32_t)(TotalNumberOfBytes.QuadPart / BytesPerSector);
                 }
             }
         }
@@ -469,7 +474,6 @@ static BOOL GetDiskGeometry( struct DEV *dev, unsigned *sectors,
 /* NT drive lock - we don't want any interference... */
 
 static BOOL LockVolume( struct DEV *dev ) {
-
     DWORD ReturnedByteCount;
     BOOL result;
 
@@ -517,7 +521,6 @@ static BOOL LockVolume( struct DEV *dev ) {
 /************************************************************* UnlockVolume() */
 
 static BOOL UnlockVolume( struct DEV *dev ) {
-
     DWORD ReturnedByteCount;
     BOOL result;
 
@@ -570,11 +573,11 @@ static void getsysversion( void ) {
     OSVERSIONINFO sysver;
 
     memset( &sysver, 0, sizeof( sysver ) );
-#pragma warning (disable : 4996)
+#pragma warning (disable : 4996 28159)
     sysver.dwOSVersionInfoSize = sizeof( sysver );
     GetVersionEx( &sysver                                    /* lpVersionInfo */
                 );
-#pragma warning (default : 4996)
+#pragma warning (default : 4996 28159)
     is_NT = ( sysver.dwPlatformId == VER_PLATFORM_WIN32_NT ) ? 1 : 0 ;
 }
 
@@ -582,62 +585,67 @@ static void getsysversion( void ) {
 
 /* Read a physical sector... */
 
-static unsigned phy_getsect( struct DEV *dev, unsigned sector ) {
-
-    register unsigned sts;
+static vmscond_t phy_getsect( struct DEV *dev, uint32_t sector ) {
+    register vmscond_t sts;
 
     sts = SS$_NORMAL;
-    if ( sector != dev->last_sector || dev->last_sector == 0 ) {
+    if( sector != dev->last_sector || dev->last_sector == 0 ) {
 #ifdef USE_ASPI
-        if ( DEV_USES_ASPI( dev ) ) {
+        if( DEV_USES_ASPI( dev ) ) {
             sts = aspi_read( dev->API.ASPI.bus, dev->API.ASPI.id,
                              sector, dev->bytespersector, dev->IoBuffer );
         } else
 #endif
             {
-            if ( dev->access & MOU_VIRTUAL || is_NT ) {
+            if( dev->access & MOU_VIRTUAL || is_NT ) {
                 DWORD BytesRead;
                 __int64 distance;
                 LARGE_INTEGER li;
+                DWORD err = 0;
+                TCHAR *msg;
+
+                memset( &li, 0, sizeof(li) );
                 distance = (((__int64)sector) * dev->blockspersector) << 9;
                 li.QuadPart = distance;
                 if( SetFilePointer( dev->API.Win32.handle,/* hFile                */
                                     li.LowPart,           /* lDistanceToMove      */
                                     &li.HighPart,         /* lpDistanceToMoveHigh */
                                     FILE_BEGIN            /* dwMoveMethod         */
-                                    ) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR ) {
-                    TCHAR *msg = w32_errstr(NO_ERROR);
-                    if( msg != NULL ) {
-                        printf( "PHYIO_READ: SetFilePointer() failed at sector %lu: %s\n",
-                            sector, msg );
+                                    ) == INVALID_SET_FILE_POINTER && (err = GetLastError()) != NO_ERROR ) {
+                    msg = w32_errstr( err );
+                    printmsg( IO_SEEKERR, 0, sector );
+                    if( msg == NULL ) {
+                        sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_SEEKERR, err );
+                    } else {
+                        sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_SEEKERR, msg );
                         LocalFree( msg );
                     }
-                    sts = SS$_PARITY;
                 }
-                if ( sts & STS$M_SUCCESS ) {
-                                                      /* hFile                */
-                    if ( !ReadFile( dev->API.Win32.handle,
-                                    dev->IoBuffer,    /* lpBuffer             */
-                                                      /* nNumberOfBytesToRead */
-                                    dev->bytespersector,
-                                    &BytesRead,       /* lpNumberOfBytesRead  */
-                                    NULL              /* lpOverlapped         */
-                                  ) || BytesRead != dev->bytespersector ) {
-                        TCHAR *msg;
-
+                if( $SUCCESSFUL(sts) ) {
+                    if( !ReadFile( dev->API.Win32.handle,/* hFile                */
+                                   dev->IoBuffer,        /* lpBuffer             */
+                                   dev->bytespersector,  /* nNumberOfBytesToRead */
+                                   &BytesRead,           /* lpNumberOfBytesRead  */
+                                   NULL                  /* lpOverlapped         */
+                                   ) || BytesRead != dev->bytespersector ) {
                         if( BytesRead == 0 )
                             return SS$_ENDOFFILE;
 
-                        msg = w32_errstr(NO_ERROR);
-                        if( msg != NULL ) {
-                            printf( "PHYIO_READ: ReadFile() failed at sector %lu: %s\n",
-                                sector, msg );
+                        err = GetLastError();
+                        msg = w32_errstr( err );
+                        printmsg( IO_READERR, 0, sector );
+                        if( msg == NULL ) {
+                            sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_READERR, err );
+                        } else {
+                            sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_READERR, msg );
                             LocalFree( msg );
                         }
-                        sts = SS$_PARITY;
                     }
                 }
             } else {
+#ifdef _WIN64
+                exit( EXIT_FAILURE );
+#else /* Old interface can't deal with 64-bit addresses */
                 DIOC_REGISTERS reg = { 0 };           /* Win9X DIOC registers */
                 DISKIO dio;
                 BOOL result;
@@ -664,17 +672,23 @@ static unsigned phy_getsect( struct DEV *dev, unsigned sector ) {
                                      NULL                  /* lpOverlapped    */
                                    ) && !( reg.reg_Flags & 0x0001 );
                 if ( !result ) {
-                    TCHAR *msg = w32_errstr(NO_ERROR);
-                    if( msg != NULL ) {
-                        printf( "PHYIO_READ: Read sector %d failed: %s\n",
-                            sector, msg );
+                    DWORD err;
+                    TCHAR *msg;
+
+                    err = GetLastError();
+                    msg = w32_errstr(err);
+                    printmsg( IO_READERR, 0, sector );
+                    if( msg == NULL ) {
+                        sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_READERR, err );
+                    } else {
+                        sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_READERR, msg );
                         LocalFree( msg );
                     }
-                    sts = SS$_PARITY;
                 }
+#endif
             }
         }
-        dev->last_sector = ( sts & STS$M_SUCCESS ) ? sector : 0 ;
+        dev->last_sector = $SUCCESSFUL(sts) ? sector : 0 ;
     }
     return sts;
 }
@@ -683,56 +697,64 @@ static unsigned phy_getsect( struct DEV *dev, unsigned sector ) {
 
 /* Write a physical sector... */
 
-static unsigned phy_putsect( struct DEV *dev, unsigned sector ) {
-
-    register unsigned sts;
+static vmscond_t phy_putsect( struct DEV *dev, uint32_t sector ) {
+    register vmscond_t sts;
 
     sts = SS$_NORMAL;
     dev->last_sector = sector;
 #ifdef USE_ASPI
-    if ( DEV_USES_ASPI( dev ) ) {
+    if( DEV_USES_ASPI( dev ) ) {
         sts = aspi_write( dev->API.ASPI.bus, dev->API.ASPI.id,
                           sector, dev->bytespersector, dev->IoBuffer );
     } else
 #endif
-          {
-        if ( dev->access & MOU_VIRTUAL || is_NT ) {
+        {
+        if( (dev->access & MOU_VIRTUAL) || is_NT ) {
             DWORD BytesWritten;
             __int64 distance;
             LARGE_INTEGER li;
+            DWORD err = 0;
+            TCHAR *msg;
+
+            memset( &li, 0, sizeof( li ) );
             distance = (((__int64)sector) * dev->blockspersector) << 9;
             li.QuadPart = distance;
             if( SetFilePointer( dev->API.Win32.handle,/* hFile                */
                                 li.LowPart,           /* lDistanceToMove      */
                                 &li.HighPart,         /* lpDistanceToMoveHigh */
                                 FILE_BEGIN            /* dwMoveMethod         */
-                                ) == INVALID_SET_FILE_POINTER && GetLastError() != NO_ERROR ) {
-                TCHAR *msg = w32_errstr(NO_ERROR);
-                if( msg != NULL ) {
-                    printf( "PHYIO_WRITE: SetFilePointer() failed at sector %lu: %s\n",
-                        sector, msg );
+                                ) == INVALID_SET_FILE_POINTER && (err = GetLastError()) != NO_ERROR ) {
+                msg = w32_errstr( err );
+                printmsg( IO_SEEKERR, 0, sector );
+                if( msg == NULL ) {
+                    sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_SEEKERR, err );
+                } else {
+                    sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_SEEKERR, msg );
                     LocalFree( msg );
                 }
-                sts = SS$_PARITY;
             }
-            if ( sts & STS$M_SUCCESS ) {
-                if ( !WriteFile( dev->API.Win32.handle, /* hFile                  */
-                                 dev->IoBuffer,         /* lpBuffer               */
-                                                        /* nNumberOfBytesToWrite  */
-                                 dev->bytespersector,
-                                 &BytesWritten,         /* lpNumberOfBytesWritten */
-                                 NULL                   /* lpOverlapped           */
-                               ) || BytesWritten != dev->bytespersector ) {
-                    TCHAR *msg = w32_errstr(NO_ERROR);
-                    if( msg != NULL ) {
-                        printf( "PHYIO_WRITE: WriteFile() failed at sector %lu: %s\n",
-                            sector, msg );
+            if( $SUCCESSFUL(sts) ) {
+                if( !WriteFile( dev->API.Win32.handle, /* hFile                  */
+                                dev->IoBuffer,         /* lpBuffer               */
+                                dev->bytespersector,   /* nNumberOfBytesToWrite  */
+                                &BytesWritten,         /* lpNumberOfBytesWritten */
+                                NULL                   /* lpOverlapped           */
+                                ) || BytesWritten != dev->bytespersector ) {
+                    err = GetLastError();
+                    msg = w32_errstr( err );
+                    printmsg( IO_WRITEERR, 0, sector );
+                    if( msg == NULL ) {
+                        sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_WRITEERR, err );
+                    } else {
+                        sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_WRITEERR, msg );
                         LocalFree( msg );
                     }
-                    sts = SS$_PARITY;
                 }
             }
         } else {
+#ifdef _WIN64
+            exit( EXIT_FAILURE );
+#else /* Old interface can't deal with 64-bit addresses */
             DIOC_REGISTERS reg = { 0 };               /* Win9X DIOC registers */
             DISKIO dio;
             BOOL result;
@@ -757,15 +779,21 @@ static unsigned phy_putsect( struct DEV *dev, unsigned sector ) {
                                  &cb,                      /* lpBytesReturned */
                                  NULL                      /* lpOverlapped    */
                                ) && !( reg.reg_Flags & 0x0001 );
-            if ( !result ) {
-                TCHAR *msg = w32_errstr(NO_ERROR);
-                if( msg != NULL ) {
-                    printf( "PHYIO_WRITE: Write sector %d failed: %s\n",
-                        sector, msg );
+            if( !result ) {
+                DWORD err;
+                TCHAR *msg;
+
+                err = GetLastError();
+                msg = w32_errstr( err );
+                printmsg( IO_WRITEERR, 0, sector );
+                if( msg == NULL ) {
+                    sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_WRITEERR, err );
+                } else {
+                    sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_WRITEERR, msg );
                     LocalFree( msg );
                 }
-                sts = SS$_PARITY;
             }
+#endif
         }
     }
     return sts;
@@ -774,14 +802,12 @@ static unsigned phy_putsect( struct DEV *dev, unsigned sector ) {
 /*************************************************************** phyio_show() */
 
 void phyio_show( showtype_t type ) {
-
     switch( type ) {
     case SHOW_STATS:
-        printf( "PHYIO_SHOW Initializations: %d Reads: %d Writes: %d\n",
-                init_count, read_count, write_count );
+        printmsg( IO_STATS, MSG_TEXT, init_count, read_count, write_count );
         return;
     case SHOW_FILE64:
-        printf( "Large ODS-2 image files (>2GB) are %ssupported.\n", "" );
+        printmsg( IO_LARGEFILE, MSG_TEXT );
         return;
     case SHOW_DEVICES: {
         TCHAR *namep = NULL, *dname = NULL;
@@ -791,35 +817,29 @@ void phyio_show( showtype_t type ) {
 
         for( l = 'A'; l <= 'Z'; l++ ) {
             (void) snprintf( devname, sizeof( devname ), "%c:", l );
-            dname = namep = driveFromLetter( devname );
+            dname =
+                namep = driveFromLetter( devname );
             if( namep != NULL ) {
-                const char *type = NULL;
 #define WINDEVPFX "\\Device\\"
                 if( strncmp( dname, WINDEVPFX, sizeof(WINDEVPFX)-1 ) == 0 )
                     dname += sizeof( WINDEVPFX ) -1;
 #undef WINDEVPFX
                 if( !n++ )
-                    printf( " Physical devices\n"
-                            "  Drv   Type    PhysicalName\n"
-                            "  --- --------- ------------\n" );
-                printf( "   %s ", devname );
+                    printmsg( IO_NTDEVHEADER, MSG_TEXT );
                 switch( GetDriveType( devname ) ) {
                 case DRIVE_REMOVABLE:
-                    type = "Removable"; break;
+                    printmsg( IO_NTDEVREMOVABLE, MSG_TEXT, devname, dname ); break;
                 case DRIVE_FIXED:
-                    type = "Fixed";     break;
+                    printmsg( IO_NTDEVFIXED, MSG_TEXT, devname, dname );     break;
                 case DRIVE_REMOTE:
-                    type = "Network";
-                    dname = NULL;       break;
+                    printmsg( IO_NTDEVREMOTE, MSG_TEXT, devname );           break;
                 case DRIVE_CDROM:
-                    type = "CDROM";     break;
+                    printmsg( IO_NTDEVCDROM, MSG_TEXT, devname, dname );     break;
                 case DRIVE_RAMDISK:
-                    type = "RAMdisk";   break;
+                    printmsg( IO_NTDEVRAMDISK, MSG_TEXT, devname, dname );   break;
                 default:
-                    type = "Other";
-                    dname = NULL;       break;
+                    printmsg( IO_NTDEVOTHER, MSG_TEXT, devname );            break;
                 }
-                printf( "%-9s %s\n", type, (dname? dname: "") );
                 free(namep);
             }
         }
@@ -832,50 +852,23 @@ void phyio_show( showtype_t type ) {
 
 /*************************************************************** phyio_help() */
 
-void phyio_help(FILE *fp ) {
-    fprintf( fp, " mount D:\n" );
-    fprintf( fp, "Any drive letter mapped to a physical drive can be used\n" );
+void phyio_help( void ) {
+
 #ifdef USE_ASPI
-    fprintf( fp, "If the drive letter is C: or higher, commands are\n" );
-    fprintf( fp, "sent directly to the drive, bypassing system drivers.\n" );
-    fprintf( fp, "The drive must be a SCSI device\n" );
+    (void) helptopic( 0, "MOUNT NTASPI" );
+#else
+    (void) helptopic( 0, "MOUNT NT" );
 #endif
-    fprintf( fp, "The drive is accessed as a physical device, which may require privileges.\n" );
-    fprintf( fp, "For a list of devices, see SHOW DEVICES\n\n" );
+
     return;
-}
-
-/*************************************************************** phyio_path() */
-
-char *phyio_path( const char *filnam ) {
-
-    size_t n;
-    char *path, resultant_path[MAX_PATH];
-
-    if ( filnam == NULL || strpbrk( filnam, "*?" ) != NULL ||
-         !PathSearchAndQualify( filnam,              /* pcszPath              */
-                                resultant_path,      /* pszFullyQualifiedPath */
-                                                     /* cchFullyQualifiedPath */
-                                sizeof( resultant_path )
-                              ) ) {
-        return NULL;
-    }
-    n = strlen( resultant_path );
-    path = (char *) malloc( n + 1 );
-    if ( path != NULL ) {
-        memcpy( path, resultant_path, n + 1 );
-    }
-    return path;
 }
 
 /*************************************************************** phyio_init() */
 
 /* Initialize device by opening it, locking it and getting it ready.. */
 
-unsigned phyio_init( struct DEV *dev ) {
-    const char *virtual;
-
-    if ( is_NT > 1 ) {
+vmscond_t phyio_init( struct DEV *dev ) {
+    if( is_NT > 1 ) {
         getsysversion();
     }
 
@@ -892,54 +885,73 @@ unsigned phyio_init( struct DEV *dev ) {
     dev->IoBuffer = NULL;
 
     if( dev->access & MOU_VIRTUAL ) {
+        const char *filenam;
         DWORD FileSizeLow, FileSizeHigh;
 
-        virtual = virt_lookup( dev->devnam );
-        if ( virtual == NULL ) {
+        filenam = virt_lookup( dev->devnam );
+        if ( filenam == NULL ) {
             return SS$_NOSUCHDEV;
         }
         dev->API.Win32.handle =
-            CreateFile( virtual,                     /* lpFileName            */
-                        GENERIC_READ |               /* dwDesiredAccess       */
+            CreateFile( filenam,                      /* lpFileName            */
+                        GENERIC_READ |                /* dwDesiredAccess       */
                         ((dev->access & MOU_WRITE)? GENERIC_WRITE : 0 ),
-                        0,                           /* dwShareMode           */
-                        NULL,                        /* lpSecurityAttributes  */
-                        ((dev->access & PHY_CREATE)? CREATE_NEW: OPEN_EXISTING),
-                                                     /* dwCreationDisposition */
-                                                     /* dwFlagsAndAttributes  */
+                        ((dev->access & MOU_WRITE) ? 0 : FILE_SHARE_READ),
+                                                      /* dwShareMode           */
+                        NULL,                         /* lpSecurityAttributes  */
+                        ((dev->access & PHY_CREATE)?
+                         CREATE_NEW: OPEN_EXISTING),  /* dwCreationDisposition */
                         FILE_FLAG_RANDOM_ACCESS |
-                        ( dev->access & MOU_WRITE ?
-                          FILE_FLAG_WRITE_THROUGH : 0 ),
-                        NULL                         /* hTemplateFile         */
+                        (dev->access & MOU_WRITE ?
+                         FILE_FLAG_WRITE_THROUGH : 0),/* dwFlagsAndAttributes  */
+                        NULL                          /* hTemplateFile         */
                       );
-        if ( dev->API.Win32.handle == INVALID_HANDLE_VALUE &&
-             (dev->access & (MOU_WRITE|PHY_CREATE)) == MOU_WRITE ) {
+        if( dev->API.Win32.handle == INVALID_HANDLE_VALUE &&
+            (dev->access & (MOU_WRITE|PHY_CREATE)) == MOU_WRITE ) {
             dev->access &= ~MOU_WRITE;
             dev->API.Win32.handle =
-                CreateFile( virtual,                 /* lpFileName            */
+                CreateFile( filenam,                 /* lpFileName            */
                             GENERIC_READ,            /* dwDesiredAccess       */
-                            0,                       /* dwShareMode           */
+                            FILE_SHARE_READ,         /* dwShareMode           */
                             NULL,                    /* lpSecurityAttributes  */
                             OPEN_EXISTING,           /* dwCreationDisposition */
-                                                     /* dwFlagsAndAttributes  */
-                            FILE_FLAG_RANDOM_ACCESS,
+                            FILE_FLAG_RANDOM_ACCESS, /* dwFlagsAndAttributes  */
                             NULL                     /* hTemplateFile         */
                           );
         }
-        if ( dev->API.Win32.handle == INVALID_HANDLE_VALUE ) {
-            TCHAR *msg = w32_errstr(NO_ERROR);
-            if( msg != NULL ) {
-                printf( "PHYIO_INIT: CreateFile() failed for %s: %s\n",
-                    virtual, msg );
+        if( dev->API.Win32.handle == INVALID_HANDLE_VALUE ) {
+            vmscond_t sts;
+            DWORD err;
+            TCHAR *msg;
+
+            err = GetLastError();
+            msg = w32_errstr( err );
+
+            printmsg( IO_OPENDEV, 0, filenam );
+            if( msg == NULL ) {
+                sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_OPENDEV, err );
+            } else {
+                sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_OPENDEV, msg );
                 LocalFree( msg );
             }
-            return SS$_NOSUCHFILE;
+            switch( err ) {
+            case ERROR_FILE_EXISTS:
+            case ERROR_ALREADY_EXISTS:
+            case ERROR_ACCESS_DENIED:
+            case ERROR_SHARING_VIOLATION:
+                return SS$_DUPFILENAME | STS$M_INHIB_MSG;
+            case ERROR_FILE_NOT_FOUND:
+                return SS$_NOSUCHFILE | STS$M_INHIB_MSG;
+            default:
+                break;
+            }
+            return SS$_NOSUCHFILE | STS$M_INHIB_MSG;
         }
         SetLastError( 0 );
         FileSizeLow = GetFileSize( dev->API.Win32.handle,   /* hFile          */
                                    &FileSizeHigh            /* lpFileSizeHigh */
                                  );
-        if ( GetLastError() == NO_ERROR ) {
+        if( GetLastError() == NO_ERROR ) {
 #if 0
             dev->sectors = (     FileSizeHigh        << 23 )                |
                            ( ( ( FileSizeLow + 511 ) >>  9 ) & 0x007FFFFF ) ;
@@ -949,9 +961,9 @@ unsigned phyio_init( struct DEV *dev ) {
             dev->blockspersector = 1;
         }
     } else { /* Physical */
-        unsigned sectors;
+        uint32_t sectors;
 
-        if ( strlen( dev->devnam ) != 2 ||
+        if( strlen( dev->devnam ) != 2 ||
             !isalpha( dev->devnam[0] ) || dev->devnam[1] != ':' ) {
             return SS$_IVDEVNAM;
         }
@@ -960,13 +972,13 @@ unsigned phyio_init( struct DEV *dev ) {
         /* Use ASPI for devices past C... */
 
 #ifdef USE_ASPI
-        if ( DEV_USES_ASPI( dev ) ) {
+        if( DEV_USES_ASPI( dev ) ) {
             dev->API.ASPI.dtype = -1;
             dev->API.ASPI.bus = -1;
             dev->API.ASPI.id = -1;
-            sts = aspi_initialize( &dev->API.ASPI.dtype, &dev->API.ASPI.bus,
-                                   &dev->API.ASPI.id );
-            if ( !( sts & STS$M_SUCCESS ) ) {
+            if( $FAILS(sts = aspi_initialize( &dev->API.ASPI.dtype,
+                                              &dev->API.ASPI.bus,
+                                              &dev->API.ASPI.id )) ) {
                 return sts;
             }
         } else
@@ -975,15 +987,14 @@ unsigned phyio_init( struct DEV *dev ) {
 
             /* WinNT stuff */
 
-            if ( is_NT ) {
-                char ntname[7] = "\\\\.\\";          /* 7 = sizeof \\.\a:\0 */
-
-                memcpy( ntname+4, dev->devnam, 3 );  /* Copy a:\0 */
-                ntname[4] = toupper( ntname[4] );
+            if( is_NT ) {
+                char ntname[7] = { '\\', '\\', '.', '\\', 'x', ':', '\0' };
+                /*                   0     1    2     3    4    5     6 */
+                ntname[4] = toupper( dev->devnam[0] );
                 dev->API.Win32.handle =
                     CreateFile( ntname,              /* lpFileName            */
                                 GENERIC_READ |       /* dwDesiredAccess       */
-                                ( dev->access & MOU_WRITE ? GENERIC_WRITE : 0 ),
+                                ( (dev->access & MOU_WRITE) ? GENERIC_WRITE : 0 ),
                                                      /* dwShareMode           */
                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                                 NULL,                /* lpSecurityAttributes  */
@@ -992,8 +1003,8 @@ unsigned phyio_init( struct DEV *dev ) {
                                 FILE_FLAG_NO_BUFFERING,
                                 NULL                 /* hTemplateFile         */
                               );
-                if ( dev->API.Win32.handle == INVALID_HANDLE_VALUE &&
-                     dev->access & MOU_WRITE ) {
+                if( dev->API.Win32.handle == INVALID_HANDLE_VALUE &&
+                    (dev->access & MOU_WRITE) ) {
                     dev->access &= ~MOU_WRITE;
                     dev->API.Win32.handle =
                         CreateFile( ntname,          /* lpFileName            */
@@ -1007,7 +1018,6 @@ unsigned phyio_init( struct DEV *dev ) {
                                     NULL             /* hTemplateFile         */
                                   );
                 }
-
             } else {
 
                 /* Win9X stuff */
@@ -1023,36 +1033,59 @@ unsigned phyio_init( struct DEV *dev ) {
                                 NULL                 /* hTemplateFile         */
                               );
             }
-            if ( dev->API.Win32.handle == INVALID_HANDLE_VALUE ) {
-                TCHAR *msg = w32_errstr(NO_ERROR);
-                if( msg != NULL ) {
-                    printf( "PHYIO_INIT: Open( \"%s\" ) failed: %s\n",
-                        dev->devnam, msg );
+            if( dev->API.Win32.handle == INVALID_HANDLE_VALUE ) {
+                vmscond_t sts;
+                DWORD err;
+                TCHAR *msg;
+
+                err = GetLastError();
+                msg = w32_errstr( err );
+
+                printmsg( IO_OPENDEV, 0, dev->devnam );
+                if( msg == NULL ) {
+                    sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_OPENDEV, err );
+                } else {
+                    sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_OPENDEV, msg );
                     LocalFree( msg );
                 }
-                return SS$_NOSUCHDEV;
+               return sts;
             }
-            if ( !LockVolume( dev ) ) {
-                TCHAR *msg = w32_errstr(NO_ERROR);
-                if( msg != NULL ) {
-                    printf( "PHYIO_INIT: LockVolume( \"%s\" ) failed: %s\n",
-                        dev->devnam, msg );
+            if( !LockVolume( dev ) ) {
+                vmscond_t sts;
+                DWORD err;
+                TCHAR *msg;
+
+                err = GetLastError();
+                msg = w32_errstr( err );
+
+                printmsg( IO_LOCKVOL, 0, dev->devnam );
+                if( msg == NULL ) {
+                    sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_LOCKVOL, err );
+                } else {
+                    sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_LOCKVOL, msg );
                     LocalFree( msg );
                 }
                 phyio_done( dev );
-                return SS$_DEVNOTALLOC;
+                return sts;
             }
         }
 
-        if ( !GetDiskGeometry( dev, &sectors, &dev->bytespersector ) ) {
-            TCHAR *msg = w32_errstr(NO_ERROR);
-            if( msg != NULL ) {
-                printf( "PHYIO_INIT: GetDiskGeometry( \"%s\" ) failed: %s\n",
-                    dev->devnam, msg );
+        if( !GetDiskGeometry( dev, &sectors, &dev->bytespersector ) ) {
+            vmscond_t sts;
+            DWORD err;
+            TCHAR *msg;
+
+            err = GetLastError();
+            msg = w32_errstr( err );
+            printmsg( IO_NOGEO, 0, dev->devnam );
+            if( msg == NULL ) {
+                sts = printmsg( ODS2_OSERRORNO, MSG_CONTINUE, IO_NOGEO, err );
+            } else {
+                sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_NOGEO, msg );
                 LocalFree( msg );
             }
             phyio_done( dev );
-            return 80;
+            return sts;
         }
         dev->blockspersector = dev->bytespersector / 512;
         dev->eofptr = ((off_t)sectors) * dev->bytespersector;
@@ -1065,7 +1098,7 @@ unsigned phyio_init( struct DEV *dev ) {
                                   MEM_COMMIT,             /* flAllocationType */
                                   PAGE_READWRITE          /* flProtect        */
                                 );
-    if ( dev->IoBuffer == NULL ) {
+    if( dev->IoBuffer == NULL ) {
         phyio_done( dev );
         return SS$_INSFMEM;
     }
@@ -1078,20 +1111,19 @@ unsigned phyio_init( struct DEV *dev ) {
 
 /*************************************************************** phyio_done() */
 
-unsigned phyio_done( struct DEV *dev ) {
-
-    if ( !DEV_USES_ASPI( dev ) &&
-         dev->API.Win32.handle != INVALID_HANDLE_VALUE ) {
+vmscond_t phyio_done( struct DEV *dev ) {
+    if( !DEV_USES_ASPI( dev ) &&
+        dev->API.Win32.handle != INVALID_HANDLE_VALUE ) {
         UnlockVolume( dev );
-        CloseHandle( dev->API.Win32.handle                      /* hObject    */
-                   );
+        CloseHandle( dev->API.Win32.handle );                   /* hObject    */
+
         dev->API.Win32.handle = INVALID_HANDLE_VALUE;
     }
-    if ( dev->IoBuffer != NULL ) {
+    if( dev->IoBuffer != NULL ) {
         VirtualFree( dev->IoBuffer,                             /* lpAddress  */
                      0,                                         /* dwSize     */
                      MEM_RELEASE                                /* dwFreeType */
-                   );
+                     );
         dev->IoBuffer = NULL;
     }
     return SS$_NORMAL;
@@ -1100,12 +1132,13 @@ unsigned phyio_done( struct DEV *dev ) {
 /*************************************************************** phyio_read() */
 
 /* Handle a read request ... need to read the approriate sectors to
-   complete the request... */
+ * complete the request...
+ */
 
-static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                            char *buffer ) {
-
-    register unsigned sts, transfer, sectno, offset;
+static vmscond_t phyio_read( struct DEV *dev, uint32_t block,
+                             uint32_t length, char *buffer ) {
+    register vmscond_t sts;
+    uint32_t transfer, sectno, offset;
     char *sectbuff;
 
 #if DEBUG
@@ -1118,30 +1151,26 @@ static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
     sectno = block / dev->blockspersector;
     offset = block % dev->blockspersector;
     sectbuff = dev->IoBuffer;
-    while ( length > 0 ) {
+    while( length > 0 ) {
         transfer = ( dev->blockspersector - offset ) * 512;
         if ( transfer > length ) {
             transfer = length;
         }
-        sts = phy_getsect( dev, sectno );
-        if ( !( sts & STS$M_SUCCESS ) ) {
+        if( $FAILS(sts = phy_getsect( dev, sectno )) ) {
             break;
         }
-        memcpy( buffer, sectbuff + ( offset * 512 ), transfer );
+        memcpy( buffer, sectbuff + ( (size_t)offset * 512 ), transfer );
         buffer += transfer;
         length -= transfer;
         sectno++;
         offset = 0;
     }
-    if ( !( sts & STS$M_SUCCESS ) ) {
-        printf( "PHYIO_READ Error %s Block %d Length %d",
-                getmsg(sts, MSG_TEXT), block, length );
 #ifdef USE_ASPI
-        printf( " (ASPI: %x %x %x)",
+    if( $FAILED(sts) ) {
+        printf( "(ASPI: %x %x %x)\n",
                 ASPI_status, ASPI_HaStat, ASPI_TargStat );
-#endif
-        printf( "\n" );
     }
+#endif
     return sts;
 }
 
@@ -1150,10 +1179,10 @@ static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
 /* Handle a write request ... need to read the approriate sectors to
    complete the request... */
 
-static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                             const char *buffer) {
-
-    register unsigned sts, transfer, sectno, offset;
+static vmscond_t phyio_write( struct DEV *dev, uint32_t block, uint32_t length,
+                              const char *buffer) {
+    register vmscond_t sts;
+    uint32_t transfer, sectno, offset;
     char *sectbuff;
 
 #if DEBUG
@@ -1166,20 +1195,20 @@ static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
     sectno = block / dev->blockspersector;
     offset = block % dev->blockspersector;
     sectbuff = dev->IoBuffer;
-    while ( length > 0 ) {
+    while( length > 0 ) {
         transfer = ( dev->blockspersector - offset ) * 512;
         if ( transfer > length ) {
             transfer = length;
         }
         if ( transfer != dev->blockspersector * 512 ) {
             sts = phy_getsect( dev, sectno );
-            if ( !( sts & STS$M_SUCCESS ) ) {
+            if( $FAILS(sts = phy_getsect( dev, sectno )) &&
+                !$MATCHCOND(sts, SS$_ENDOFFILE) ) {
                 break;
             }
         }
-        memcpy( sectbuff + ( offset * 512 ), buffer, transfer );
-        sts = phy_putsect( dev, sectno );
-        if ( !( sts & STS$M_SUCCESS ) ) {
+        memcpy( sectbuff + ( (size_t)offset * 512 ), buffer, transfer );
+        if( $FAILS(sts = phy_putsect( dev, sectno )) ) {
             break;
         }
         buffer += transfer;
@@ -1187,14 +1216,11 @@ static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
         sectno++;
         offset = 0;
     }
-    if ( !( sts & STS$M_SUCCESS ) ) {
-        printf( "PHYIO_WRITE Error %d Block %d Length %d",
-                sts, block, length );
 #ifdef USE_ASPI
-        printf( " (ASPI: %x %x %x)",
+    if( $FAILED(sts) ) {
+        printf( "(ASPI: %x %x %x)\n",
                 ASPI_status, ASPI_HaStat, ASPI_TargStat );
-#endif
-        printf( "\n" );
     }
+#endif
     return sts;
 }

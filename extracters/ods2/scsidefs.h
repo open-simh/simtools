@@ -1,3 +1,16 @@
+/*
+ *       This is distributed as part of ODS2, originally  written by
+ *       Paul Nankervis, email address:  Paulnank@au1.ibm.com
+ *
+ *       ODS2 is distributed freely for all members of the
+ *       VMS community to use. However all derived works
+ *       must maintain comments in their source to acknowledge
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
+ */
+
 //***************************************************************************
 //
 // Name:    SCSIDEFS.H

@@ -11,6 +11,8 @@ The platform-specific files are:
 
 Select the appropriate platform file & review the definitions.
 
+For Unix-like OSs, defaults are set in makefile.unixdefs.
+
 The easiest way to build ODS-2 is to softlink Makefile to
 the platform file.  For example:
     ln -s makefile.unix Makefile
@@ -19,15 +21,50 @@ the platform file.  For example:
 Alternatively, the following equivalent command can be used:
     make -f makefile.unix clean && make -f makefile.unix
 
-If your make doesn't support the "include" directive, you
-can run makefile.generic manually.  Instructions are in that file.
-
-Copy the resulting object file to a convenient location on your path,
+Copy the resulting object file, the .HLB, and .MDF files to a
+convenient location on your path,
 e.g. /usr/local/bin on unix, or add the build directory to the PATH
 environment variable on windows.
 
+The .HLB files contain the (compiled) help text.  The MDF files contain
+message strings.  Both are binary files, may be architecture-specific,
+and can be localized.
+
+Building from source requires Perl and uses data from VMS message and header files.
+Unless you are localizing messages, the included files suffice.  The procedure
+for extracting localized messages from VMS is documented in the message script..
+
+VHD support requires the libvhd in simtools/extracters/libvhd and
+simtools/extracters/vhd-tools.  Note that these are different from the
+vhd support in simH.
+
+ods2 includes RMS emulation that is fairly complete (except for indexed organization).
+Messages use a VMS getmsg emulation; .msg files are localizable.
+
+If you have an alternate message file (e.g. for I18n), it will be a
+.mdf file (e.g. ods2_en_us.mdf), which should also be placed in a convenient
+place.
+
+The help source is in .hlp files, which are structured text.  They are compiled
+into .hlb files by makehelp. en_us.hlp is the base file; any translations should
+use the same naming convention.  The makefiles generate ods2_en_us.hlb.  The
+helpfile can be selected by the ODS2HELP environment variable, and/or the
+set helpfile command.
+
+The default help library filename is "ods2.hlb", in the same directory as
+the ods2 executable.  This file is made a symlink or copy of the default
+language by the makefile.  If another available language is desired,
+softlink (or copy) the desired language file to it (or set the ODS2HELP
+ environment variable.)
+E.g. for US English help: ln -s ods2_en_us.hlb ods2.hlb
+
 If you need different definitions for another platform, please
 add a new platform-specific file rather than changing makefile.generic.
+
+For development, I use a wrapper on make called "strictmake" to keep the sources
+as clean as possible; it enables extra warnings from gcc (and filters a few). I
+also use "grind" to run with valgrind to keep the code leak free.  Currently,
+the only exception is that libedit doesn't completely clean up on exit.
 
 On VMS, you can use the DCL command procedure build.com to build
 with DECC or GCC, with
@@ -40,4 +77,15 @@ If you have MMS/mmk, use descrip.mms, with
 To build with VAXC
   $ mmk/macro=vaxc=1
 
+For Microsoft Windows, use Visual Studio - the free Community Edition works.
+A solution file is included in ODS2's git repository.  x64, x86 builds are
+supported.  Debug builds include Visual Leak Detector (a free tool), but
+that can be turned off.  VLD indicates that ODS2 is leak-free on Windows.
 
+I build for Windows with the sources on a Linux share.  This makes it easy
+to test changes with one copy of the source.  The object files do not overlap;
+the VS directories are excluded from git.  For convenience, the windows .EXEs
+are copied to the git working directory.
+
+Bug reports, contributions, and feature requests are welcome
+at https://github.com/open-simh/simtools/issues.

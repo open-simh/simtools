@@ -1,58 +1,70 @@
+/* This is part of ODS2 written by Paul Nankervis,
+ * email address:  Paulnank@au1.ibm.com
+ *
+ * ODS2 is distributed freely for all members of the
+ * VMS community to use. However all derived works
+ * must maintain comments in their source to acknowledge
+ * the contributions of the original author and
+ * subsequent contributors.   This is free software; no
+ * warranty is offered,  and while we believe it to be useful,
+ * you use it at your own risk.
+ */
+
 /*
 
-        Vmstime.c 
+ *      Vmstime.c
 
-        Author: Paul Nankervis
+ *      Author: Paul Nankervis
 
-         1.4    Changed declarations NOT to define DOLLAR identifiers
-                unless DOLLAR is defined (some compilers can't handle $'s!)
-         1.4A   Changed default DOLLAR handling to include DOLLAR
-                identifers unless NO_DOLLAR is defined
-                (ie #ifdef DOLLAR to #ifndef NO_DOLLAR)
-         1.5    Added 64 bit support and cvt_internal routines
-         1.6    Change addx, subx and compare to use larger integers
-         1.6A   Fixed endian problems in addx/subx
+ *       1.4    Changed declarations NOT to define DOLLAR identifiers
+ *              unless DOLLAR is defined (some compilers can't handle $'s!)
+ *       1.4A   Changed default DOLLAR handling to include DOLLAR
+ *              identifers unless NO_DOLLAR is defined
+ *              (ie #ifdef DOLLAR to #ifndef NO_DOLLAR)
+ *       1.5    Added 64 bit support and cvt_internal routines
+ *       1.6    Change addx, subx and compare to use larger integers
+ *       1.6A   Fixed endian problems in addx/subx
 
-        Please send bug reports or requests for enhancement
-        or improvement via email to:     PaulNank@au1.ibm.com
+ *      Please send bug reports or requests for enhancement
+ *      or improvement via email to:     PaulNank@au1.ibm.com
 
 
-        This module contains versions of the VMS time routines
-        sys$numtim(), sys$asctim() and friends... They are
-        intended to be compatible with the routines of the same
-        name on a VMS system (so descriptors feature regularly!)
+ *      This module contains versions of the VMS time routines
+ *      sys$numtim(), sys$asctim() and friends... They are
+ *      intended to be compatible with the routines of the same
+ *      name on a VMS system (so descriptors feature regularly!)
 
-        This code relies on being able to manipluate day numbers
-        and times using 32 bit arithmetic to crack a VMS quadword
-        byte by byte. If your C compiler doesn't have 32 bit unsigned
-        integer types then give up now! On a 64 bit systems VMSTIME_64BIT
-        can be defined to do 64 bit operations directly....
+ *      This code relies on being able to manipluate day numbers
+ *      and times using 32 bit arithmetic to crack a VMS quadword
+ *      byte by byte. If your C compiler doesn't have 32 bit unsigned
+ *      integer types then give up now! On a 64 bit systems VMSTIME_64BIT
+ *      can be defined to do 64 bit operations directly....
 
-        One advantage of doing arihmetic byte by byte is that
-        the code does not depend on what 'endian' the target
-        machine is - it will always treat bytes in the same order!
-        (Hopefully VMS time bytes will always be in the same order!)
+ *      One advantage of doing arithmetic byte by byte is that
+ *      the code does not depend on what 'endian' the target
+ *      machine is - it will always treat bytes in the same order!
+ *      (Hopefully VMS time bytes will always be in the same order!)
 
-        Note: VMS time quadwords are simply an eight byte integer
-              (quadword) representing the number of 100 nanasecond
-              units since 17-Nov-1858. Delta times (time differences)
-              are represented by a negative quadword value. It is
-              interesting that Windows UTC times are in the same units
-              but are based on the year 1601.
+ *      Note: VMS time quadwords are simply an eight byte integer
+ *            (quadword) representing the number of 100 nanasecond
+ *            units since 17-Nov-1858. Delta times (time differences)
+ *            are represented by a negative quadword value. It is
+ *            interesting that Windows UTC times are in the same units
+ *            but are based on the year 1601.
 
-       A couple of stupid questions to go on with:-
-           o OK, I give up! What is the difference between a zero
-             date and a zero delta time?
-           o Anyone notice that the use of 16 bit words in
-             sys$numtim restricts delta times to 65535 days?
+ *     A couple of stupid questions to go on with:-
+ *         o OK, I give up! What is the difference between a zero
+ *           date and a zero delta time?
+ *         o Anyone notice that the use of 16 bit words in
+ *           sys$numtim restricts delta times to 65535 days?
 
-                                        Paul Nankervis
-                                        paulnank@au1.ibm.com
+ *                                      Paul Nankervis
+ *                                      paulnank@au1.ibm.com
 
-        Note: The routine are defined here with an underscore instead
-              of a dollar symbol (ie sys_asctim instead of sys$asctim).
-              This avoids problems on systems which don't handle
-              the '$' well, and it avoids conflicts under VMS.
+ *      Note: The routine are defined here with an underscore instead
+ *            of a dollar symbol (ie sys_asctim instead of sys$asctim).
+ *            This avoids problems on systems which don't handle
+ *            the '$' well, and it avoids conflicts under VMS.
 
 */
 
@@ -77,13 +89,17 @@
 #if defined(VMS)
 #include <timeb.h>              /* For VAXC and GCC include libraries on VMS */
 #else
+#ifdef USE_FTIME
 #include <sys/timeb.h>          /* For ftime() */
+#else
+#include <sys/time.h>           /* gettimeofday() */
+#endif
 #endif
 #endif
 #endif
 
 #include "vmstime.h"            /* Our header file! */
-
+#include "ods2.h"
 
 #define TIMEBASE 100000         /* 10 millisecond units in quadword */
 #define TIMESIZE 8640000        /* Factor between dates & times */
@@ -270,7 +286,7 @@ int vmstime_mthend[] = {0,31,60,91,121,152,182,213,244,274,305,335,366};
 
 unsigned lib_cvt_vectim(unsigned short timvec[7],pVMSTIME timadr)
 {
-    register unsigned sts;
+    register vmscond_t sts;
     register int year,month,days;
 
     /* lib_cvt_vectim packs the seven date/time components into a quadword... */
@@ -341,19 +357,31 @@ unsigned sys_gettim(pVMSTIME timadr)
                              (curtim % 86400) * 100);
 #else
     /* Get time from ftime() and localtime() */
-    struct timeb timval;
     struct tm *lclptr;
     unsigned short timvec[7];
+#ifdef USE_FTIME
+    struct timeb timval;
+
     timval.millitm = 0;         /* for broken versions of ftime() */
     ftime(&timval);
     lclptr = localtime(&timval.time);
+    timvec[6] = timval.millitm / 10;
+#else
+    struct timeval timval;
+
+    if( gettimeofday( &timval, NULL ) ) {
+        return SS$_BADPARAM;
+    }
+    lclptr = localtime(&timval.tv_sec);
+    timvec[6] = (timval.tv_usec + 500) / 10000;
+#endif
+
     timvec[0] = lclptr->tm_year + 1900;
     timvec[1] = lclptr->tm_mon + 1;
     timvec[2] = lclptr->tm_mday;
     timvec[3] = lclptr->tm_hour;
     timvec[4] = lclptr->tm_min;
     timvec[5] = lclptr->tm_sec;
-    timvec[6] = timval.millitm / 10;
     return lib_cvt_vectim(timvec,timadr);
 #endif
 #endif
@@ -379,7 +407,7 @@ unsigned vmstime_day(int *days,pVMSTIME timadr,int *day_time)
     /* If no time specified get current using gettim() */
 
     if (timadr == NULL) {
-        register unsigned sts;
+        register vmscond_t sts;
         sts = sys_gettim(wrktim);
         if (!(sts & STS_M_SUCCESS)) return sts;
 #ifdef VMSTIME_64BIT
@@ -455,7 +483,7 @@ unsigned vmstime_day(int *days,pVMSTIME timadr,int *day_time)
 
 unsigned lib_day(int *days,pVMSTIME timadr,int *day_time)
 {
-    register unsigned sts;
+    register vmscond_t sts;
     sts = vmstime_day(days,timadr,day_time);
     if (*day_time < 0) *day_time = -*day_time;
     return sts;
@@ -475,7 +503,7 @@ unsigned vmstime_numtim(unsigned short timvec[7],pVMSTIME timadr,
     /* Use vmstime_day to crack time into days/time... */
 
     {
-        register unsigned sts;
+        register vmscond_t sts;
         sts = vmstime_day(days,timadr,day_time);
         if (!(sts & STS_M_SUCCESS)) return sts;
         date = *days;
@@ -615,6 +643,8 @@ unsigned sys_bintim(struct dsc_descriptor *timbuf,pVMSTIME timadr)
     register char *chrptr = timbuf->dsc_a_pointer;
     register char *endptr = chrptr + timbuf->dsc_w_length;
 
+    memset( wrktim, 0, sizeof(wrktim) );
+
     /* Skip any spaces... */
 
     while (chrptr < endptr && *chrptr == ' ') chrptr++;
@@ -718,7 +748,7 @@ unsigned sys_bintim(struct dsc_descriptor *timbuf,pVMSTIME timadr)
     if (field_count < 7) {
         register int field;
         unsigned short curtim[7];
-        register unsigned sts = sys_numtim(curtim,NULL);
+        register vmscond_t sts = sys_numtim(curtim,NULL);
         if (!(sts & STS_M_SUCCESS)) return sts;
         for (field = 0; field < 7; field++) {
             if (wrktim[field] == NOVALUE) wrktim[field] = curtim[field];
@@ -742,7 +772,7 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
     /* First use sys_numtim to get the date/time fields... */
 
     {
-        register unsigned sts;
+        register vmscond_t sts;
         sts = sys_numtim(timvec,timadr);
         if (!(sts & STS_M_SUCCESS)) return sts;
     }
@@ -770,8 +800,8 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
             }
             /* Add month name with hyphen separators... */
 
-            if ((count = (endptr - chrptr)) > 5) count = 5;
-            memcpy(chrptr,vmstime_months + ((timvec[1] - 1) * 4),count);
+            if ((count = (int)(endptr - chrptr)) > 5) count = 5;
+            memcpy(chrptr,vmstime_months + (((size_t)timvec[1] - 1) * 4),count);
             chrptr += count;
 
             /* Get year... */
@@ -827,7 +857,7 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
 
     /* We've done it - return length... */
 
-    if (timlen != NULL) *timlen = (chrptr - (char *) timbuf->dsc_a_pointer);
+    if (timlen != NULL) *timlen = (int)((chrptr - (char *) timbuf->dsc_a_pointer));
 
     return SS__NORMAL;
 }
@@ -839,7 +869,7 @@ unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
 unsigned lib_day_of_week(pVMSTIME timadr,unsigned *weekday)
 {
     int days;
-    register unsigned sts;
+    register vmscond_t sts;
 
     /* Use lib_day to crack quadword... */
 
@@ -957,7 +987,7 @@ unsigned lib_cvt_from_internal_time(unsigned *operation,
     int days,day_time,day_of_year;
     if (*operation >= LIB$K_MAX_OPERATION) return LIB__INVOPER;
     {
-        register unsigned sts;
+        register vmscond_t sts;
         sts = vmstime_numtim(timvec,input_time,&days,&day_time,&day_of_year);
         if (!(sts & STS_M_SUCCESS)) return sts;
     }

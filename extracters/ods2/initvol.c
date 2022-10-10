@@ -14,7 +14,12 @@
  *       ODS2 is distributed freely for all members of the
  *       VMS community to use. However all derived works
  *       must maintain comments in their source to acknowledge
- *       the contibution of the original author.
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
  */
 
 #if !defined( DEBUG ) && defined( DEBUG_INITVOL )
@@ -27,6 +32,7 @@
 
 #include <ctype.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,102 +47,103 @@
 #include "phyvirt.h"
 #include "rms.h"
 #include "stsdef.h"
+#include "sysmsg.h"
 #include "vmstime.h"
-
-#define bootlbn 0
-
-#define STRUCLEV      (0x0201)
-#define FM2$M_FORMAT1 (1 << 14)
-#define FM2$M_FORMAT2 (2 << 14)
-#define FM2$M_FORMAT3 (3 << 14)
-#define FM2$C_FMT1_MAXLBN ((1 << 22) - 1)
-#define FM2$C_FMT1_MAXCNT (256)
-#define FM2$C_FMT2_MAXLBN (0xFFFFFFFF)
-#define FM2$C_FMT2_MAXCNT (1 << 14)
-#define FM2$C_FMT3_MAXCNT (1 << 30)
 
 #define CLUSTERS(lbns) ( ((lbns) + clustersize - 1) / clustersize )
 #define CLU2LBN(cluster) ( (cluster) * clustersize )
 
+#define RE
 #if DEBUG
 #define DPRINTF(x) printf x
 #else
 #define DPRINTF(x)
 #endif
 
-static unsigned add2dir( void *mfdp, unsigned *mfdlen, unsigned mfdblocks,
-                         struct HEAD *head );
+static vmscond_t add2dir( void *mfdp, uint32_t *mfdlen, uint32_t mfdblocks,
+                          struct HEAD *head );
 
-static unsigned add2map( struct NEWVOL *params, struct HEAD *fhd,
-                         unsigned start, unsigned n );
+static vmscond_t add2map( struct HEAD *fhd,
+                          uint32_t start, uint32_t n, int sparse );
 
-static unsigned writeHEAD( void *dev, struct HEAD *head, unsigned hdrbase ) ;
-static unsigned writeHDR( void *dev, struct HEAD *head, unsigned lbn );
-static unsigned writeHOM( void *dev,
-                          struct HOME *hom,
-                          unsigned homlbn, unsigned homvbn,
-                          unsigned ncopies );
-static unsigned alloclbns( unsigned char *bitmap,
-                           unsigned clustersize,
-                           unsigned n_clusters,
-                           unsigned startlbn, unsigned n,
-                           unsigned *found );
-static int tstlbnbit( struct NEWVOL *params, unsigned char *bitmap, unsigned lbn );
-static void modlbnbits( struct NEWVOL *params, unsigned char *bitmap, int set, unsigned start, unsigned n );
-static void modbits( unsigned char *bitmap, int set, unsigned start, unsigned n );
-static f11word checksum( void *data, size_t length );
+static vmscond_t writeHEAD( void *dev, struct HEAD *head, uint32_t hdrbase ) ;
+static vmscond_t writeHDR( void *dev, struct HEAD *head, uint32_t lbn );
+static vmscond_t writeHOM( void *dev,
+                           struct HOME *hom,
+                           uint32_t homlbn, uint32_t homvbn,
+                           uint32_t ncopies );
+static vmscond_t alloclbns( uint8_t *bitmap,
+                            uint32_t clustersize,
+                            uint32_t n_clusters,
+                            uint32_t startlbn, uint32_t n,
+                            uint32_t *found );
+static int tstlbnbit( struct NEWVOL *params, uint8_t *bitmap,
+                      uint32_t lbn );
+static void modlbnbits( struct NEWVOL *params, uint8_t *bitmap,
+                        int set, uint32_t start, uint32_t n );
+static void modbits( uint8_t *bitmap, int set, uint32_t start, uint32_t n );
+static f11word checksum( f11word *data, size_t length );
 #if 0
-static unsigned int delta_from_name( const char *diskname );
+static uint32_t delta_from_name( const char *diskname );
 #endif
-static unsigned int compute_delta( unsigned long sectorsize,
-                                   unsigned long sectors,
-                                   unsigned long tracks,
-                                   unsigned long cylinders );
+static uint32_t compute_delta( uint32_t sectorsize,
+                               uint32_t sectors,
+                               uint32_t tracks,
+                               uint32_t cylinders );
 
 static void *Malloc( void ***list, size_t size );
 static void *Calloc( void ***list, size_t nmemb, size_t n );
-#define MALLOC(name, size) do {                          \
-        if( (name = Malloc( size )) == NULL )            \
-            return SS$_INSFMEM;                          \
+#define MALLOC(name, size) do {                 \
+        if( (name = Malloc( size )) == NULL )   \
+            return SS$_INSFMEM;                 \
     } while( 0 )
-#define CALLOC(name, nmemb, n) do {                                     \
-        if( (name = Calloc( nmemb, n )) == NULL )                       \
-            return SS$_INSFMEM;                                         \
+#define CALLOC(name, nmemb, n) do {                     \
+        if( (name = Calloc( nmemb, n )) == NULL )       \
+            return SS$_INSFMEM;                         \
     } while( 0 )
 
-unsigned eofmark = 0;
+static uint32_t eofmark = 0;
 
-#define WRITE(dev, lbn, n, buf) do {                                    \
-        unsigned status;                                                \
-                                                                        \
-        if( !((status = virt_write( dev, (lbn), ((n)*512), (char *)(buf) )) & STS$M_SUCCESS) ) \
-            return status;                                              \
-        if( ( (lbn) + (n) ) > eofmark )                                 \
-            eofmark = (lbn) + (n)  -1;                                  \
-    } while( 0 );
+#define WRITE(dev, lbn, n, buf) do {                            \
+        vmscond_t status;                                       \
+                                                                \
+        if( $FAILS(status = virt_write( dev, (lbn), ((n)*512),  \
+                                        (char *)(buf) )) )      \
+            return status;                                      \
+        if( ( (lbn) + (n) ) > eofmark )                         \
+            eofmark = (lbn) + (n)  -1;                          \
+    } while( 0 )
 
-#define WRITEP(dev, pbn, n, buf) do {                                    \
-        unsigned status;                                                \
-                                                                        \
-        if( !((status = virt_writep( dev, (pbn), ((n)*dp->sectorsize), (char *)(buf) )) & STS$M_SUCCESS) ) \
-            return status;                                              \
-    } while( 0 );
+#define WRITEP(dev, pbn, n, buf) do {                           \
+        vmscond_t status;                                       \
+                                                                \
+        if( $FAILS(status = virt_writep( dev, (pbn),            \
+                                         ((n)*dp->sectorsize),  \
+                                         (char *)(buf) )) )     \
+            return status;                                      \
+    } while( 0 )
 
-#define READ(dev, lbn, n, buf) do {                                    \
-        unsigned status;                                                \
-                                                                        \
-        if( !((status = virt_read( dev, (lbn), ((n)*512), (char *)(buf) )) & STS$M_SUCCESS) ) \
-            return status;                                              \
-    } while( 0 );
+#define READ(dev, lbn, n, buf) do {                             \
+        vmscond_t status;                                       \
+                                                                \
+        if( $FAILS(status = virt_read( dev, (lbn), ((n)*512),   \
+                                       (char *)(buf) )) )       \
+            return status;                                      \
+    } while( 0 )
 
-#define READP(dev, pbn, n, buf) do {                                    \
-        unsigned status;                                                \
-                                                                        \
-        if( !((status = virt_readp( dev, (pbn), ((n)*dp->sectorsize), (char *)(buf) )) & STS$M_SUCCESS) ) \
-            return status;                                              \
-    } while( 0 );
+#define READP(dev, pbn, n, buf) do {                            \
+        vmscond_t status;                                       \
+                                                                \
+        if( $FAILS(status = virt_readp( dev, (pbn),             \
+                                        ((n)*dp->sectorsize),   \
+                                        (char *)(buf) )) )      \
+            return status;                                      \
+    } while( 0 )
 
-static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params );
+static vmscond_t doinit( void ***memlist, void *dev,
+                        struct NEWVOL *params );
+
+/************************************************************ BootBlock */
 
 static uint16_t bootcode[] = { /* EHPLI M'T ARPPDEI SNDI E ADP-P11 */
     000240,  012706,  001000,  010700,  062700,  000036, 0112001,  001403,
@@ -148,15 +155,16 @@ static uint16_t bootcode[] = { /* EHPLI M'T ARPPDEI SNDI E ADP-P11 */
 #define BOOT_LABEL_SIZE 15
 };
 
-unsigned initvol( void *dev, struct NEWVOL *params ) {
+/************************************************************ initvol() */
+
+vmscond_t initvol( void *dev, struct NEWVOL *params ) {
     void **memlist, **mp;
-    unsigned status;
+    vmscond_t status;
     memlist = (void **)calloc( 1, sizeof( void * ) );
 
     if( params->options & INIT_LOG ) {
-        printf( "%%INIT-I-STARTING, Initializing %s on %s as %s %s\n",
-                params->label, params->devnam, params->devtype,
-                (params->options & INIT_VIRTUAL)? "disk image": "physical device" );
+        printmsg( (params->options & INIT_VIRTUAL)? INIT_START_VIRT: INIT_START_PHY, 0,
+                  params->label, params->devnam, params->devtype );
     }
 
     status = doinit( &memlist, dev, params );
@@ -165,13 +173,14 @@ unsigned initvol( void *dev, struct NEWVOL *params ) {
         free( *mp );
     free( memlist );
 
-    if((status & STS$M_SUCCESS) && (params->options & INIT_LOG) ) {
-        printf( "%%INIT-I-VOLINIT, %s initialized successfully\n",
-                params->label );
+    if( $SUCCESSFUL(status) && (params->options & INIT_LOG) ) {
+        printmsg( INIT_VOLINIT, 0, params->label );
     }
 
     return status;
 }
+
+/************************************************************ Calloc() */
 
 static void *Calloc( void ***list, size_t nmemb, size_t n ) {
     void *mp;
@@ -183,6 +192,8 @@ static void *Calloc( void ***list, size_t nmemb, size_t n ) {
     memset( mp, 0, n );
     return mp;
 }
+
+/************************************************************ Malloc() */
 
 static void *Malloc( void ***memlist, size_t size ) {
     void **mp;
@@ -202,7 +213,10 @@ static void *Malloc( void ***memlist, size_t size ) {
 #define Malloc( size ) Malloc( memlist, size )
 #define Calloc( nmemb, size ) Calloc( memlist, nmemb, size )
 
-static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
+/************************************************************ doinit() */
+
+static vmscond_t doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
+    vmscond_t status;
     struct disktype *dp = NULL;
     struct HOME *hom = NULL;
     struct SCB *scb = NULL;
@@ -219,58 +233,57 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     struct IDENT  *ident = NULL;
     struct BAD144 *mbad = NULL;
     struct SWBAD  *sbad = NULL;
-    unsigned status, tmp, volstart, clustersize;
-    unsigned pbs, pb_per_lb, lb_per_pb, npb, nlb, n_clusters;
-    unsigned homlbn, homvbn, hm2lbn, hm2cluster, fhlbn;
-    unsigned mfdlbn, bmplbn, idxlbn, aidxlbn;
+    uint32_t tmp, volstart, clustersize;
+    uint32_t pbs, pb_per_lb, lb_per_pb, npb, nlb, n_clusters;
+    uint32_t homlbn, homvbn, hm2lbn, hm2cluster, fhlbn;
+    uint32_t mfdlbn, bmplbn, idxlbn, aidxlbn;
     const char *p = NULL;
-    unsigned char *bitmap = NULL, *indexmap = NULL;
-    unsigned bitmap_size, indexmap_size;
+    uint8_t *bitmap = NULL, *indexmap = NULL;
+    uint32_t bitmap_size, indexmap_size;
     uint16_t *bootblock = NULL;
     time_t serial;
     char tbuf[12+1];
     char *mfdp = NULL;
-    unsigned mfdlen = 0, mfdblocks = 3, mfdalloc;
-    struct UIC owneruic = { 1, 1 };
+    uint32_t mfdlen = 0, mfdblocks = 3, mfdalloc;
 
     if( params->username && (!params->username[0] ||
-                             (tmp = strlen( params->username )) > 12 ||
-                             strspn( params->username, VOL_ALPHABET ) != tmp) )
-        return SS$_BADPARAM;
-
-    if( params->useruic &&
-#ifdef _WIN32
-        sscanf_s
-#else
-        sscanf
-#endif
-        ( params->useruic, " [%ho,%ho]", &owneruic.uic$w_grp, &owneruic.uic$w_mem ) != 2 )
-        return SS$_BADPARAM;
+                             (tmp = (uint32_t)strlen( params->username )) > 12 ||
+                             strspn( params->username, VOL_ALPHABET ) != tmp) ) {
+        return printmsg( INIT_BADUSERNAME, 0 );
+    }
 
     for( dp = disktype; dp->name != NULL; dp++ ) {
         if( !strcmp( params->devtype, dp->name ) )
             break;
 
     }
-    if( dp->name == NULL )
-        return SS$_BADPARAM;
+    if( dp->name == NULL ) {
+        return printmsg( INIT_BADMEDIUM, 0, params->devtype );
+    }
 
     pbs = dp->sectorsize;
     pb_per_lb = (pbs < 512)? 512/pbs: 1;
     lb_per_pb = (pbs >512)? pbs/512: 1;
 
     npb = (dp->sectors * dp->tracks * dp->cylinders ) - dp->reserved;
-    nlb = (unsigned) ((((unsigned long long)npb) * lb_per_pb)
-                      / pb_per_lb);
-
+#ifdef UINT64_C
+    nlb = (uint32_t) ((((uint64_t)npb) * lb_per_pb)
+                            / pb_per_lb);
+#else
+    nlb = (uint32_t) ((((double)npb) * lb_per_pb)
+                            / pb_per_lb);
+#endif
     if( params->clustersize == 0 ) {
         if( nlb < 50000 )
             params->clustersize = 1;
         else {
-            unsigned long long tmp;
-            tmp = (nlb + (255 * 4096) - 1) / (255 * 4096);
-
-            params->clustersize = (unsigned) (tmp > 3? tmp: 3);
+            uint32_t tmp;
+#ifdef UINT64_C
+            tmp = (uint32_t)((((uint64_t)nlb) + (UINT64_C(255) * 4096) - 1) / (UINT64_C(255) * 4096));
+#else
+            tmp = (uint32_t)((((double)nlb) + (255 * 4096) - 1) / (255 * 4096));
+#endif
+            params->clustersize = (tmp > 3? tmp: 3);
         }
     }
     tmp = nlb / 50;
@@ -282,8 +295,7 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     clustersize = params->clustersize;
 
     if( npb < 100 || nlb < 100 || clustersize < 1 ) {
-        printf( "%%INIT-E-TOOSMALL, Device is too small to hold a useful Files-11 volume\n" );
-        return SS$_DEVICEFULL;
+        return printmsg( INIT_TOOSMALL, 0 );
     }
 
     n_clusters = CLUSTERS( nlb );
@@ -320,6 +332,14 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     if( mfdalloc < mfdblocks )
         mfdalloc = mfdblocks;
 
+    if( params->windows < 7 )
+        params->windows = 7;
+    else if( params->windows > 80 )
+        params->windows = 80;
+
+    if( params->extension > 65535 )
+        params->extension = 65535;
+
     (void) time( &serial );
 
     /* Create the bootblock.  (This is PDP-11 code. )
@@ -330,7 +350,7 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
 
     for( p = params->label, tmp = 0; *p && tmp < BOOT_LABEL_SIZE; tmp++, p++ )
         ((char *)bootblock)[BOOT_LABEL_OFS+tmp] = toupper(*p);
-#ifdef ODS2_BIG_ENDIAN
+#if ODS2_BIG_ENDIAN
     for( tmp = 0; tmp < 256; tmp++ )
         bootblock[tmp] = F11WORD(bootblock[tmp]);
 #endif
@@ -352,15 +372,37 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
 
     hom->hm2$w_struclev = F11WORD( STRUCLEV );
     hom->hm2$w_cluster = F11WORD( clustersize );
-    hom->hm2$w_resfiles = F11WORD( 9 );
+    hom->hm2$w_resfiles = F11WORD( FID$C_MAXRES );
     hom->hm2$l_maxfiles = F11LONG( params->maxfiles );
-    hom->hm2$w_volowner.uic$w_grp = F11WORD( owneruic.uic$w_grp );
-    hom->hm2$w_volowner.uic$w_mem = F11WORD( owneruic.uic$w_mem );
-    hom->hm2$w_protect = F11WORD( 0 );
-    hom->hm2$w_fileprot = F11WORD( 0xFA00 );
-    hom->hm2$b_window = 7;
+
+    if( params->options & INIT_OWNUIC ) {
+        hom->hm2$w_volowner.uic$w_grp = F11WORD((uint16_t)
+                                                (params->useruic >> 16));
+        hom->hm2$w_volowner.uic$w_mem = F11WORD((uint16_t)params->useruic);
+    } else {
+        hom->hm2$w_volowner.uic$w_grp = F11WORD(1u);
+        hom->hm2$w_volowner.uic$w_mem = F11WORD(1u);
+    }
+
+    /* Protection values: Set default, then replace any field specifed per mask */
+    hom->hm2$w_protect = (f11word)~ /* N.B. Permissions are inverted here: noxx => xx allowed */
+        SETPROT(prot$m_none,prot$m_none,prot$m_none,prot$m_none); /* S:RWED,O:RWED,G:RWED,W:RWED */
+    hom->hm2$w_protect = ((hom->hm2$w_protect & ~(params->volprot >> 16)) |
+                          (uint16_t)(params->volprot));
+    hom->hm2$w_protect = F11WORD(hom->hm2$w_protect);
+
+    hom->hm2$w_fileprot = (f11word)~ /* S:RWED,O:RWED,G:RE,W: */
+        SETPROT(prot$m_noread|prot$m_nowrite|prot$m_noexe|prot$m_nodel,
+                prot$m_noread|prot$m_nowrite|prot$m_noexe|prot$m_nodel,
+                prot$m_noread|prot$m_noexe,
+                prot$m_norestrict);
+    hom->hm2$w_fileprot = ((hom->hm2$w_fileprot & ~(params->fileprot >> 16)) |
+                          (uint16_t)(params->fileprot));
+    hom->hm2$w_fileprot = F11WORD(hom->hm2$w_fileprot);
+
+    hom->hm2$b_window = (uint8_t)params->windows;
     hom->hm2$b_lru_lim = 16;
-    hom->hm2$w_extend = F11WORD( 5 );
+    hom->hm2$w_extend = (f11word)F11WORD( params->extension );
 
     CALLOC( scb, 1, 512 );
     scb->scb$w_cluster = F11WORD(clustersize);
@@ -371,24 +413,29 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     scb->scb$l_tracks = F11LONG(dp->tracks);
     scb->scb$l_cylinders = F11LONG(dp->cylinders);
     scb->scb$l_status = F11LONG( 0 );
-    scb->scb$l_status = F11LONG( 0 );
+    scb->scb$l_status2 = F11LONG( 0 );
     scb->scb$w_writecnt = 0;
 
     /* If necessary, scb$t_volockname will be initialized by mount under
      * an OS.
      */
 
-    if( !((status = sys$gettim( scb->scb$q_mounttime )) & STS$M_SUCCESS) ) {
+    if( $FAILS(status = sys_gettim( scb->scb$q_mounttime )) ) {
         return status;
     }
-    scb->scb$w_checksum = F11WORD(checksum((f11word *)&scb, offsetof( struct SCB, scb$w_checksum ) / 2  ) );
+    scb->scb$w_checksum = F11WORD(checksum((f11word *)scb,
+                                           offsetof( struct SCB,
+                                                     scb$w_checksum ) / 2  ) );
 
     bitmap_size = (n_clusters + 4095) / 4096;
 
     indexmap_size = (params->maxfiles + 4095) / 4096;
     hom->hm2$l_maxfiles = F11LONG( params->maxfiles );
-    memcpy( hom->hm2$q_credate, scb->scb$q_mounttime, sizeof(hom->hm2$q_credate) );
-    memcpy( hom->hm2$q_revdate, scb->scb$q_mounttime, sizeof(hom->hm2$q_revdate) );
+
+    memcpy( hom->hm2$q_credate, scb->scb$q_mounttime,
+            sizeof(hom->hm2$q_credate) );
+    memcpy( hom->hm2$q_revdate, scb->scb$q_mounttime,
+            sizeof(hom->hm2$q_revdate) );
 
     DPRINTF(("Total LBNs: %u cluster size: %u total clusters: %u, "
              "bitmap size: %u blocks maxfiles %u index map size %u blocks\n",
@@ -411,7 +458,7 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     (void) snprintf( tbuf, sizeof( tbuf ), "%-12.12s", "DECFILE11B" );
     memcpy( hom->hm2$t_format, tbuf, sizeof( hom->hm2$t_format ) );
 
-    CALLOC( indexmap, 1, indexmap_size * 512 );
+    CALLOC( indexmap, 1, (size_t)indexmap_size * 512 );
 
     hom->hm2$w_ibmapsize = F11WORD( (f11word)indexmap_size );
 
@@ -419,7 +466,7 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
      * Index-specific settings must come after copy.
      */
 
-    idxhead->fh2$b_idoffset = offsetof( struct HEAD, fh2$r_restofit ) / 2;
+    idxhead->fh2$b_idoffset = FH2$C_LENGTH / 2;
     idxhead->fh2$b_acoffset = offsetof( struct HEAD, fh2$w_checksum ) / 2;
     idxhead->fh2$b_rsoffset = offsetof( struct HEAD, fh2$w_checksum ) / 2;
 
@@ -433,8 +480,8 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     idxhead->fh2$w_ext_fid.fid$b_rvn = 0;
     idxhead->fh2$w_ext_fid.fid$b_nmx = 0;
 
-    idxhead->fh2$w_recattr.fat$l_hiblk = F11LONG( 0 );
-    idxhead->fh2$w_recattr.fat$l_efblk = F11LONG( 0 );
+    idxhead->fh2$w_recattr.fat$l_hiblk = F11SWAP( 0 );
+    idxhead->fh2$w_recattr.fat$l_efblk = F11SWAP( 1 );
     idxhead->fh2$w_recattr.fat$w_ffbyte = F11WORD( 0 );
     idxhead->fh2$w_recattr.fat$b_bktsize = 0;
     idxhead->fh2$w_recattr.fat$b_vfcsize = 0;
@@ -446,70 +493,93 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     idxhead->fh2$b_acc_mode = 0;
     idxhead->fh2$l_fileowner.uic$w_mem = F11WORD( 1 );
     idxhead->fh2$l_fileowner.uic$w_grp = F11WORD( 1 );
-    idxhead->fh2$w_fileprot = F11WORD( 0xFA00 );
-    idxhead->fh2$w_backlink.fid$w_num = F11WORD( 4 );
-    idxhead->fh2$w_backlink.fid$w_seq = F11WORD( 4 );
+    idxhead->fh2$w_fileprot = (f11word)~
+        SETPROT(prot$m_noread|prot$m_nowrite|prot$m_noexe|prot$m_nodel,
+                prot$m_noread|prot$m_nowrite|prot$m_noexe|prot$m_nodel,
+                prot$m_noread|prot$m_noexe,
+                prot$m_norestrict);
+    idxhead->fh2$w_fileprot = F11WORD( idxhead->fh2$w_fileprot );
+
+    idxhead->fh2$w_backlink.fid$w_num = F11WORD( FID$C_MFD );
+    idxhead->fh2$w_backlink.fid$w_seq = F11WORD( FID$C_MFD );
     idxhead->fh2$w_backlink.fid$b_rvn = 0;
     idxhead->fh2$w_backlink.fid$b_nmx = 0;
     idxhead->fh2$l_highwater = F11LONG( 1 );
 
-#define IDENTp(head) ((struct IDENT *) (((f11word *)head) + F11WORD(head->fh2$b_idoffset)))
+#define IDENTp(head) ((struct IDENT *) (((f11word *)head) +     \
+                                        head->fh2$b_idoffset))
     ident = IDENTp(idxhead);
 
     ident->fi2$w_revision = F11WORD( 1 );
-    memcpy( ident->fi2$q_credate, scb->scb$q_mounttime, sizeof(ident->fi2$q_credate) );
-    memcpy( ident->fi2$q_revdate, scb->scb$q_mounttime, sizeof(ident->fi2$q_credate) );
-    idxhead->fh2$b_mpoffset =F11WORD(  F11WORD(idxhead->fh2$b_idoffset) +
-                                      (offsetof( struct IDENT, fi2$t_filenamext ) / 2) );
+    memcpy( ident->fi2$q_credate, scb->scb$q_mounttime,
+            sizeof(ident->fi2$q_credate) );
+    memcpy( ident->fi2$q_revdate, scb->scb$q_mounttime,
+            sizeof(ident->fi2$q_credate) );
+    /* These files can never be renamed or deleted.  But maximum map area
+     * is helpful and all names are short. So omit filenamext.
+     */
+    idxhead->fh2$b_mpoffset = idxhead->fh2$b_idoffset +
+                                      (offsetof( struct IDENT,
+                                                 fi2$t_filenamext ) / 2);
 
-    memcpy( badhead, idxhead, sizeof( *badhead ) );
-    memcpy( corhead, idxhead, sizeof( *corhead ) );
-    memcpy( volhead, idxhead, sizeof( *volhead ) );
+    memcpy( badhead,  idxhead,  sizeof( *badhead ) );
+    memcpy( corhead,  idxhead,  sizeof( *corhead ) );
+    memcpy( volhead,  idxhead,  sizeof( *volhead ) );
     memcpy( conthead, idxhead, sizeof( *conthead ) );
-    memcpy( bakhead, idxhead, sizeof( *bakhead ) );
-    memcpy( loghead, idxhead, sizeof( *loghead ) );
-    memcpy( bmphead, idxhead, sizeof( *bmphead ) );
-    memcpy( mfdhead, idxhead, sizeof( *mfdhead ) );
+    memcpy( bakhead,  idxhead,  sizeof( *bakhead ) );
+    memcpy( loghead,  idxhead,  sizeof( *loghead ) );
+    memcpy( bmphead,  idxhead,  sizeof( *bmphead ) );
+    memcpy( mfdhead,  idxhead,  sizeof( *mfdhead ) );
 
-    bmphead->fh2$l_filechar = F11LONG( FH2$M_CONTIG );
-    mfdhead->fh2$l_filechar = F11LONG( FH2$M_DIRECTORY | FH2$M_CONTIG );
-    mfdhead->fh2$w_fileprot &= ~F11WORD( 0x4000 ); /* W:E allowed for MFD */
+    mfdhead->fh2$l_filechar = F11LONG( FH2$M_DIRECTORY );
+    mfdhead->fh2$w_fileprot &= ~F11WORD( /* W:E allowed for MFD */
+                                        SETPROT(0,
+                                                0,
+                                                0,
+                                                prot$m_noexe) );
 
     mfdblocks = CLU2LBN( CLUSTERS( mfdblocks ) );
-    CALLOC( mfdp, 1, mfdblocks * 512 );
+    CALLOC( mfdp, 1, (size_t)mfdblocks * 512 );
 
-#define SETFILE(head, num, seq, name, rtype, rattr, rsize )  do {       \
-        unsigned status;                                                \
-        struct IDENT *id;                                               \
-        char fname[sizeof( id->fi2$t_filename )+1];                     \
-        id = IDENTp(head);                                              \
-        (void) snprintf( fname, sizeof( fname ), "%-20.20s", #name );          \
-        memcpy( id->fi2$t_filename, fname, sizeof( id->fi2$t_filename ) ); \
-        head->fh2$w_fid.fid$w_num = F11WORD( num );                     \
-        head->fh2$w_fid.fid$w_seq = F11WORD( seq );                     \
-        head->fh2$w_recattr.fat$b_rtype = (FAB$C_SEQ << 4) | (rtype);   \
-        head->fh2$w_recattr.fat$b_rattrib = rattr;                      \
-        head->fh2$w_recattr.fat$w_rsize = F11WORD( rsize );             \
-        head->fh2$w_recattr.fat$w_maxrec = F11WORD( rsize );            \
-        if( !((status = add2dir( mfdp, &mfdlen, mfdblocks, head )) & STS$M_SUCCESS) ) \
-            return status;                                              \
+#define SETFILE(head, num, name, rtype, rattr, rsize )  do {    \
+        vmscond_t status;                                       \
+        struct IDENT *id;                                       \
+        char fname[sizeof( id->fi2$t_filename )+1];             \
+                                                                \
+        id = IDENTp(head);                                      \
+        (void) snprintf( fname, sizeof( fname ),                \
+                         "%-20.20s", #name );                   \
+        memcpy( id->fi2$t_filename, fname,                      \
+                sizeof( id->fi2$t_filename ) );                 \
+        head->fh2$w_fid.fid$w_num = F11WORD( FID$C_ ## num );   \
+        head->fh2$w_fid.fid$w_seq = F11WORD( FID$C_ ## num );   \
+        head->fh2$w_recattr.fat$b_rtype = ((FAB$C_SEQ << 4) |   \
+                                           (FAB$C_ ## rtype));  \
+        head->fh2$w_recattr.fat$b_rattrib = rattr;              \
+        head->fh2$w_recattr.fat$w_rsize = F11WORD( rsize );     \
+        head->fh2$w_recattr.fat$w_maxrec = F11WORD( rsize );    \
+        if( $FAILS(status = add2dir( mfdp, &mfdlen,             \
+                                     mfdblocks, head )) )       \
+            return status;                                      \
+        modbits( indexmap, 1, FID$C_ ## num, 1 );               \
     } while( 0 )
 
-    /* Must be in alphabetical order for MFD */
-    SETFILE( mfdhead,  4,4, 000000.DIR;1,  FAB$C_VAR, FAB$M_BLK, 512 );
-    SETFILE( bakhead,  8,8, BACKUP.SYS;1,  FAB$C_FIX, 0,          64 );
-    SETFILE( badhead,  3,3, BADBLK.SYS;1,  FAB$C_FIX, 0,         512 );
-    SETFILE( loghead,  9,9, BADLOG.SYS;1,  FAB$C_FIX, 0,          16 );
-    SETFILE( bmphead,  2,2, BITMAP.SYS;1,  FAB$C_FIX, 0,         512 );
-    SETFILE( conthead, 7,7, CONTIN.SYS;1,  FAB$C_FIX, 0,         512 );
-    SETFILE( corhead,  5,5, CORIMG.SYS;1,  FAB$C_FIX, 0,         512 );
-    SETFILE( idxhead,  1,1, INDEXF.SYS;1,  FAB$C_FIX, 0,         512 );
-    SETFILE( volhead,  6,6, VOLSET.SYS;1,  FAB$C_FIX, 0,          64 );
+    /* Must be in alphabetical order by filename for MFD */
+    SETFILE( mfdhead,  MFD,    000000.DIR;1,  VAR, FAB$M_BLK, 512 );
+    SETFILE( bakhead,  BACKUP, BACKUP.SYS;1,  FIX, 0,          64 );
+    SETFILE( badhead,  BADBLK, BADBLK.SYS;1,  FIX, 0,         512 );
+    SETFILE( loghead,  BADLOG, BADLOG.SYS;1,  FIX, 0,          16 );
+    SETFILE( bmphead,  BITMAP, BITMAP.SYS;1,  FIX, 0,         512 );
+    SETFILE( conthead, CONTIN, CONTIN.SYS;1,  FIX, 0,         512 );
+    SETFILE( corhead,  CORIMG, CORIMG.SYS;1,  FIX, 0,         512 );
+    SETFILE( idxhead,  INDEXF, INDEXF.SYS;1,  FIX, 0,         512 );
+    SETFILE( volhead,  VOLSET, VOLSET.SYS;1,  FIX, 0,          64 );
+#if 0 /* Reserved for free space, but not defined */
+    SETFILE( NULL,     FREFIL, FREFIL.SYS;1,  UDF, 0,           0 );
+#endif
 
-    modbits( indexmap, 1, 0, 9 );
-
-    MALLOC( bitmap, 512 * bitmap_size );
-    memset( bitmap, 0xFF, 512 * bitmap_size );
+    MALLOC( bitmap, 512 * (size_t)bitmap_size );
+    memset( bitmap, 0xFF, 512 * (size_t)bitmap_size );
 
     DPRINTF(("Non-existent bitmap bits %u / %u LBNs %u - %u\n",
              (bitmap_size *4096) - n_clusters, bitmap_size *4096,
@@ -517,34 +587,39 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     modbits( bitmap, 0, n_clusters, (bitmap_size * 4096) - n_clusters );
 
 #define ADDMAPENTRY(head, start, n ) do {                               \
-        unsigned status;                                                \
+        vmscond_t status;                                               \
                                                                         \
-        if( !((status = add2map( params, (head), start, n)) & STS$M_SUCCESS ) ) \
+        if( $FAILS(status = add2map( (head),                            \
+                                     CLU2LBN( (start) / clustersize ),  \
+                                     CLU2LBN( CLUSTERS( (n) ) ), 0)) )  \
             return status;                                              \
     } while( 0 )
 
     if( dp->flags & DISK_BAD144 ) {
-        unsigned start, count;
+        uint32_t start, count;
 
-        tmp = dp->sectors * dp->sectorsize;
+        tmp = 10 * dp->sectorsize;
 
-        MALLOC( mbad, tmp * 10 );
+        MALLOC( mbad, tmp );
         if( params->options &  INIT_VIRTUAL ) {
-            memset( mbad->bbd$l_badblock, ~0, tmp );
-            mbad->bbd$l_serial = (uint32_t) serial;
+            memset( mbad->bbd$l_badblock, ~0,
+                    dp->sectorsize - offsetof( struct BAD144, bbd$l_badblock) );
+            mbad->bbd$l_serial = F11LONG( ((uint32_t) serial) & ~0x80000000 );
             mbad->bbd$w_reserved = 0;
             mbad->bbd$w_flags = 0;
-            for( count = 0; count < 10; count++ )
-                memcpy( ((char *)mbad)+(count * dp->sectorsize),
+            for( count = 1; count < 10; count++ )
+                memcpy( ((char *)mbad)+(count * (size_t)dp->sectorsize),
                         mbad, dp->sectorsize );
+        } else {
+            ;/* Should read & mark bad */
         }
 
         /* Might have to deal with finding clusters more accurately
          * for disks with interleave/skew.
          */
         start = npb - 10;
-        start = (unsigned) ( ( ((off_t)tmp) * pb_per_lb ) / lb_per_pb );
-        count = (unsigned) ( ( ((off_t)10) * lb_per_pb ) / pb_per_lb );
+        start = (uint32_t) ( ( ((off_t)tmp) * pb_per_lb ) / lb_per_pb );
+        count = (uint32_t) ( ( ((off_t)10) * lb_per_pb ) / pb_per_lb );
 
         modlbnbits( params, bitmap, 0, start, count );
         ADDMAPENTRY( badhead, start, count );
@@ -559,8 +634,11 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
             sbad->bbm$b_countsize = 1;
             sbad->bbm$b_lbnsize = 3;
             sbad->bbm$b_inuse = 0;
-            sbad->bbm$b_avail = (uint8_t)( ( offsetof( struct SWBAD, bbm$w_checksum ) -
-                                             offsetof( struct SWBAD, bbm$r_map ) ) / sizeof( uint8_t ) );
+            sbad->bbm$b_avail = (uint8_t)( (offsetof( struct SWBAD,
+                                                       bbm$w_checksum ) -
+                                             offsetof( struct SWBAD,
+                                                       bbm$r_map )) /
+                                           sizeof( uint8_t ) );
         }
         modlbnbits( params, bitmap, 0, nlb - 1, 1 );
         ADDMAPENTRY( badhead, nlb-1, 1 );
@@ -578,71 +656,74 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
      * HOM1 and boot merge if clustersize >1 & primary HOM is good.
      */
 
+    modlbnbits( params, bitmap, 0, params->bootlbn, 1 );
+
     homlbn = 1;
-    tmp = 0;
+    tmp = delta_from_index( dp - disktype );
 
-    if( !tstlbnbit( params, bitmap, homlbn ) ) {
-        tmp = delta_from_index( dp - disktype );
-        do {
-            int freelbn;
+    do {
+        if( tstlbnbit( params, bitmap, homlbn ) ||
+            ( (homlbn != params->bootlbn ) &&
+              (homlbn / clustersize == params->bootlbn / clustersize)) )
+            break;
 
-            freelbn = tstlbnbit( params, bitmap, homlbn );
-            modlbnbits( params, bitmap, 0, homlbn, 1 );
-            modlbnbits( params, bitmap, 0, bootlbn, 1 );
+        /* Block is allocated, so it must already be in bitmap/badblk */
 
-            if( freelbn )
-                break;
-
-            /* add to bad blocks */
-
-            homlbn += tmp;
-        } while( homlbn < nlb );
-    }
+        homlbn += tmp;
+    } while( homlbn < nlb );
 
     if( homlbn >= nlb ) {
-        printf( "No good block found for HOM block\n" );
-        return SS$_DEVICEFULL;
+        return printmsg( INIT_NOHOMLOC, 0 );
     }
 
-    modlbnbits( params, bitmap, 0, bootlbn, 1 );
+    DPRINTF(("Boot block = %u, primary HOM block = %u\n", params->bootlbn, homlbn));
 
+    if((homlbn == params->bootlbn + 1) && (params->bootlbn % clustersize == 0) &&
+       params->bootlbn / clustersize == homlbn / clustersize ) {
+        if( clustersize > 1 ) {
+            modlbnbits( params, bitmap, 0, params->bootlbn, clustersize * 2 );
+            ADDMAPENTRY( idxhead, params->bootlbn, clustersize * 2 );
+        } else {
+            modlbnbits( params, bitmap, 0, params->bootlbn, clustersize  );
+            ADDMAPENTRY( idxhead, params->bootlbn, clustersize );
+        }
+    } else { /* This odd case is the exception to the rule that VBNS and
+              * map pointers are always cluster aligned.
+              */
+        uint32_t offset;
 
-    DPRINTF(("Boot block = %u, primary HOM block = %u\n", bootlbn, homlbn));
+        offset = homlbn % clustersize;
+        if( offset != 0 ) {
+            (void) add2map( badhead, homlbn, offset, 0 );
+        }
 
-    if( bootlbn == 0 && homlbn < clustersize * 2 ) {
-        modlbnbits( params, bitmap, 0, bootlbn, clustersize * 2);
-        ADDMAPENTRY( idxhead, bootlbn,  clustersize * 2 );
-    } else {
-        modlbnbits( params, bitmap, 0, bootlbn, clustersize );
-        modlbnbits( params, bitmap, 0, homlbn, clustersize *2 );
-
-        ADDMAPENTRY( idxhead, bootlbn, clustersize );
-        ADDMAPENTRY( idxhead, homlbn,  clustersize * 2 );
+        (void) add2map( idxhead, params->bootlbn, 1, 0 );
+        if( clustersize > 1 ) {
+            modlbnbits( params, bitmap, 0, homlbn, clustersize * 2 );
+            (void) add2map( idxhead, homlbn, clustersize * 2 - offset, 0 );
+        } else {
+            modlbnbits( params, bitmap, 0, homlbn, clustersize );
+            (void) add2map( idxhead, homlbn, clustersize - offset, 0 );
+        }
     }
 
     /* Alternate HOM block
      */
 
-    if( tmp == 0 )
-        tmp = delta_from_index( dp - disktype );
-
     hm2lbn = homlbn;
     do {
-        int freelbn;
-
         hm2lbn += tmp;
-        freelbn = tstlbnbit( params, bitmap, hm2lbn );
 
-        modlbnbits( params, bitmap, 0, hm2lbn, 1 );
-        if( freelbn && hm2lbn >= params->clustersize * 2 )
+        if( tstlbnbit( params, bitmap, hm2lbn ) )
             break;
-        /* Add to bad blocks */
+        /* Bad or allocated block */
     } while( hm2lbn < nlb );
 
     if( hm2lbn >= nlb ) {
-        printf( "No good block found for HOM block\n" );
-        return SS$_DEVICEFULL;
+        return printmsg( INIT_NOHOM2LOC, 0 );
     }
+
+    modlbnbits( params, bitmap, 0, hm2lbn, 1 );
 
     hm2cluster = hm2lbn / clustersize;
 
@@ -653,12 +734,12 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     hom->hm2$l_alhomelbn = F11LONG( hm2lbn );
 
     if( params->options & INIT_LOG ) {
-        printf( "%%INIT-I-SIZING, Volume size %u block, cluster size %us, maximum files %u\n",
-                nlb, clustersize, params->maxfiles );
-        printf(  "     -I-SIZING, Preallocated %u file headers, %u directory entries\n",
-                 params->headers, params->directories );
-        printf( "%%INIT-I-PLACED, Boot block at LBN %u, HOM blocks at LBNs %u and %u\n",
-                bootlbn, homlbn, hm2lbn );
+        printmsg( INIT_SIZING1, 0,
+                  nlb, clustersize, params->maxfiles );
+        printmsg( INIT_SIZING2, MSG_CONTINUE, INIT_SIZING1,
+                  params->headers, params->directories );
+        printmsg( INIT_PLACED1, MSG_CONTINUE, INIT_SIZING1,
+                  params->bootlbn, homlbn, hm2lbn );
     }
 
     /* Variable placement. */
@@ -669,9 +750,9 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
         volstart = params->indexlbn;
 
 #define ALLOCLBNS( start, number, result ) do {                         \
-        unsigned status;                                                \
-        if( !((status = alloclbns( bitmap, clustersize, n_clusters,     \
-                                   (start), (number), (result))) & STS$M_SUCCESS) ) \
+        vmscond_t status;                                               \
+        if( $FAILS(status = alloclbns( bitmap, clustersize, n_clusters, \
+                                       (start), (number), (result))) )  \
             return status;                                              \
     } while( 0 )
 
@@ -680,14 +761,14 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     /* MFD */
     ALLOCLBNS( volstart, mfdalloc, &mfdlbn );
 
-    /* Storage bitmap */
+    /* SCB and storage bitmap */
     ALLOCLBNS( volstart, 1 + bitmap_size, &bmplbn );
 
     /* Index bitmap and initial file headers. */
     ALLOCLBNS( volstart, indexmap_size + params->headers, &idxlbn );
 
-    /* Backup index header -- Could be up around +nlb /4... */
-    ALLOCLBNS( volstart, 1, &aidxlbn );
+    /* Backup index header -- put it near the 2nd HOM block */
+    ALLOCLBNS( hm2lbn, 1, &aidxlbn );
 
     hom->hm2$l_altidxlbn = F11LONG( aidxlbn );
     hom->hm2$w_altidxvbn = F11WORD( (clustersize * 3) +1 );
@@ -735,13 +816,14 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     ADDMAPENTRY( bmphead, bmplbn, 1 + bitmap_size );
 
     if( params->options & INIT_LOG ) {
-        printf( "%%INIT-I-PLACED, MFD at LBN %u, index file at LBNs %u thru %u\n",
-                mfdlbn, idxlbn, idxlbn + indexmap_size + params->headers -1 );
+        printmsg( INIT_PLACED2, MSG_CONTINUE, INIT_SIZING1,
+                  mfdlbn, idxlbn,
+                  idxlbn + indexmap_size + params->headers -1 );
     }
 
     /* Let's try for a spiral write... */
 
-    WRITE( dev, 0, 1, bootblock );
+    WRITE( dev, params->bootlbn, 1, bootblock );
 
     /* Write HOM blocks */
 
@@ -753,15 +835,18 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     homvbn = (clustersize * 2) + 1;
     hom->hm2$w_alhomevbn = F11WORD( homvbn );
 
-    tmp = (clustersize > 2)?                         /* Copies needed */
-                (clustersize * 2) - 1: 1;
+    if( clustersize > 1 )                            /* Copies needed */
+        tmp = ( clustersize * 2 ) - ( homlbn % clustersize );
+    else
+        tmp = 1;
 
-    if( !((status = writeHOM( dev, hom, homlbn, 2, tmp )) & STS$M_SUCCESS) )
+    if( $FAILS(status = writeHOM( dev, hom, homlbn, 2, tmp )) )
         return status;
 
     DPRINTF(("Secondary HOM block lbn %u vbn %u\n", hm2lbn, homvbn));
 
-    if( !((status = writeHOM( dev, hom, hm2cluster * clustersize, homvbn, clustersize )) & STS$M_SUCCESS) )
+    if( $FAILS(status = writeHOM( dev, hom, hm2cluster * clustersize,
+                                  homvbn, clustersize )) )
         return status;
 
     /* MFD */
@@ -779,16 +864,17 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     DPRINTF(("Index file bitmap\n"));
     WRITE( dev, idxlbn, indexmap_size, indexmap );
 
-#define WRITEHEAD(head,name) do {                               \
-        unsigned status;                                        \
-        head->fh2$w_checksum = checksum( (f11word *)(head),    \
-                                         offsetof( struct HEAD, fh2$w_checksum ) / 2 ); \
-        DPRINTF(("Writing " #name " header\n"));                \
-        if( !((status = writeHEAD( dev, (head), fhlbn )) & STS$M_SUCCESS) ) \
+#define WRITEHEAD(head, name) do {                                      \
+        vmscond_t status;                                               \
+        head->fh2$w_checksum = checksum( (f11word *)(head),             \
+                                         offsetof( struct HEAD,         \
+                                                   fh2$w_checksum ) / 2 ); \
+        DPRINTF(("Writing " #name " header\n"));                        \
+        if( $FAILS(status = writeHEAD( dev, (head), fhlbn )) )          \
             return status;                                              \
     } while( 0 )
 
-    WRITEHEAD( idxhead, INDEXF.SYS;1 );
+    WRITEHEAD( idxhead,  INDEXF.SYS;1 );
     WRITEHEAD( bmphead,  BITMAP.SYS;1 );
     WRITEHEAD( badhead,  BADBLK.SYS;1 );
     WRITEHEAD( mfdhead,  000000.DIR;1 );
@@ -798,21 +884,23 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
     WRITEHEAD( bakhead,  BACKUP.SYS;1 );
     WRITEHEAD( loghead,  BADLOG.SYS;1 );
 
-    if( !((status = writeHDR( dev, idxhead, aidxlbn )) & STS$M_SUCCESS) )
+    if( $FAILS(status = writeHDR( dev, idxhead, aidxlbn )) )
         return status;
 
     if( params->options &  INIT_VIRTUAL ) {
         if( dp->flags & DISK_BAD144 ) {
             if( params->options & INIT_LOG ) {
-                printf( "%%INIT-I-MFGBAD, writing manufacturer's bad block index\n" );
+                printmsg( INIT_MFGBAD, 0 );
             }
             WRITEP( dev, npb - 10, 10, mbad );
         }
         if( dp->flags & DISK_BADSW ) {
             if( params->options & INIT_LOG ) {
-                printf( "%%INIT-I-SWBAD, writing software bad block descriptor\n" );
+                printmsg( INIT_SWBAD, 0 );
             }
-            sbad->bbm$w_checksum = checksum( sbad, offsetof( struct SWBAD, bbm$w_checksum ) / 2 );
+            sbad->bbm$w_checksum = checksum( (f11word *)sbad,
+                                             offsetof( struct SWBAD,
+                                                       bbm$w_checksum ) / 2 );
             WRITE( dev, nlb - 1, 1, sbad );
         }
 
@@ -834,12 +922,14 @@ static unsigned doinit( void ***memlist, void *dev, struct NEWVOL *params ) {
 }
 #undef Malloc
 
-static unsigned add2dir( void *dirp, unsigned *dirlen, unsigned dirblocks,
+/************************************************************ add2dir() */
+
+static vmscond_t add2dir( void *dirp, uint32_t *dirlen, uint32_t dirblocks,
                          struct HEAD *head ) {
     struct dir$r_ent *de;
     struct dir$r_rec *dr;
     struct IDENT *ident;
-    unsigned block, offset;
+    uint32_t block, offset;
     f11word reclen, paddednamelen, version, verlimit;
     size_t namelen, typlen;
     char fname[  sizeof( ident->fi2$t_filename ) +
@@ -850,7 +940,7 @@ static unsigned add2dir( void *dirp, unsigned *dirlen, unsigned dirblocks,
 
     memcpy( fname, ident->fi2$t_filename, sizeof( ident->fi2$t_filename ) );
 
-    extlen = ((head->fh2$b_mpoffset - head->fh2$b_idoffset) * sizeof( f11word )) -
+    extlen = (((size_t)head->fh2$b_mpoffset - head->fh2$b_idoffset) * sizeof( f11word )) -
               offsetof( struct IDENT, fi2$t_filenamext );
     if( extlen > 0 ) {
         if( extlen > (int) sizeof( ident->fi2$t_filenamext ) )
@@ -877,11 +967,12 @@ static unsigned add2dir( void *dirp, unsigned *dirlen, unsigned dirblocks,
     block = *dirlen / 512;
     offset = *dirlen % 512;
 
-    verlimit = (head->fh2$l_filechar & FH2$M_DIRECTORY)? 1: 0;
+    verlimit = (head->fh2$l_filechar & F11LONG(FH2$M_DIRECTORY))? 1: 0;
 
     paddednamelen = (f11word) ( ((namelen + 1) / 2) * 2 );
 
-    reclen = offsetof( struct dir$r_rec, dir$t_name ) + paddednamelen + sizeof( struct dir$r_ent );
+    reclen = ( offsetof( struct dir$r_rec, dir$t_name ) + paddednamelen +
+               sizeof( struct dir$r_ent ) );
     if( reclen + offset > 512 ) {
         block++;
         if( block >= dirblocks )
@@ -899,7 +990,8 @@ static unsigned add2dir( void *dirp, unsigned *dirlen, unsigned dirblocks,
     dr->dir$b_flags = 0; /* dir$c_fid */
     dr->dir$b_namecount = (uint8_t) namelen;
     memcpy( dr->dir$t_name, fname, paddednamelen );
-    de = (struct dir$r_ent *) ( ((char *)dirp) + ( block * 512 ) + offset + reclen - sizeof( struct dir$r_ent ));
+    de = (struct dir$r_ent *) ( ((char *)dirp) + ( (size_t)block * 512 ) + offset +
+                                reclen - sizeof( struct dir$r_ent ));
     de->dir$w_version = version;
     de->dir$w_fid = head->fh2$w_fid;
     offset += reclen;
@@ -910,149 +1002,181 @@ static unsigned add2dir( void *dirp, unsigned *dirlen, unsigned dirblocks,
     return SS$_NORMAL;
 }
 
-static unsigned add2map( struct NEWVOL *params, struct HEAD *fhd,
-                         unsigned start, unsigned n ) {
-    f11word *mpe;
-    uint8_t mapsize, inuse;
-    f11long hiblk;
-    unsigned clustersize;
+/************************************************************ add2map() */
 
-    clustersize = params->clustersize;
+static vmscond_t add2map( struct HEAD *fhd,
+                         uint32_t start, uint32_t n, int sparse ) {
+
+    return addmappointers( fhd, &start, &n, sparse );
+}
+
+/************************************************************ addmappointers() */
+
+vmscond_t addmappointers( struct HEAD *fhd,
+                         uint32_t *start, uint32_t *n, int sparse ) {
+    f11word *mp, *ep;
+    uint8_t mapsize, inuse, len;
+    f11long hiblk;
+    uint32_t pbn = 0, count = 0, msparse = 0, nextpbn = 0;
+    int contig = -1;
+
+    if( sparse )
+        *start = ~0U;
 
     hiblk = F11SWAP( fhd->fh2$w_recattr.fat$l_hiblk );
-
-#if DEBUG
-    printf( "Adding %u blocks at lbn %u, clu %u to %-20.20s",
-            n, start, start / clustersize,  IDENTp(fhd)->fi2$t_filename );
-#endif
-
-    n = CLU2LBN( CLUSTERS( n ) );
-    start = CLU2LBN( start / clustersize );
 
     mapsize = fhd->fh2$b_acoffset - fhd->fh2$b_mpoffset;
     inuse = fhd->fh2$b_map_inuse;
 
-    mpe = ((f11word *)fhd) + F11WORD( fhd->fh2$b_mpoffset ) + inuse;
+    mp = ((f11word *)fhd) + fhd->fh2$b_mpoffset;
+    ep = mp + inuse;
 
-#if DEBUG
-    printf( "Alloc: %u\n", n );
-#endif
+    len = 0;
 
-    while( n > 0 ) {
+    while( mp < ep ) {
+        f11word e0;
+
+        e0 = *mp++;
+        e0 = F11WORD(e0);
+        switch( e0 &  FM2$M_FORMAT3 ) {
+        case  FM2$M_FORMAT1:
+            len = 2;
+            count = e0 & 0xff;
+            pbn = F11WORD(*mp) | (((e0 & ~FM2$M_FORMAT3) >> 8) << 16);
+            msparse = (pbn == FM2$C_FMT1_MAXLBN);
+            mp++;
+            break;
+        case  FM2$M_FORMAT2:
+            len = 3;
+            count = e0 & ~FM2$M_FORMAT3;
+            pbn = *mp++;
+            pbn = F11WORD( pbn );
+            pbn |= F11WORD (*mp ) << 16;
+            msparse = (pbn == FM2$C_FMT2_MAXLBN);
+            mp++;
+            break;
+        case FM2$M_FORMAT3:
+            len = 4;
+            count = ((e0 & ~FM2$M_FORMAT3) << 16);
+            count |= F11WORD( *mp );
+            mp++;
+            pbn = *mp++;
+            pbn = F11WORD( pbn );
+            pbn |= F11WORD (*mp ) << 16;
+            msparse = (pbn == FM2$C_FMT3_MAXLBN);
+            mp++;
+            break;
+        default:
+            len = 1;
+            continue;
+        }
+        ++count;
+        if( contig < 0 && !msparse ) {
+            contig = 1;
+            nextpbn = pbn + count;
+        } else if( msparse || pbn != nextpbn )
+            contig = 0;
+        else
+            nextpbn = pbn + count;
+    }
+
+    if( sparse || (contig == 1 && *n && nextpbn != *start) )
+        contig = 0;
+    if( contig )
+        fhd->fh2$l_filechar |= F11LONG(FH2$M_CONTIG);
+    else
+        fhd->fh2$l_filechar &= ~F11LONG(FH2$M_CONTIG);
+
+    if( len >= 2 && ((sparse && msparse) ||
+                     (!sparse && *start == pbn + count) ) ) {
+        mp -= len;
+        inuse -= len;
+        hiblk -= count;
+        *n += count;
+        *start = pbn;
+    }
+
+    while( *n > 0 ) {
         f11word freew =  mapsize - inuse;
-        unsigned count;
 
-        count = n;
-        if( start <= FM2$C_FMT1_MAXLBN ) {
+        count = *n;
+        if( *start < FM2$C_FMT1_MAXLBN || sparse ) {
             if( freew < 2 )
-                return SS$_DEVICEFULL;
+                break;
             if( count <= FM2$C_FMT1_MAXCNT ) {
                 hiblk += count;
-                n -= count--;
-                *mpe++ = F11WORD( FM2$M_FORMAT1 | ((start >> 16) << 8) | count );
-                *mpe++ = F11WORD( (f11word)start );
+                *n -= count--;
+                *mp++ = ( F11WORD( FM2$M_FORMAT1 |
+                                   (((*start & FM2$C_FMT1_MAXLBN) >> 16) << 8) |
+                                   count ) );
+                *mp++ = F11WORD( (f11word)*start );
                 inuse += 2;
-                start += count + 1;
-                continue;
+                if( !sparse )
+                    *start += count + 1;
+                break;
             }
         }
         if( count <= FM2$C_FMT2_MAXCNT ) {
             if( freew < 3 )
-                return SS$_DEVICEFULL;
-            hiblk += count--;
-            *mpe++ = F11WORD( FM2$M_FORMAT2 | count );
-            *mpe++ = F11WORD( (f11word)start );
-            *mpe++ = F11WORD( (f11word)(start >> 16) );
+                break;
+            hiblk += count;
+            *n -= count--;
+            *mp++ = F11WORD( FM2$M_FORMAT2 | count );
+            *mp++ = F11WORD( (f11word)*start );
+            *mp++ = F11WORD( (f11word)(*start >> 16) );
             inuse += 3;
+            if( !sparse )
+                *start += count + 1;
             break;
         }
         if( freew < 4 )
-            return SS$_DEVICEFULL;
+            break;
         if( count > FM2$C_FMT3_MAXCNT )
             count = FM2$C_FMT3_MAXCNT;
         hiblk += count;
-        n -= count--;
-        *mpe++ = F11WORD( FM2$M_FORMAT3 | (f11word)(count >> 16) );
-        *mpe++ = F11WORD( (f11word)count );
-        *mpe++ = F11WORD( (f11word)start );
-        *mpe++ = F11WORD( (f11word)(start >> 16) );
+        *n -= count--;
+        *mp++ = F11WORD( FM2$M_FORMAT3 | (f11word)(count >> 16) );
+        *mp++ = F11WORD( (f11word)count );
+        *mp++ = F11WORD( (f11word)*start );
+        *mp++ = F11WORD( (f11word)(*start >> 16) );
         inuse += 4;
-        start += count + 1;
+        if( !sparse )
+            *start += count + 1;
     }
 
     fhd->fh2$w_recattr.fat$l_hiblk = F11SWAP( hiblk );
-
-#if DEBUG
-    {
-        unsigned vbn = 1;
-        unsigned i;
-        f11word *mp;
-
-        mp = ((f11word *)fhd) + F11WORD( fhd->fh2$b_mpoffset );
-
-        for( i = 0; i < inuse; i++ ) {
-            f11word e0;
-            unsigned count, pbn;
-
-            e0 = *mp++;
-            e0 = F11WORD(e0);
-            switch( e0 &  FM2$M_FORMAT3 ) {
-            case  FM2$M_FORMAT1:
-                count = e0 & 0xff;
-                pbn = F11WORD(*mp) | (((e0 & ~FM2$M_FORMAT3) >> 8) << 16);
-                mp++;
-                break;
-            case  FM2$M_FORMAT2:
-                count = e0 & ~FM2$M_FORMAT3;
-                pbn = *mp++;
-                pbn = F11WORD( pbn );
-                pbn |= F11WORD (*mp ) << 16;
-                mp++;
-                break;
-            case FM2$M_FORMAT3:
-                count = ((e0 & ~FM2$M_FORMAT3) << 16);
-                count |= F11WORD( *mp );
-                mp++;
-                pbn = *mp++;
-                pbn = F11WORD( pbn );
-                pbn |= F11WORD (*mp ) << 16;
-                mp++;
-                break;
-            default:
-                continue;
-            }
-            ++count;
-            printf(" VBN %u, FMT %u PBN %u, Count %u\n", vbn, (e0 >> 14), pbn, count );
-            vbn += count;
-        }
-        printf( " File EOF VBN %u FFB %u, Alloc: %u\n",
-                F11SWAP( fhd->fh2$w_recattr.fat$l_efblk ),
-                fhd->fh2$w_recattr.fat$w_ffbyte,
-                F11SWAP(  fhd->fh2$w_recattr.fat$l_hiblk ) );
-    }
-#endif
-
     fhd->fh2$b_map_inuse = inuse;
+
+    if( *n != 0 )
+        return SS$_DEVICEFULL;
+
     return SS$_NORMAL;
 }
 
-static unsigned writeHEAD( void *dev, struct HEAD *head, unsigned hdrbase ) {
+/************************************************************ writeHEAD() */
+
+static vmscond_t writeHEAD( void *dev, struct HEAD *head, uint32_t hdrbase ) {
     hdrbase += head->fh2$w_fid.fid$w_num - 1;
 
     return writeHDR( dev, head, hdrbase );
 }
 
-static unsigned writeHDR( void *dev, struct HEAD *head, unsigned lbn ) {
+/************************************************************ writeHDR() */
+
+static vmscond_t writeHDR( void *dev, struct HEAD *head, uint32_t lbn ) {
     head->fh2$w_checksum = checksum( (f11word *)head, offsetof( struct HEAD, fh2$w_checksum ) / 2 );
     head->fh2$w_checksum = F11WORD( head->fh2$w_checksum );
 
     WRITE( dev, lbn, 1, head );
     return SS$_NORMAL;
 }
-static unsigned writeHOM( void *dev, struct HOME *hom,
-                          unsigned homlbn, unsigned homvbn,
-                          unsigned ncopies ) {
-    unsigned copy = 0;
+
+/************************************************************ writeHOM() */
+
+static vmscond_t writeHOM( void *dev, struct HOME *hom,
+                          uint32_t homlbn, uint32_t homvbn,
+                          uint32_t ncopies ) {
+    uint32_t copy = 0;
 
     do {
         hom->hm2$l_homelbn = F11LONG( homlbn );
@@ -1065,6 +1189,7 @@ static unsigned writeHOM( void *dev, struct HOME *hom,
         hom->hm2$w_checksum2 =  F11WORD( hom->hm2$w_checksum2 );
 
         WRITE( dev, homlbn, 1, hom );
+
         homlbn++;
         homvbn++;
     } while( ++copy < ncopies );
@@ -1072,12 +1197,14 @@ static unsigned writeHOM( void *dev, struct HOME *hom,
     return SS$_NORMAL;
 }
 
-static unsigned alloclbns( unsigned char *bitmap,
-                           unsigned clustersize,
-                           unsigned n_clusters,
-                           unsigned startlbn, unsigned n,
-                           unsigned *found ) {
-    unsigned nfound;
+/************************************************************ alloclbns() */
+
+static vmscond_t alloclbns( uint8_t *bitmap,
+                            uint32_t clustersize,
+                            uint32_t n_clusters,
+                            uint32_t startlbn, uint32_t n,
+                            uint32_t *found ) {
+    uint32_t nfound;
     int pass;
 
     *found = ~0U;
@@ -1086,11 +1213,13 @@ static unsigned alloclbns( unsigned char *bitmap,
     n = CLUSTERS( n );
 
     for( pass = 0, nfound = 0; pass < 2 && nfound < n; pass++ ) {
-        unsigned lbn;
+        uint32_t lbn;
 
-        if( pass > 0 ) startlbn = 0;
+        if( pass > 0 )
+            startlbn = 0;
 
-        for( lbn = startlbn, nfound = 0; nfound < n && lbn + n < n_clusters; lbn++ ) {
+        for( lbn = startlbn, nfound = 0;
+             nfound < n && lbn + n < n_clusters; lbn++ ) {
             if( bitmap[ lbn >> 3 ] & (1 << (lbn & 0x7)) ) {
                 if( nfound++ == 0 )
                     startlbn = lbn;
@@ -1108,9 +1237,11 @@ static unsigned alloclbns( unsigned char *bitmap,
     return SS$_NORMAL;
 }
 
-static void modlbnbits( struct NEWVOL *params, unsigned char *bitmap, int set, unsigned start, unsigned n ) {
+/************************************************************ modlbnbits() */
+
+static void modlbnbits( struct NEWVOL *params, uint8_t *bitmap, int set, uint32_t start, uint32_t n ) {
     ldiv_t d;
-    unsigned first, clusters, clustersize;
+    uint32_t first, clusters, clustersize;
 
     if( n == 0 )
         return;
@@ -1128,15 +1259,19 @@ static void modlbnbits( struct NEWVOL *params, unsigned char *bitmap, int set, u
     return;
 }
 
-static int tstlbnbit( struct NEWVOL *params, unsigned char *bitmap, unsigned lbn ) {
+/************************************************************ tstlbnbit() */
+
+static int tstlbnbit( struct NEWVOL *params, uint8_t *bitmap, uint32_t lbn ) {
 
     lbn = lbn / params->clustersize;
 
     return (bitmap[lbn >> 3] & (1 << (lbn & 0x7))) != 0;
 }
 
-static void modbits( unsigned char *bitmap, int set, unsigned start, unsigned n ) {
-    unsigned q, bit, byte;
+/************************************************************ modbits() */
+
+static void modbits( uint8_t *bitmap, int set, uint32_t start, uint32_t n ) {
+    uint32_t q, bit, byte;
 
     if( set ) {
         while( n > 0 ) {
@@ -1182,13 +1317,14 @@ static void modbits( unsigned char *bitmap, int set, unsigned start, unsigned n 
     return;
 }
 
-static f11word checksum( void *data, size_t length ) {
-    f11word sum, *dp;
+/************************************************************ checksum() */
+
+static f11word checksum( f11word *data, size_t length ) {
+    f11word sum;
     size_t count;
 
-    for( sum = 0, dp = (f11word *)data,
-             count = 0; count < length; count++ )
-        sum += *dp++;
+    for( sum = 0, count = 0; count < length; count++ )
+        sum += *data++;
     return sum;
 }
 
@@ -1213,11 +1349,10 @@ static f11word checksum( void *data, size_t length ) {
  */
 
 
-static unsigned int compute_delta( unsigned long sectorsize,
-                                   unsigned long sectors,
-                                   unsigned long tracks,
-                                   unsigned long cylinders ) {
-
+static uint32_t compute_delta( uint32_t sectorsize,
+                               uint32_t sectors,
+                               uint32_t tracks,
+                               uint32_t cylinders ) {
     if( sectorsize < 512 )
         sectors = (sectorsize * sectors) / 512;
 
@@ -1234,8 +1369,10 @@ static unsigned int compute_delta( unsigned long sectorsize,
     return 1;                                               /* Rules 1-3 */
 }
 
+/************************************************************ delta_from_name() */
+
 #if 0
-static unsigned int delta_from_name( const char *diskname ) {
+static uint32_t delta_from_name( const char *diskname ) {
     struct disktype *dp;
 
     for( dp = disktype; dp->name != NULL; dp++ ) {
@@ -1246,9 +1383,12 @@ static unsigned int delta_from_name( const char *diskname ) {
     return ~0u;
 }
 #endif
-unsigned int delta_from_index( size_t index ) {
+
+/************************************************************ delta_from_index() */
+
+uint32_t delta_from_index( size_t index ) {
     struct disktype *dp;
-    unsigned int delta;
+    uint32_t delta;
 
     if( index > max_disktype )
         abort();
@@ -1256,7 +1396,7 @@ unsigned int delta_from_index( size_t index ) {
     dp = disktype + index;
     delta = compute_delta( dp->sectorsize, dp->sectors, dp->tracks, dp->cylinders );
 
-#if defined( DEBUG )  || HOME_SKIP > 0
+#if DEBUG  || HOME_SKIP > 0
     printf( "HOM search index for %s is %u\n", dp->name, delta );
 #endif
 

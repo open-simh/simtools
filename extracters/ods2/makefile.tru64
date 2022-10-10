@@ -3,29 +3,25 @@
 # Makefile for Tru64 (DEC/OSF1)
 #
 
+# Start with generic unix
+
+include makefile.unixdefs
+
+# Use gcc
+
+CC=gcc
+
+TOPMAKE = makefile.solaris
+
+include makefile.generic
+
 CCFLAGS = -O4 -g
 
-# DEFS = -DUSE_READLINE
-# LDFLAGS = -lreadline -ltermcap
+# I don't think we have libedit
 
-# Include VHD format image file support
-
-VHDOPTS = makefile-vhd.unix
-
-# Object file extension
-OBJ = .o
-
-DELETE  = rm -f
-
-# Physical I/O module
-PHYSIO = phyunix
-PHYSIOH =
+DEFS =
+LDLIBS =
 
 TOPMAKE = makefile.tru64
-
-all:
-
-clean:
-	rm -f ods2 $(OBJS)
 
 include makefile.generic

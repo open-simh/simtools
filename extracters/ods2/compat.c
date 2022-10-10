@@ -12,7 +12,10 @@
  *       ODS2 is distributed freely for all members of the
  *       VMS community to use. However all derived works
  *       must maintain comments in their source to acknowledge
- *       the contibution of the original author.
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
  */
 
 /* This module contains compatibility code, currently just
@@ -35,6 +38,7 @@
 #endif
 
 #include <errno.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +52,7 @@
 #else
 #ifdef _WIN32
 #include <windows.h>
+#include <shlwapi.h>            /* PathSearchAndQualify() */
 #else
 #include <unistd.h>
 #include <sys/types.h>
@@ -119,21 +124,20 @@ const char *ods2_strerror( int errn ) {
 
 TCHAR *w32_errstr( DWORD eno, ... ) {
     va_list ap;
-    TCHAR *msg;
+    TCHAR *msg = NULL;
 
     if( eno == NO_ERROR )
         eno = GetLastError();
-    va_start(ap,eno);
+    va_start(ap, eno);
 
     if( FormatMessage( FORMAT_MESSAGE_ALLOCATE_BUFFER |
         FORMAT_MESSAGE_FROM_SYSTEM, NULL, eno, 0,
         (LPSTR)&msg, 1, &ap ) == 0 ) {
-        msg = (TCHAR *)malloc( 32 );
+        msg = (TCHAR *)malloc( 64 );
         if( msg == NULL ) {
-            perror( "malloc" );
-            printf( "Original error number (%u)\n", eno );
+            printf( "Out of memory reporting Windows error(%u\n", eno );
         } else
-        (void) snprintf( msg, 32, "(%u)", eno );
+            (void) snprintf( msg, 64, "(%u)", eno );
     }
     va_end(ap);
     return msg;
@@ -143,7 +147,7 @@ TCHAR *w32_errstr( DWORD eno, ... ) {
 
 char *driveFromLetter( const char *letter ) {
     DWORD rv = ERROR_INSUFFICIENT_BUFFER;
-    size_t cs = 16;
+    DWORD cs = 16;
     TCHAR *bufp = NULL;
 
     do {
@@ -180,7 +184,7 @@ char *get_env( const char *name ) {
         return NULL;
     if ((r = malloc( i )) == NULL )
         return NULL;
-    (void)getenv_s( &i, r, i, "USERNAME" );
+    (void)getenv_s( &i, r, i, name );
     return r;
 #else
     char *t;
@@ -207,10 +211,12 @@ char *get_username( void ) {
     size_t i;
 #ifdef VMS
     char uame[12 + 1] = "UNKNOWN     ";
-    struct dsc$descriptor_s userdsc = { sizeof( uname ) - 1,  DSC$K_DTYPE_T, DSC$K_CLASS_S, uname };
+    struct dsc$descriptor_s userdsc = { sizeof( uname ) - 1,
+                                        DSC$K_DTYPE_T,
+                                        DSC$K_CLASS_S, uname };
 
     r = "UNKNOWN";
-    if( lib$getjpi( &JPI$_USERNAME, 0, 0, 0, &userdsc, 0 ) & STS$M_SUCCESS ) {
+    if( $SUCCESSFUL(lib$getjpi( &JPI$_USERNAME, 0, 0, 0, &userdsc, 0 )) ) {
         for( i = sizeof( uname ) - 1; i >= 0; i-- ) {
             if( uname[i] == ' ' )
                 uname[i] = '\0';
@@ -250,4 +256,195 @@ char *get_username( void ) {
         return NULL;
     memcpy( username, r, i + 1 );
     return username;
+}
+
+/******************************************************************* homefile () */
+
+char *homefile( int dotfile, const char *filename, const char *ext ) {
+    char * prefix, *delim, *name;
+    size_t pfxlen, dellen, namlen, extlen;
+
+#ifdef _WIN32
+    char *drive;
+
+    prefix = drive = get_env( "HOMEDRIVE" );
+    if( drive != NULL ) {
+        prefix = get_env( "HOMEPATH" );
+        if( prefix != NULL ) {
+            dellen = strlen( drive );
+            pfxlen = strlen( prefix );
+            if( (name = malloc( dellen + pfxlen + 1 )) == NULL ) {
+                free( prefix );
+                free( drive );
+                return NULL;
+            }
+            memcpy( name, drive, dellen );
+            memcpy( name+dellen, prefix, pfxlen +1 );
+            free( prefix );
+            prefix = name;
+        }
+        free( drive );
+    }
+    delim = dotfile? "\\.": "\\";
+#elif defined( VMS )
+    prefix = get_env( "SYS$LOGIN" );
+    delim = dotfile? "_": "";
+#else
+    prefix = get_env( "HOME" );
+    delim = dotfile? "/." : "/";
+#endif
+    pfxlen = prefix? strlen( prefix ) : 0;
+    dellen = strlen( delim );
+    namlen = strlen( filename );
+    extlen = ext? strlen( ext ) : 0;
+
+    if( (name = malloc( pfxlen+dellen+namlen+extlen+1)) == NULL )
+        return NULL;
+    /* N.B. There is no buffer overrun here */
+    if( pfxlen )
+        memcpy( name, prefix, pfxlen );
+    memcpy( name+pfxlen, delim, dellen );
+    memcpy( name+pfxlen+dellen, filename, namlen+1 );
+    if( ext )
+        memcpy( name+pfxlen+dellen+namlen, ext, extlen+1 );
+    free( prefix );
+
+    return name;
+}
+
+/************************************************************* get_realpath() */
+
+char *get_realpath( const char *filnam ) {
+#ifdef _WIN32
+    size_t n;
+    char *path, resultant_path[MAX_PATH];
+
+    if ( filnam == NULL || strpbrk( filnam, "*?" ) != NULL ||
+         !PathSearchAndQualify( filnam,              /* pcszPath              */
+                                resultant_path,      /* pszFullyQualifiedPath */
+                                                     /* cchFullyQualifiedPath */
+                                sizeof( resultant_path )
+                              ) ) {
+        return NULL;
+    }
+    n = strlen( resultant_path );
+    path = (char *) malloc( n + 1 );
+    if ( path != NULL ) {
+        memcpy( path, resultant_path, n + 1 );
+    }
+    return path;
+#elif defined VMS
+#define MAXPATH 255
+    size_t n;
+    unsigned short resultant_path[1 + ( ( MAXPATH + 1 ) / 2)];
+    char *path;
+    unsigned long context, sts, flags;
+    struct dsc$descriptor filespec = {
+        0, DSC$K_DTYPE_T, DSC$K_CLASS_S, NULL
+    };
+    struct dsc$descriptor resultant_filespec = {
+        MAXPATH, DSC$K_DTYPE_T, DSC$K_CLASS_VS, (char *) resultant_path
+    };
+
+    path = NULL;
+    if ( filnam != NULL ) {
+        filespec.dsc$w_length = strlen( filnam );
+        filespec.dsc$a_pointer = (char *) filnam;
+        *resultant_path = 0;
+        context = 0;
+        flags = LIB$M_FIL_NOWILD;
+        sts = lib$find_file( &filespec, &resultant_filespec, &context,
+                             NULL, NULL, &sts, &flags );
+        lib$find_file_end( &context );
+        if( $SUCCESSFUL(sts) ) {
+            n = *resultant_path;
+            path = (char *) malloc( n + 1 );
+            if ( path != NULL ) {
+                memcpy( path, resultant_path + 1, n );
+                path[n] = '\0';
+            }
+        }
+    }
+    return path;
+#elif defined unix || 1
+    size_t n;
+    char *path, resolved_path[PATH_MAX+1];
+
+    if ( filnam == NULL || realpath( filnam, resolved_path ) == NULL ) {
+        return NULL;
+    }
+    n = strlen( resolved_path );
+    path = (char *) malloc( n + 1 );
+    if ( path != NULL ) {
+        memcpy( path, resolved_path, n + 1 );
+    }
+    return path;
+#endif
+}
+
+/******************************************************************** Ctime() */
+
+char *Ctime( time_t *tval ) {
+    char *buf;
+
+#ifdef _WIN32
+    if( (buf = malloc( 26 )) == NULL ) return NULL;
+    if( ctime_s( buf, 26, tval ) != 0 ) {
+        free( buf );
+        return NULL;
+    }
+#else
+    char *cbuf;
+
+    if( (buf = malloc( 25 )) == NULL ) return NULL;
+    if( (cbuf = ctime( tval )) == NULL ) {
+        free( buf );
+        return NULL;
+    }
+    memcpy( buf, cbuf, 24 );
+#endif
+    buf[24] = '\0';
+    return buf;
+}
+
+/******************************************************************* fgetline() */
+/* Read a line of input - unlimited length
+ * Removes \n, returns NULL at EOF
+ * If *buf is NULL, one is allocated of size *bufsize.
+ * Thereafter, it is reused.  Expanded if necessary.
+ * Caller responsible for free()
+ */
+char *fgetline( FILE *stream, int keepnl, char **buf, size_t *bufsize ) {
+    int c;
+    size_t idx = 0;
+
+    if( *buf == NULL && (*buf = malloc( *bufsize )) == NULL ) {
+        perror( "malloc" );
+        exit(EXIT_FAILURE);
+    }
+
+    while( (c = getc( stream )) != EOF && c != '\n' ) {
+        if( idx + (keepnl != 0) +2 > *bufsize ) { /* Now + char + (? \n) + \0 */
+            char *nbuf;
+            *bufsize += 32;
+            nbuf = (char *) realloc( *buf, *bufsize );
+            if( nbuf == NULL ) {
+                perror( "realloc" );
+                exit(EXIT_FAILURE);
+            }
+            *buf = nbuf;
+        }
+        buf[0][idx++] = c;
+    }
+    if( c == '\n' ) {
+        if( keepnl )
+            buf[0][idx++] = '\n';
+    } else {
+        if( c == EOF && idx == 0 ) {
+            buf[0][0] = '\0';
+            return NULL;
+        }
+    }
+    buf[0][idx] = '\0';
+    return *buf;
 }

@@ -1,0 +1,912 @@
+! Help file for ODS2
+! Contains help text for topics that don't need a condition code, or are too long
+! for condition code messages, which are limited to 255 bytes.
+!
+! Format:
+! Lines beginning with a digit + space + TOPIC are search keys.
+! Similar to the VMS HELP librarian, there are 9 hierarchical levels
+! of keys.  However, unlike the VMS HELP librarian, browsing is controlled
+! by the command tables & the text allows printf() substitutions.
+!
+! The key names are not case-sensitive.  Most key names are
+! coded in the command tables of ODS2 and can not be changed
+! unless a corresponding change is made to the tables.
+!
+! All other lines contain topic text.
+!
+! If a line ends in '$' newline, the newline will not be displayed.
+!
+! A topic consists of all lines following the search key until
+! another search key or EOF is encountered.
+!
+1 CREDITS
+  The orginal version of ods2 was developed by Paul Nankervis
+  <Paulnank@au1.ibm.com>
+
+  This modified version was developed by Timothe Litt, and
+  incorporates significant previous modifications by Larry
+  Baker of the USGS and by Hunter Goatley
+
+  This code may be freely distributed within the VMS community
+  providing that the contributions of the original author and
+  subsequent contributors are acknowledged in the help text and
+  source files.  This is free software; no warranty is offered,
+  and while we believe it to be useful, you use it at your own risk.
+
+  Please send problem reports/comments to litt@acm.org
+
+!
+1 COMMANDS
+ODS2 has the following commands:
+2 copy
+Copy one or more files from a Files-11 volume to the local filesystem
+or from the local filesystem to a Files-11 volume.
+3 fromspec
+One or more file specifications to copy.
+
+The syntax of each filespec depends on the direction of the copy.
+Files on the Files-11 volume use Files-11 syntax.  Files on the
+local filesystem use the local filespec syntax.
+
+Wildcards may be used.
+3 tospec
+File specification for the destination file.  The syntax of each
+filespec depends on the direction of the copy.  Files on the
+Files-11 volume use Files-11 syntax.  Files on the local
+filesystem use the local filespec syntax.
+
+Wildcards are replaced from the source file name.
+3 qual_ascii
+Copy file in ASCII mode (default).
+
+ASCII mode converts local files to/from Files-11 records.
+3 qual_binary
+Copy file in binary mode.
+
+Binary mode ...
+3 qual_append
+Append data to existing file.
+Default is to create, create a new version or supersede per the output
+filesystem's conventions.
+3 qual_from
+Copy file from files-11 volume to local file.
+3 qual_to
+Copy file(s) from local filesystem to files-11 volume.
+3 qual_log
+Log files copied.
+3 qual_confirm
+Prompt for confirmation of each file copied.
+See HELP SYNTAX CONFIRM for details.
+3 qual_cc
+Carriage control for file records copied TO files-11 volume.
+Does not apply to files copied FROM files-11 volumes.
+4 none
+No carriage control (default).
+4 fortran
+FORTRAN carriage control in column 1.
+4 cr
+Records are preceded by <LF> and followed by <CR>.
+4 print
+Records are VFC format with 2 bytes of encoded carriage control.
+One of the following can be used for each carriage-control qualifier.
+To specify both BEFORE and AFTER, use
+   /carriage=print=before=specifier /carriage=print=after=specifier.
+Do not specify the record_format qualifier.
+! Following group is used for print=before AND =after as the text would be identical
+5 b4
+Carriage control applied before record is printed.
+6 none
+No paper motion.
+6 nl
+Advance n lines (1-127).
+6 ctl
+Output ASCII C0 control character n (0 - 31).
+6 vfu
+Advance to VFU channel n (1-16).
+5 after
+Carriage control applied after record is printed.
+3 qual_recfmt
+Record format for files copied TO files-11 volume.
+Default is variable with carriage_return carriage control.
+Does not apply to files copied FROM files-11 volume.
+4 fixed
+Fixed length records, n bytes.
+Input will be padded or truncated to this length.
+4 variable
+Variable length records.
+4 vfc
+Variable length records with fixed length header.
+Header is first n characters of input.
+4 stream
+Stream format with <CR><LF> record delimiters.
+4 streamlf
+Stream format with <LF> record delimiters.
+4 streamcr
+Stream format with <CR> record delimiters.
+4 undefined
+Stream format with no record delimiters.
+3 qual_span
+Allow records to cross block boundaries. (default)
+Does not apply to stream files.
+3 qual_verlim
+Specify the version limit for a file.
+3 qual_volume
+Specify the volume (of a volume set) on which the file will
+be placed.
+3 qual_owner
+Specifies the UIC of the owner of files copied TO a files-11 volume.
+Default is parent directory's owner.
+3 qual_protection
+Specifies the protection of files copied TO a files-11 volume.
+The default file protection is set when the volume is initialized.
+2 create
+  Create Files-11 files or directories.
+3 filespec
+Filespec of the file or directory to be created.
+Wildcards are not permitted.
+3 qual_directory
+Create a new Files-11 directory or subdirectory.
+Note that it is possible to create a series of nested
+subdirectories with a single CREATE/DIRECTORY command.
+3 qual_log
+List name of each file or directory created.
+3 qual_cc
+Carriage control for file records.
+Does not apply to directories.
+4 none
+No carriage control (default).
+4 fortran
+FORTRAN carriage control in column 1.
+4 cr
+Records are preceded by <LF> and followed by <CR>.
+4 print
+Records are VFC format with 2 bytes of encoded carriage control.
+One of the following can be used for each carriage-control qualifier.
+To specify both BEFORE and AFTER, use
+   /carriage=print=before=specifier /carriage=print=after=specifier.
+Do not specify the record_format qualifier.
+! Following group is used for print=before AND =after as the text would be identical
+5 b4
+Carriage control applied before record is printed.
+6 none
+No paper motion.
+6 nl
+Advance n lines (1-127).
+6 ctl
+Output ASCII C0 control character n (0 - 31).
+6 vfu
+Advance to VFU channel n (1-16).
+5 after
+Carriage control applied after record is printed.
+3 qual_recfmt
+Record format when creating file.
+Default is variable with carriage_return carriage control.
+Does not apply to directories.
+4 fixed
+Fixed length records, n bytes.
+Input will be padded or truncated to this length.
+4 variable
+Variable length records.
+4 vfc
+Variable length records with fixed length header.
+Header is first n characters of input.
+4 stream
+Stream format with <CR><LF> record delimiters.
+4 streamlf
+Stream format with <LF> record delimiters.
+4 streamcr
+Stream format with <CR> record delimiters.
+4 undefined
+Stream format with no record delimiters.
+3 qual_span
+Allow records to cross block boundaries. (default)
+Does not apply to stream files or directories.
+3 qual_verlim
+Specify the version limit for a file, or the default version limit
+for a directory.
+3 qual_volume
+Specify the volume (of a volume set) on which the file or directory will
+be placed.
+3 qual_owner
+Specifies the UIC of the owner of the file or directory.
+Default is parent directory's owner.
+3 qual_protection
+Specifies the protection of the file or directory.
+The default file protection is set when the volume is initialized.
+The default directory protection is inherited from the
+directory's parent, with all delete permissions removed.
+3 qual_vfc
+Include fixed header of VFC records copied as data.
+Ignored for PRINT format files.
+2 delete
+Delete Files-11 files or directories.
+3 filespec
+File specification(s) for Files-11 file(s) to be deleted.
+Wildcards are permitted.
+3 qual_log
+List name of each file deleted. (Default)
+3 qual_confirm
+Prompt for confirmation of each file deleted.
+See HELP SYNTAX CONFIRM for details.
+2 difference
+Compare a file on the Files-11 volume to a file on the local filesystem and
+report the differences.
+3 Files-11_spec
+File specification for a file on a Files-11 volume.
+3 local_spec
+File specification for a file on the local filesystem.
+3 qual_binary
+Compares the file as binary; does not output difference records.
+3 qual_maxdiff
+Maximum number of differences to report.
+2 directory
+List files on a Files-11 volume.
+3 filespec
+Specification of files to list.  Files-11 wildcards are supported.
+Default is *.*;*
+3 qual_brief
+Brief display - names with header/trailer (default)
+3 qual_fileid
+Include file ID
+3 qual_full
+Include all details
+3 qual_grand
+Include only grand total
+3 qual_heading
+Include heading
+3 qual_owner
+Include file owner
+3 qual_output
+Write ouput to a local file
+3 qual_protection
+Include file protection
+3 qual_total
+Include only directory name and summary
+3 qual_trailing
+Include trailing summary line
+3 qual_map
+Include map area of file header.
+3 qual_pack
+Normal packing of fields.  Negated,
+outputs format for automation.
+3 qual_size
+Size of file.
+4 size_both
+Number of blocks allocated and used.
+4 size_alloc
+Number of blocks allocated to file.
+4 size_used
+Number of blocks used for data. (default)
+3 qual_date
+File date(s).  Multiple dates are displayed in the order:
+Date created, date modified, date expired and date of backup.
+4 date_created
+Date file created (default)
+4 date_modified
+Date file modified
+4 date_expired
+Date file expired
+4 date_backup
+Date of last backup
+2 dismount
+Dismount a Files-11 volume.  If the volume is a member
+of a mounted volumeset, the entire volumeset is dismounted.
+3 drive
+Drive containing volume to dismount.
+3 qual_log
+Display the name of the volume(s) dismounted.
+2 echo
+Print a string.
+2 exit
+Dismount all Files-11 volumes and exit ODS2
+2 extend
+Extend or truncate a Files-11 file.
+This changes the number of blocks allocated to a file, but does
+not change the data contained in the file.
+
+Note that allocation is always a multiple of the volume's cluster size.
+3 filespec
+Specifies the name of the file on the File-11 volume to extend or truncate.
+Wildcards are not permitted.
+3 qual_allocate
+The number of blocks to add to the file's allocation.
+3 qual_truncate
+Truncate allocation to the current end-of-file.
+2 help
+The HELP command describes ODS2 comands and functions.
+
+Help is available for each command, and for general topics.
+
+Without parameters, HELP lists the commands and topics for which
+help is available.
+
+HELP TOPIC displays the help for the named topic.
+
+Additional levels of help are available for some topics and
+commands.
+
+HELP COMMAND PARAMETER displays the help for the parameters of a
+command.  The word 'parameter' lists all parameters; use the name
+of a parameter (shown by the topic help) for details of just one.
+
+For some complex commands, another level of help is available
+with HELP COMMAND PARAMETER ARGUMENT.
+
+To learn about common command elements, see the SYNTAX topic.
+3 topic
+Topic or command for which you want help.
+For a list, type HELP<CR>
+3 subtopic
+Subtopic - parameter, value, or item
+2 initialize
+Create a new filesystem.
+
+ALL EXISTING DATA ON THE MEDIA WILL BE LOST.
+3 devspec
+Local file specification for device or disk image to be initialized.
+
+ALL EXISTING DATA ON THE MEDIA WILL BE LOST.
+3 volspec
+Volume label for new volume, which must be unique within a volumeset.
+Volume labels are no more than 12 characters long.
+Only alphanumeric characters, '$', '-', and '_' are legal.
+3 qual_media
+Media type (DEC model name).  This determines the media size, geometry
+and (in some cases) interleave.
+3 qual_bootblock
+Places boot block in non-standard location, which is inadvisable.
+3 qual_clustersize
+Cluster size (blocks) is the unit of storage allocation.
+3 qual_confirm
+Prompt for confirmation (default).
+See HELP SYNTAX CONFIRM for details.
+3 qual_create
+Create a new disk image file of the specified type.  Default.
+Will not overwrite existing file.
+3 qual_directories
+Number of directory entries to pre-allocate in the MFD.
+3 qual_fileprot
+Default file protection for volume, default (S:RWED,O:RWED,G:RE,W:)
+3 qual_headers
+Number of file headers to pre-allocate.
+3 qual_extension
+Default extension size (blocks) for files on volume.
+3 qual_windows
+Default number of mapping pointers per file window.
+3 qual_index
+Placement hint for index file.  One of:
+4 begin
+Place index file in lowest available LBNs.
+4 block
+Place index file near specific LBN.
+4 middle
+Place index file near middle of volume. (default)
+3 qual_image
+Initialize a disk image file.
+3 qual_device
+Initialize a physical device.
+3 qual_log
+Show progress and details of file structure.
+3 qual_replace
+Replace filesystem in existing image file.  Will not change
+media type.
+3 qual_mount
+Mount volume after initialization completes.
+3 qual_maxfiles
+Maximum number of files volume can (ever) contain.
+3 qual_owneruic
+Volume owner's UIC. Default is [1,1].
+3 qual_protection
+Volume protection.  The default is (S:RWED,O:RWED,G:RWED,W:RWED).
+3 qual_username
+Volume owner's username.  The default your username on the local system.
+2 mount
+Mount a Files-11 volume or volumeset.  Mounting a volume makes the files
+that it contains accessible to ods2.  The volume must be initialized to be mounted.
+
+While a volume is mounted, ods2 caches data creating a potentially inconsistent
+state.  It must not be accessed by any other means until dismounted.
+
+See HELP INITIALIZE for information on initializing a volume.
+See HELP DISMOUNT for information on dismounting a volume.
+3 volumes
+List of devices or files containing volumes to mount.
+Multiple containers must comprise a volumeset and must be specified
+in ascending order of relative volume number.
+Separate list items with comma.
+3 labels
+List of volume labels corresponding to each container.
+Separate list items with comma.
+If specified, must match label(s) in the Files-11 metadata.
+3 qual_media
+Media type (DEC model name).  This determines the media size, geometry
+and (in some cases) interleave.
+A mount can fail if the wrong media type is specified.
+3 qual_image
+The containers are disk image files.
+3 qual_log
+Show progress
+3 qual_readonly
+Only permit reading from the volume.
+3 qual_snapshot
+Create snapshot(s) of the (existing) VHD disk(s) specified by this qualifier.
+See HELP SPECIFY_MOUNT for more information.
+3 qual_device
+The containers are raw devices.
+3 qual_write
+Allow both reading from and writing to the volume.
+2 quit
+Dismount all Files-11 volumes and exit ODS2.
+2 rename
+Rename files on Files-11 volume.
+3 fromspec
+Filespec of existing file on Files-11 volume.
+
+Wildcards can be used.
+3 tospec
+New filespec for file.
+
+The '*' wildcard can be used to copy components from the original filename(s).
+(Currently only [*] and [*...] are supported for the directory.)
+
+Can change directory, name, type, version, but not device.
+3 qual_confirm
+Prompt for confirmation.
+See HELP SYNTAX CONFIRM for details.
+3 qual_log
+Show progress
+2 search
+Search Files-11 file(s) for one or more strings.
+3 filespec
+File on Files-11 volume to search.
+
+Wildcards are permitted.
+3 string
+One or more strings to earch for in the file(s).
+
+Multiple strings are compared with each record as specified by
+the MATCH qualifier.
+3 qual_confirm
+Prompt for confirmation before searching each file.
+See HELP SYNTAX CONFIRM for details.
+3 qual_exact
+Strings are compared matching the string to the record exactly.
+By default, uppercase and lowercase are treated as equivalent.
+3 qual_heading
+Print a heading with the name of each file that matches.
+By default, a heading is only printed if the filespec contained a wildcard.
+3 qual_highlight
+Highlight text that matches specified string(s), using one or more of
+the following renderings:
+4 highlight_blink
+Blink matching text
+4 highlight_bold
+Render matching text as bold (default)
+4 highlight_hardcopy
+Render matching text for a non-ANSI device
+4 highlight_reverse
+Render matching text in reverse video
+4 highlight_underline
+Underline matching text
+3 qual_log
+Display summary results for each file examined
+3 qual_match
+Match requirement for string(s)
+4 match_and
+Record must match all specified strings.
+4 match_or
+Record must match at least one specfied string. (default)
+4 match_nand
+Record must not contain all specified strings, but may contain some.
+4 match_nor
+Record must not contain any specified string.
+3 qual_nowindow
+Do not display records that match search critera.
+3 qual_numbers
+Display line number with matching records.
+3 qual_page
+Paginate output; pause every n lines. Default: terminal height.
+See HELP SYNTAX PAGINATE for details.
+2 set
+Set a parameter or default.
+3 item_name
+The following items can be set:
+4 type_cwd
+Working (default) directory for local files.
+4 type_dirquals
+Directory$
+4 type_copyquals
+Copy$
+4 type_setdef
+Default device and directory for Files-11 volume.
+4 type_setmsg
+Message definition file name and/or message display option qualifiers.
+4 type_searchquals
+Search$
+4 type_qualstyle
+Style$
+4 item_cwd
+Working directory on local system.
+4 item_dirquals
+Default qualifiers for DIRECTORY command.
+4 item_copyquals
+Default qualifiers for COPY command.
+4 item_setdef
+Default directory on Files-11 volume.
+4 item_history_limit
+Maximum number of lines of command history to retain.
+4 item_key_bindings
+Manipulate libedit key bindings using its 'bind' command
+4 item_setmsg
+Message definition file or display option qualifiers.
+4 item_helpfile
+Help library file
+4 item_seterrxit
+Cause exit when a command results in an error.
+4 item_searchquals
+Default qualifiers for SEARCH command.
+4 item_qualstyle
+Qualifer style.
+4 item_verify
+Display commands in indirect files.
+4 item_msgfac
+Display facility name
+4 item_msgsev
+Display severity code
+4 item_msgid
+Display identification
+4 item_msgtext
+Display message text
+4 item_default
+Use default (built-in) messages
+3 value
+xxx
+4 value_unix
+Unix style options, '-option'
+4 value_dcl
+DCL style qualifiers, '/qualifier'
+2 show
+Display a parameter or default.
+3 copy
+Default qualifiers for COPY command
+3 cwd
+Working directory on local system
+3 default
+Default Files-11 device & directory
+3 devices
+Raw devices for mounting Files-11 volumes and virtual devices
+mapped to mounted disk image files.
+3 directory
+Default qualifiers set for DIRECTORY command
+3 qstyle
+Qualifier style (DCL, Unix)
+3 search
+Default qualifiers set for SEARCH command
+3 statistics
+Debugging statistics
+3 terminal
+Terminal dimensions used for paged output.
+3 time
+Time of day
+3 verify
+Command file echo state
+3 history
+Command history
+Qualifier:
+    /max-entries=n - Maximum number of history entries to display
+3 helpfile
+Name of current help library file
+3 version
+Version and configuration of ODS2
+3 volumes
+Mounted volumes' attributes
+3 message
+Name of current message definition file
+2 spawnnt
+Open a command subprocess, cmd.
+
+Return to ods2 with the EXIT command to the cmd interpreter.
+2 spawnunix
+Open a command shell subprocess.  The SHELL environment variable determines
+which shell is run.  If SHELL is not defined, /bin/sh is run.
+
+Return to ODS2 with the exit command to the shell.
+2 spawnvms
+Open an interactive DCL command subprocess.
+
+Return to ODS2 with the LOGOUT command to DCL.
+2 type
+Display one or more Files-11 files on the terminal.
+3 filespec
+One or more Files-11 file specifications to display.
+
+Wildcards may be used.
+3 qual_page
+Paginate output; pause every n lines. Default: terminal height.
+See HELP SYNTAX PAGINATE for details.
+3 qual_vfc
+Include fixed header of VFC records.
+Ignored for PRINT format files.
+1 INVOCATION
+INVOKING ODS2
+  Invoke %s from your shell's command line.  %s commands
+  may be specified on the invocation line.  Separate multiple
+  commands on the invocation line with '$'.
+
+  If present, an initialization file is executed automatically
+  before any other commands, including commands on the invocation line.
+
+2 NT
+  The environment variable ODS2INIT specifies the initialization file.
+  If ODS2INIT is not defined, %s%s\.%s.INI is used.
+2 VMS
+  The logical name ODS2INIT specifies the initialization file.
+  If ODS2INIT is not defined, SYS$LOGIN:_%s.INI is used.
+2 UNIX
+  The environment variable ODS2INIT specifies the initialization file.
+  If ODS2INIT is not defined, ~/.%s.ini is used.
+2 LIBEDIT
+
+  %s uses the libedit command history editor.  libedit reads the editrc
+  file for configuration data. See 'man 5 editrc' and 'man 7 editline' for usage details.
+
+!
+1 MOUNT
+  You can mount a volume(-set) from either physical devices
+  such a CDROM or hard disk drive, or files containing an
+  image of a volume, such as a .ISO file or simulator disk image.
+
+  To mount a disk image, use the %simage qualifier and
+  specify the filename as the parameter.
+  If the filename contains %s, specify it in double quotes
+
+  Mount will assign a virtual device name to each volume.
+
+  You can select a virtual device name using the format
+    dka100=my_files.iso
+
+  To mount a physical device, use the format:
+!
+2 NT
+
+    mount D:
+
+  Any drive letter mapped to a physical drive can be used.
+
+  The drive is accessed as a physical device, which may require privileges.
+  Use SHOW DEVICES for a list of available devices.
+!
+2 NTASPI
+
+    mount D:
+
+  Any drive letter mapped to a physical drive can be used.
+
+  If the drive letter is C: or higher, commands are
+  sent directly to the drive, bypassing system drivers.
+  The drive must be a SCSI device.
+
+  The drive is accessed as a physical device, which may require privileges.
+  Use SHOW DEVICES for a list of available devices.
+!
+2 OS2
+  Specify the device to be mounted as a drive letter.
+  E.g. mount D:
+  The drive letter must be between A: and Z:
+  The drive is accessed as a physical device.
+!
+2 UNIX
+
+    mount device
+
+  The device must be in %s.
+
+  For example, if you are using %s
+    ODS2$> mount cdrom0
+
+  Use SHOW DEVICES for a list of available devices.
+!
+2 VMS
+      mount DUB0:
+  The device can be specified as a physical device or logical name.
+
+  You will need the LOGIO privilege.
+
+  Use SHOW DEVICES for a list of available devices.
+
+2 VHD
+  To create and mount a snapshot of a VHD-based volume set, use the
+  %ssnapshot_of qualifier.
+  Specify the existing volumes' filenames as an argument to %ssnapshot, and
+  list the corresponding filenames to be created as the mount parameter.
+
+  See the VHD_IMAGE_FILES topic for more information.
+!
+2 VOLSET
+  To mount a volume set, specify all the members in RVN order
+  as a comma-separated list.
+
+  If you specify a list of volume labels, they must be in
+  the same order as the volumes, and each must match the label
+  stored in the data
+!
+1 SYNTAX
+SYNTAX
+  %s commands roughly follow DCL/VMS syntax, which has the
+  general form
+     VERB /Qualifier(s) parameter parameter ...
+
+  If you prefer Unix-style options to DCL qualifiers, use
+     SET QUALIFIER_STYLE UNIX
+  No logical names or symbols are supported.
+
+  Command arguments can be quoted.  If parameters (e.g. filenames)
+  contain '%s', you can either quote them or indicate the end of
+  of qualifers with with '%s%s'.
+2 COMMAND_FILES
+COMMAND FILES
+  Command files allow you to automate operations, especially those
+  that you do more than once.  A command file consists of ods2
+  commands exactly as you would type them, one per line.
+
+  We recommend that you do not abbreviate commands or command
+  elements in command files.
+
+  Command files are executed with @filespec.
+
+  They can be nested up to %u levels deep.
+
+  A command file can be automatically executed each time ods2 is
+  invoked.  See the description of initialization files in
+  HELP INVOCATION
+2 CONFIRM
+  Several command provide the CONFIRM qualifier, which causes a prompt
+  for confirmation of the operation.  This is especially useful for
+  destructive and/or wildcarded operations.
+
+  The following responses are valid:
+
+  YES       NO        QUIT
+
+  TRUE      FALSE     Ctrl/Z
+
+  1         0         ALL
+            <Return>
+
+  You can use any combination of uppercase and lowercase letters
+  for word responses. Word responses can be abbreviated to one or
+  more letters (for example, T, TR, or TRU for TRUE), but these
+  abbreviations must be unique. Affirmative answers are YES, TRUE,
+  and 1. Negative answers include: NO, FALSE, 0, and pressing
+  the Return key. Entering QUIT or pressing Ctrl/Z indicates that
+  you want to stop processing the command at that point. When you
+  respond by entering ALL, the command continues to process, but no
+  further prompts are given. If you type a response other than one
+  of those in the list, ODS2 issues an error message and redisplays
+  the prompt.
+2 PAGINATE
+  Commands with the /PAGE qualifier allow you to request that output
+  be paginated; that is, pause every 'n' lines.  This prevents
+  large amounts of output from scrolling off the screen.
+
+  N defaults to the height of the terminal window.
+
+  When the output pauses, you are prompted and to make one of the
+  following choices:
+    <CR>  Continue processing and display the next 'n' lines of output.
+    F<CR> Finish processing without any further pauses.
+    Q<CR> Stop processing the command.
+
+    End-of-file (Ctrl/Z or Ctrl/D (Unix) has the same effect as Q.
+2 QUALIFIERS
+  Qualifiers provide additional direction to a a command.  In other
+  environments, they may be known as "switches" or "options."
+
+  Qualifiers consist of a "/" followed by a keyword, which may
+  be abbreviated.  (SET QUALIFIER_STYLE UNIX replaces the "/" with "-".)
+
+  Some qualifiers have a complement; e.g. /LOG and /NOLOG.  These
+  are identifed in the help as /[NO]qualname, and the affirmative
+  sense is the one documented.
+
+  Some qualifiers accept a value; e.g. /DATE=CREATE.  The value
+  is separated from the qualifier by '=' (':' is also accepted).
+
+  Qualifier values can be a a list, in which case the list members
+  are separated by comma.  The list may be enclosed in parentheses.
+
+2 UIC
+  A UIC is a "User Identification Code", which identifies the ownershipe
+  of a file or volume when applying file protection rules.
+
+  File and volume protections are not enforced by ODS-2, but are enforced
+   by other operating environments.  ODS-2 allows you to specify and
+  display protections for interoperability with those environments.
+
+  Under some operating systems, the UIC can be specified as an alphanumeric
+  name, e.g. [SYSTEM].  ODS-2 does not support this format.
+
+  ODS-2 supports the numeric form of UICs, which is [group,member],
+  where group and member are up-to 6 digit octal numbers.  Each has a
+  maximum value of 177777.  The square brackets and comma are required.
+2 PROTECTION
+  Files-11 protection divides accessors into four groups: SYSTEM, OWNER,
+  GROUP, and WORLD.
+
+  SYSTEM refers to system-privileged utilities, such as BACKUP.
+  OWNER refers to accesses from processes running under the OWNER UIC.
+  GROUP refers to accesses from processes running under a UIC which matches the [group,] field of the owner.
+  WORLD encompasses any other access.
+
+  Protection controls 4 access types: Read, Write, Execute and Delete.
+  (Execute is also known as Create when the protection is applied to
+  a directory or volume.)
+
+  Protection is specifed as a 4-tuple in the form
+  (SYSTEM:RWED,OWNER:RWED,GROUP:RWED,WORLD:RWED)
+  The group name can be abbreviated to one character.
+  To specify no access, specify the group name but omit the value.
+  If the group name is omitted entirely, that group's access is not
+  modified.
+2 FILE_SPECS
+  A Files-11 file specification is comprised of 5 fields, each of
+  which is optional.  The full form is:
+    device:[directory]name.type;version
+
+  Device is the name of device containing a volume.
+
+  Directory is the name of a directory (or "folder") containing
+  one or more files.  Directories are hierarchical; a directory can
+  contain sub-directories up to a depth of 8 levels.  Subdirectories
+  are delimited by '.'; e.g. [outer.inner.middle]  The highest level
+  directory is called the Master File Directory, or MFD.  It has the
+  name '[000000]', and is implicit.
+
+  Name is the name of a file.
+
+  Type (or "extension") indicates the type of data in the file (by convention).
+
+  Version (or "generation") allows  multiple copies of a file with the same
+  device, directory, name and type to be retained.  Version numbers
+  have a range of 1 through 32767;
+
+  Some commands allow groups of files to be refered to with wildcards.
+  The wildcard '%' matches exactly one character.  '*' matches any
+  number of characters including zero.  '...' in a directory matches
+  'and all lower directories'.  Wildcards are not permitted for device names.
+
+  Version ';' (no number) means 'the highest generation' for an input file.
+  For an output file, it means 'the next higher' generation.
+
+  When fields are omitted from a file specification, they are replaced
+  by an application-specific default, or absent that, from the
+  'default' file specification specified by SET DEFAULT.  The latter
+  can include a device and directory, but no file name, type or version.
+
+  Each file specification component is limited to 39 characters.
+!
+1 VHD_IMAGE_FILES
+  Virtual Hard Disk (VHD) is a disk image format published by Microsoft as an
+  "open specification".  It is used by many simulators, including SimH.
+
+  VHD covers three kinds of disk images:
+      Fixed      - A fixed size disk image
+      Dynamic    - A sparse disk image; space in the container is allocated
+                   as the OS uses it.
+      Difference - A sparse disk image containing only changes to a Dynamic
+                   image.  Also called a "snapshot".
+
+  ODS2 can read and write all three VHD formats, which must
+  have a file type of .vhd (or .VHD) to be recognized.
+
+  ODS2 currently only initializes Dynamic disks.  Mount can create a
+  snapshot of a dynamic disk.  This can be useful for experimentation
+  when you might want to roll-back changes.
+
+  Note that once a snapshot has been taken of a Dynamic disk, the
+  original (parent) disk must not be modified, as this would invalidate
+  the snapshot.  You can take snapshots of snapshots.
+
+  The vhdtools collection provides a utility that can merge snapshots
+  into their parent disk.  It also supports other maintenance functions.
+!

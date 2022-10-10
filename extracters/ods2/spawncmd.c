@@ -1,10 +1,13 @@
 /* This is part of ODS2 written by Paul Nankervis,
  * email address:  Paulnank@au1.ibm.com
-
+ *
  * ODS2 is distributed freely for all members of the
  * VMS community to use. However all derived works
  * must maintain comments in their source to acknowledge
- * the contibution of the original author.
+ * the contributions of the original author and
+ * subsequent contributors.   This is free software; no
+ * warranty is offered,  and while we believe it to be useful,
+ * you use it at your own risk.
  */
 
 #if !defined( DEBUG ) && defined( DEBUG_SPAWNCMD )
@@ -31,30 +34,48 @@
 
 /******************************************************************* dospawn() */
 
-DECL_CMD(spawn)  {
 #ifdef VMS
-    unsigned sts;
+char spawnhelp[] = { "commands spawnvms" };
+
+DECL_CMD(spawn)  {
+    vmscond_t sts;
 
     UNUSED( argc );
     UNUSED( argv );
     UNUSED( qualc );
     UNUSED( qualv );
 
-    sts = lib$spawn( 0,0,0,0,0,0,0,0,0,0,0,0,0 );
+    /* command, input, output, flags, process_name, pid, exit_sts, efn,
+     * astaddr, astprm, prompt, cli, table
+     */
+    if( $FAILS(sts = lib$spawn( 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 )) ) {
+        printmsg( ODS2_NOSHELL, 0, "command interpreter" );
+        sts = printmsg( sts, MSG_CONTINUE, ODS2_NOSHELL );
+    }
     return sts;
-#else
-# ifdef _WIN32
+}
+#elif defined( _WIN32 )
+char spawnhelp[] = { "commands spawnnt" };
+
+DECL_CMD(spawn)  {
     UNUSED( argc );
     UNUSED( argv );
     UNUSED( qualc );
     UNUSED( qualv );
 
     if( system( "cmd" ) == -1 ) {
-        perror( "cmd" );
-        return SS$_NOSUCHFILE;
+        int err;
+
+        err = errno;
+        printmsg( ODS2_NOSHELL, 0, "cmd" );
+        return printmsg( ODS2_OSERROR, MSG_CONTINUE, strerror( err ) );
     }
     return SS$_NORMAL;
-# else
+}
+#else
+char spawnhelp[] = { "commands spawnunix" };
+
+DECL_CMD(spawn)  {
     char *shell, *p;
     pid_t pid;
 
@@ -71,19 +92,24 @@ DECL_CMD(spawn)  {
         p++;
 
     if( (pid = fork()) == 0 ) {
+        int err;
+
         execlp( shell, p, (char *)NULL );
-        perror( "%s" );
+
+        err = errno;
+        printmsg( ODS2_NOSHELL, 0, shell );
+        printmsg( ODS2_OSERROR, MSG_CONTINUE, strerror( err ) );
         exit(EXIT_FAILURE);
     }
     if( pid == -1 ) {
-        perror( shell );
-        return SS$_NOSUCHFILE;
+        int err = errno;
+
+        printmsg( ODS2_NOSHELL, 0, shell );
+        return printmsg( ODS2_OSERROR, MSG_CONTINUE, strerror( err ) );
     }
     waitpid( pid, NULL, 0 );
 
     return SS$_NORMAL;
-# endif
-#endif
-
 }
+#endif
 

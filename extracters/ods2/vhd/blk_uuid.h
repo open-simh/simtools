@@ -173,7 +173,7 @@ static inline void blk_uuid_to_string( blk_uuid_t *uuid, char *out, size_t size 
 
 static inline void blk_uuid_from_string( blk_uuid_t *uuid, const char *in )
 {
-    UuidFromString( (RPC_CSTR)in, (uuid_t *)uuid );
+    (void) UuidFromString( (RPC_CSTR)in, (uuid_t *)uuid );
 }
 
 static inline void blk_uuid_copy( blk_uuid_t *dst, blk_uuid_t *src )

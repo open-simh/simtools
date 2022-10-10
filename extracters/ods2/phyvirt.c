@@ -18,14 +18,17 @@
  *       ODS2 is distributed freely for all members of the
  *       VMS community to use. However all derived works
  *       must maintain comments in their source to acknowledge
- *       the contibution of the original author.
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
  */
 
 /* A virtual device is used when normal file I/O is desired, e.g. to
  * a disk image (simulator, .iso).
  *
  * A virtual device is established on the command line by specifying
- * /virtual to the mount command.
+ * /image to the mount or initialize command, or by defaulting.
  *  If the device name is of the form dev:file, dev: becomes the
  *  virtual device name.  Otherwise, a suitable name is created.
  *
@@ -34,7 +37,7 @@
  * device specific transformations, such as interleave and skew.
  *
  * It also provides an access layer for VHD format image files, on
- * platforms where libvhd is available. 
+ * platforms where libvhd is available.
  */
 
 #if !defined( DEBUG ) && defined( DEBUG_PHYVIRT )
@@ -46,6 +49,7 @@
 #endif
 
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,6 +61,7 @@
 #include "phyio.h"
 #include "phyvirt.h"
 #include "ssdef.h"
+#include "sysmsg.h"
 
 static struct VDEV {
     struct VDEV *next;
@@ -69,96 +74,66 @@ static struct VDEV {
 #include "phyvhd.h"
 #endif
 
-static int virt_compare( unsigned keylen, const char *keynam,
+static int virt_compare( uint32_t keylen, const char *keynam,
                          const char *devnam );
-static struct VDEV *virt_insert( const char *devnam, unsigned devsiz,
+static struct VDEV *virt_insert( const char *devnam, uint32_t devsiz,
                                  const char *path );
-static void virt_remove( const char *devnam, unsigned devsiz );
-
-
-unsigned virt_open( char **devname, unsigned flags, struct DEV **dev );
-static unsigned virt_makedev( char *devnam, char **vname );
+static void virt_remove( const char *devnam, uint32_t devsiz );
+static vmscond_t virt_makedev( char *devnam, char **vname );
 static char *autodev( void );
-static unsigned virt_assign( char *devnam, struct DEV *dev );
-unsigned virt_close( struct DEV *dev );
-
-static unsigned maplbn( unsigned lbn, disktypep_t dp, unsigned sect );
-
-unsigned virt_read( struct DEV *dev, unsigned lbn, unsigned length,
-                    char *buffer ) ;
-unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
-                     const char *buffer );
-unsigned virt_readp( struct DEV *dev, unsigned pbn, unsigned length,
-                     char *buffer );
-unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
-                      char *buffer );
+static vmscond_t virt_assign( char *devnam, struct DEV *dev );
+static vmscond_t maplbn( uint32_t lbn, disktypep_t dp, uint32_t sect );
 static size_t get_devsiz( const char *devnam );
 
 
 /************************************************************* virt_show() */
 
-void virt_show( const char *devnam ) {
-
-    unsigned devsiz;
+void virt_show( void ) {
     struct VDEV *vp;
+    size_t maxd = sizeof( "Device" ) -1,
+        maxp = sizeof( "File" ) -1,
+        n;
 
-    if( devnam == NULL ) {
-        size_t maxd = sizeof( "Device" ) -1,
-               maxp = sizeof( "File" ) -1,
-               n;
-
-        if( virt_device_list == NULL ) {
-            printf( " No virtual devices are assigned\n" );
-            return;
-        }
-        for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
-            n = strlen( vp->devnam );
-            if( n > maxd )
-                maxd = n;
-            n = strlen( vp->path );
-            if( n > maxp )
-                maxp =n;
-        }
-        if( maxp > 64 )
-            maxp = 64;
-
-        printf( " Virtual devices\n" );
-        printf( "  %-*s %s\n  ", (int)maxd, "Device", "File" );
-        for( n = 0; n < maxd; n++ ) putchar( '-' );
-        putchar( ' ');
-        for( n = 0; n < maxp; n++ ) putchar( '-' );
-        putchar( '\n' );
-
-        for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
-            n = strlen( vp->path );
-            printf( "  %-*s %-*.*s", (int)maxd, vp->devnam, (int)maxp,
-                    (int)maxp, (n > maxp)? vp->path+(n-maxp): vp->path );
-#ifdef USE_VHD
-            if( vp->dev->access & PHY_VHDDSK )
-                phyvhd_show( vp->dev, 2 + maxd + 1 + maxp + 1 );
-#endif
-            putchar( '\n' );
-        }
-    } else {
-        devsiz = get_devsiz( devnam );
-
-        if( devsiz == 0 ) {
-            return;
-        }
-        for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
-            if( virt_compare( devsiz, (char *) devnam, vp->devnam ) == 0 ) {
-                printf( " %s => %s\n", vp->devnam, vp->path );
-                return;
-            }
-        }
+    if( virt_device_list == NULL ) {
+        printmsg( IO_VNODEVS, MSG_TEXT );
+        return;
     }
+    for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
+        n = strlen( vp->devnam );
+        if( n > maxd )
+            maxd = n;
+        n = strlen( vp->path );
+        if( n > maxp )
+            maxp =n;
+    }
+    if( maxp > 64 )
+        maxp = 64;
+
+    printmsg( IO_VDEVHEADER, MSG_TEXT );
+    printf( "  %-*s %s\n  ", (int)maxd, "Device", "File" );
+    for( n = 0; n < maxd; n++ ) putchar( '-' );
+    putchar( ' ');
+    for( n = 0; n < maxp; n++ ) putchar( '-' );
+    putchar( '\n' );
+
+    for( vp = virt_device_list; vp != NULL; vp = vp->next ) {
+        n = strlen( vp->path );
+        printf( "  %-*s %-*.*s", (int)maxd, vp->devnam, (int)maxp,
+                (int)maxp, (n > maxp)? vp->path+(n-maxp): vp->path );
+#ifdef USE_VHD
+        if( vp->dev->access & PHY_VHDDSK )
+            phyvhd_show( vp->dev, 2 + maxd + 1 + maxp + 1 );
+#endif
+        putchar( '\n' );
+    }
+
+    return;
 }
 
 /********************************************************** virt_compare() */
 
-static int virt_compare( unsigned keylen, const char *keynam,
-                            const char *devnam ) {
-
+static int virt_compare( uint32_t keylen, const char *keynam,
+                         const char *devnam ) {
     register int cmp;
 
     cmp = 0;
@@ -179,11 +154,10 @@ static int virt_compare( unsigned keylen, const char *keynam,
 /* virt_lookup() finds virtual devices... */
 
 char *virt_lookup( const char *devnam ) {
-
-    unsigned devsiz;
+    uint32_t devsiz;
     struct VDEV *vp;
 
-    devsiz = get_devsiz( devnam );
+    devsiz = (uint32_t)get_devsiz( devnam );
     if( devsiz == 0 ) {
         return NULL;
     }
@@ -197,9 +171,9 @@ char *virt_lookup( const char *devnam ) {
 
 /*********************************************************** virt_insert() */
 
-static struct VDEV *virt_insert( const char *devnam, unsigned devsiz,
+static struct VDEV *virt_insert( const char *devnam, uint32_t devsiz,
                                  const char *path ) {
-    unsigned pathsiz;
+    size_t pathsiz;
     struct VDEV *vp, **vpp, **here;
 
     here = NULL;
@@ -215,7 +189,8 @@ static struct VDEV *virt_insert( const char *devnam, unsigned devsiz,
     if( vp == NULL ) {
         return NULL;
     }
-    vp->devnam = (char *) malloc( devsiz + 1 );
+    vp->devnam = (char *) malloc( (size_t)devsiz + 1 );
+
     vp->path = (char *) malloc( (pathsiz = strlen( path )) + 1 );
 
     if( vp->devnam == NULL || vp->path == NULL ) {
@@ -236,7 +211,7 @@ static struct VDEV *virt_insert( const char *devnam, unsigned devsiz,
 
 /*********************************************************** virt_remove() */
 
-static void virt_remove( const char *devnam, unsigned devsiz ) {
+static void virt_remove( const char *devnam, uint32_t devsiz ) {
 
     struct VDEV *vp, **vpp;
 
@@ -257,8 +232,8 @@ static void virt_remove( const char *devnam, unsigned devsiz ) {
  * devices.  Calls phyio_init with everything straightend out.
  */
 
-unsigned virt_open( char **devname, unsigned flags, struct DEV **dev ) {
-    unsigned sts;
+vmscond_t virt_open( char **devname, uint32_t flags, struct DEV **dev ) {
+    vmscond_t sts;
 
     flags &= ~PHY_VHDDSK;
 
@@ -269,28 +244,22 @@ unsigned virt_open( char **devname, unsigned flags, struct DEV **dev ) {
 #ifdef USE_VHD
             flags |= PHY_VHDDSK;
 #else
-            printf( "%%ODS2-W-NOVHD, VHD disk support is not available in this version\n" );
-            return SS$_IVDEVNAM;
+            return printmsg( IO_NOVHD, 0 );
 #endif
         }
-
-        sts = virt_makedev( *devname, devname );
-        if( !(sts & STS$M_SUCCESS) )
+        if( $FAILS( sts = virt_makedev( *devname, devname )) )
             return sts;
     } else {
         if( virt_lookup( *devname ) != NULL ) {
             int devsiz;
 
-            devsiz = get_devsiz( *devname );
-            printf( "%%ODS2-E-VIRTDEV, %.*s is a virtual device\n",
-                    (int)devsiz, *devname );
-            return SS$_DEVMOUNT;
+            devsiz = (int)get_devsiz( *devname );
+            return printmsg( IO_ISVIRTDEV, 0, devsiz, *devname );
         }
     }
-    sts = device_lookup( strlen( *devname ), *devname, TRUE, dev );
-    if( !(sts & STS$M_SUCCESS) ) {
+    if( $FAILS(sts = device_lookup( strlen( *devname ), *devname, TRUE, dev )) ) {
         if( flags & MOU_VIRTUAL )
-            virt_remove( *devname, get_devsiz( *devname ) );
+            virt_remove( *devname, (uint32_t)get_devsiz( *devname ) );
         return sts;
     }
     (*dev)->access = flags;                          /* Requested mount options */
@@ -301,15 +270,16 @@ unsigned virt_open( char **devname, unsigned flags, struct DEV **dev ) {
 #ifdef USE_VHD
         sts = phyvhd_init( *dev );
 #else
-        return SS$_IVDEVNAM;
+        device_done( *dev );
+        return printmsg( IO_NOVHD, 0 );
 #endif
     } else {
         sts = phyio_init( *dev );
     }
 
     if( (flags & MOU_VIRTUAL) ) {
-        if( sts & STS$M_SUCCESS ) {
-            if( !((sts = virt_assign( *devname, *dev )) & STS$M_SUCCESS) ) {
+        if( $SUCCESSFUL(sts) ) {
+            if( $FAILS(sts = virt_assign( *devname, *dev )) ) {
 #ifdef USE_VHD
                 if( flags & PHY_VHDDSK )
                     phyvhd_close( *dev );
@@ -318,8 +288,10 @@ unsigned virt_open( char **devname, unsigned flags, struct DEV **dev ) {
                     phyio_done( *dev );
                 device_done( *dev );
             }
-        } else
-            virt_remove( *devname, get_devsiz( *devname ) );
+        } else {
+            virt_remove( *devname, (uint32_t)get_devsiz( *devname ) );
+            device_done( *dev );
+        }
     }
     return sts;
 }
@@ -332,9 +304,9 @@ unsigned virt_open( char **devname, unsigned flags, struct DEV **dev ) {
  * file might not exist yet. (initialize)
  */
 
-static unsigned virt_makedev( char *devnam, char **vname ) {
+static vmscond_t virt_makedev( char *devnam, char **vname ) {
     struct VDEV *vp;
-    unsigned devsiz;
+    uint32_t devsiz;
     char *path = NULL;
     char *p;
 
@@ -342,15 +314,14 @@ static unsigned virt_makedev( char *devnam, char **vname ) {
         *p = '\0';
         path = ++p;
         if( (p = virt_lookup( devnam)) != NULL ) {
-            printf( "%%ODS2-E-INUSE, %s is in use by %s\n", devnam, p );
-            return SS$_DEVALLOC;
+            return printmsg( IO_VIRTDEVINUSE, 0, devnam, p );
         }
     } else {
         path = devnam;
         devnam = autodev();
     }
 
-    devsiz = get_devsiz( devnam );
+    devsiz = (uint32_t)get_devsiz( devnam );
     if( devsiz == 0 ) {
         return SS$_BADPARAM;
     }
@@ -414,6 +385,7 @@ char *autodev( void ) {
         int i = 0;
         char t[ sizeof(devnam) ];
 
+        memset( t, 0, sizeof(t) );
         n = d;
         do {
             ldiv_t r;
@@ -440,12 +412,13 @@ char *autodev( void ) {
  * virt_open will close the physical device if we have problems.
  */
 
-static unsigned virt_assign( char *devnam, struct DEV *dev ) {
-    unsigned devsiz;
+static vmscond_t virt_assign( char *devnam, struct DEV *dev ) {
+    vmscond_t sts;
+    uint32_t devsiz;
     char *p;
     struct VDEV *vp, **vpp;
 
-    devsiz = get_devsiz( devnam );
+    devsiz = (uint32_t)get_devsiz( devnam );
     if( devsiz == 0 ) {
         return SS$_BADPARAM;
     }
@@ -457,19 +430,19 @@ static unsigned virt_assign( char *devnam, struct DEV *dev ) {
     if( vp == NULL )
         return SS$_BADPARAM;
 
-    if( (p = phyio_path( vp->path )) == NULL || strlen( p ) == 0 ) {
-        printf( "%%ODS2-E-BADPATH, Invalid path: %s\n", vp->path );
+    if( (p = get_realpath( vp->path )) == NULL || strlen( p ) == 0 ) {
+        sts = printmsg( IO_BADPATH, 0, vp->path );
         free( p );
         virt_remove( devnam, devsiz );
-        return SS$_BADPARAM;
+        return sts;
     }
 
     for( vpp = &virt_device_list; *vpp != NULL; vpp = &(*vpp)->next ) {
         if( (*vpp != vp) && strcmp( (*vpp)->path, p ) == 0 ) {
-            printf( "%%ODS2-E-MAPPED, %s is in use on virtual drive %s\n", p, (*vpp)->devnam );
+            sts = printmsg( IO_VIRTFILEINUSE, 0, p, (*vpp)->devnam );
             free( p );
             virt_remove( devnam, devsiz );
-            return SS$_DEVALLOC;
+            return sts;
         }
     }
 
@@ -486,14 +459,14 @@ static unsigned virt_assign( char *devnam, struct DEV *dev ) {
  * Wraps phyio_done;
  */
 
-unsigned virt_close( struct DEV *dev ) {
-    unsigned devsiz;
-    unsigned sts;
+vmscond_t virt_close( struct DEV *dev ) {
+    uint32_t devsiz;
+    vmscond_t sts;
 
     cache_flush();
 
     if( dev->access & MOU_VIRTUAL ) {
-        devsiz = get_devsiz( dev->devnam );
+        devsiz = (uint32_t)get_devsiz( dev->devnam );
         virt_remove( dev->devnam, devsiz );
     }
 #ifdef USE_VHD
@@ -510,8 +483,8 @@ unsigned virt_close( struct DEV *dev ) {
 /* Map an LBN as viewed by the OS to each of its physical sectors.
  */
 
-static unsigned maplbn( unsigned lbn, disktypep_t dp, unsigned sect ) {
-    unsigned c, t, s;
+static vmscond_t maplbn( uint32_t lbn, disktypep_t dp, uint32_t sect ) {
+    uint32_t c, t, s;
     ldiv_t r;
 
     lbn = (lbn * (512 / dp->sectorsize)) + sect;
@@ -534,14 +507,15 @@ static unsigned maplbn( unsigned lbn, disktypep_t dp, unsigned sect ) {
 
 /*********************************************************** virt_read() */
 
-unsigned virt_read( struct DEV *dev, unsigned lbn, unsigned length,
+vmscond_t virt_read( struct DEV *dev, uint32_t lbn, uint32_t length,
                     char *buffer ) {
     disktypep_t dp;
     char *lbnbuf = NULL;
-    unsigned status, secblk;
+    vmscond_t status;
+    uint32_t secblk;
     off_t devlimit, end, eofptr;
 #ifdef DEBUG_DISKIO
-    unsigned inlbn = lbn, inlen = length;
+    uint32_t inlbn = lbn, inlen = length;
     char *inbuf = buffer;
 #endif
 
@@ -577,21 +551,19 @@ unsigned virt_read( struct DEV *dev, unsigned lbn, unsigned length,
     if( dp->reserved == 0 && dp->interleave == 0 && dp->skew == 0 ) {
         if( (dev->access & MOU_VIRTUAL) &&
             (end = ((off_t)lbn * 512 + length)) > eofptr ) {
-            unsigned avail;
+            uint32_t avail;
             off_t start;
 
             if( end > devlimit ) {
-                printf( "%%ODS2-E-BLK2BIG, Read from non-existent block %lu\n",
-                        ((end + dp->sectorsize -1)/dp->sectorsize) );
-                return SS$_ILLBLKNUM;
+                return printmsg( IO_RDBLK2BIG, 0,
+                                 ((end + dp->sectorsize -1)/dp->sectorsize) );
             }
             start = (off_t)lbn * 512;
 
             if( start <  eofptr ) {
-                avail = (unsigned)( eofptr - start );
+                avail = (uint32_t)( eofptr - start );
 
-                status = dev->devread( dev, lbn, avail, buffer );
-                if( !(status & STS$M_SUCCESS) )
+                if( $FAILS(status = dev->devread( dev, lbn, avail, buffer )) )
                     return status;
 
                 length -= avail;
@@ -617,15 +589,15 @@ unsigned virt_read( struct DEV *dev, unsigned lbn, unsigned length,
         abort(); /* TODO *** Handle large sectors, e.g. CDROM 2K where multiple LBNs fit into one. */
 
     secblk = 512 / dp->sectorsize;
-    if( (lbnbuf = malloc( 512 * 2 )) == NULL )
+    if( (lbnbuf = malloc( (size_t)512 * 2 )) == NULL )
         return SS$_INSFMEM;
 
-    while( length > 0 && (status & STS$M_SUCCESS) ) {
-        unsigned pbn;
-        unsigned s;
+    while( length > 0 && $SUCCESSFUL(status) ) {
+        uint32_t pbn;
+        uint32_t s;
 
         for( s = 0; s < secblk && length > 0; s++ ) {
-            unsigned n;
+            uint32_t n;
             ldiv_t r;
 
             pbn = maplbn( lbn, dp, s );
@@ -636,32 +608,29 @@ unsigned virt_read( struct DEV *dev, unsigned lbn, unsigned length,
 
             if( (dev->access & MOU_VIRTUAL) &&
                 (end = ((off_t)r.quot * 512 + n)) > eofptr ) {
-                unsigned avail;
+                uint32_t avail;
                 off_t start;
 
                 if( ((off_t)pbn * (long)dp->sectorsize) + (long)n - r.rem > devlimit ) {
-                    printf( "%%ODS2-E-BLK2BIG, Read from non-existent block %lu\n",
+                    status =  printmsg( IO_RDBLK2BIG, 0,
                             (((pbn * dp->sectorsize + n) + dp->sectorsize -1) /
                              dp->sectorsize) -1 );
-                    status = SS$_ILLBLKNUM;
                     break;
                 }
 
                 start = (off_t)r.quot * 512;
 
                 if( start <  eofptr ) {
-                    avail = (unsigned)( eofptr - start );
+                    avail = (uint32_t)( eofptr - start );
 
-                    status = dev->devread( dev, r.quot, avail, lbnbuf );
-                    if( !(status & STS$M_SUCCESS) )
+                    if( $FAILS(status = dev->devread( dev, r.quot, avail, lbnbuf )) )
                         return status;
 
-                    memset( lbnbuf+avail, 0, n - avail );
+                    memset( lbnbuf+avail, 0, (size_t)n - avail );
                 } else
                     memset( lbnbuf, 0, n );
             } else {
-                status = dev->devread( dev, r.quot, n, lbnbuf );
-                if( !(status & STS$M_SUCCESS) )
+                if( $FAILS(status = dev->devread( dev, r.quot, n, lbnbuf )) )
                     break;
             }
             n = (dp->sectorsize > length)? length: dp->sectorsize;
@@ -680,14 +649,15 @@ unsigned virt_read( struct DEV *dev, unsigned lbn, unsigned length,
 
 /*********************************************************** virt_write() */
 
-unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
+vmscond_t virt_write( struct DEV *dev, uint32_t lbn, uint32_t length,
                      const char *buffer ) {
     disktypep_t dp;
     char *lbnbuf = NULL;
-    unsigned status, secblk;
+    vmscond_t status;
+    uint32_t secblk;
     off_t devlimit, start, end;
 #ifdef DEBUG_DISKIO
-    unsigned inlbn = lbn, inlen = length;
+    uint32_t inlbn = lbn, inlen = length;
     const char *inbuf = buffer;
 #endif
 
@@ -701,18 +671,16 @@ unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
 
     if( dp->reserved == 0 && dp->interleave == 0 && dp->skew == 0 ) {
         if( (end + 511)/512 > devlimit ) {
-            printf( "%%ODS2-E-BLK2BIG, Write to non-existent block %lu\n",
-                    ((end + dp->sectorsize -1)/dp->sectorsize) );
-            return SS$_ILLBLKNUM;
+            return printmsg( IO_WRBLK2BIG, 0,
+                             ((end + dp->sectorsize -1)/dp->sectorsize) );
         }
         status = dev->devwrite( dev, lbn, length, buffer );
 #ifdef DEBUG_DISKIO
         dumpblock( inlbn, inlen, inbuf, "Virt Write, status %08X", status );
 #endif
-        if( (status & STS$M_SUCCESS) && (dev->access & MOU_VIRTUAL) ) {
-            if( end > dev->eofptr ) {
-                dev->eofptr = end;
-            }
+        if( $SUCCESSFUL(status) &&
+            (dev->access & MOU_VIRTUAL) && (end > dev->eofptr) ) {
+            dev->eofptr = end;
         }
         return status;
     }
@@ -723,15 +691,15 @@ unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
         abort(); /* TODO *** Handle large sectors, e.g. CDROM 2K where multiple LBNs fit into one. */
 
     secblk = 512 / dp->sectorsize;
-    if( (lbnbuf = malloc( 512 * 2 )) == NULL )
+    if( (lbnbuf = malloc( (size_t)512 * 2 )) == NULL )
         return SS$_INSFMEM;
 
-    while( length > 0 && (status & STS$M_SUCCESS) ) {
-        unsigned pbn;
-        unsigned s;
+    while( length > 0 && $SUCCESSFUL(status) ) {
+        uint32_t pbn;
+        uint32_t s;
 
         for( s = 0; s < secblk && length > 0; s++ ) {
-            unsigned n, m;
+            uint32_t n, m;
             ldiv_t r;
 
             pbn = maplbn( lbn, dp, s );
@@ -743,26 +711,24 @@ unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
             start = (off_t)r.quot * 512;
             m = ((n + 511) / 512) * 512;
             if( start < dev->eofptr && (off_t)(start + m) > dev->eofptr )
-                m = (unsigned)(dev->eofptr - start);
+                m = (uint32_t)(dev->eofptr - start);
 
             if( dev->access & MOU_VIRTUAL ) {
                 if( ((off_t)pbn * (long)dp->sectorsize) + ((long)n - r.rem)  > devlimit ) {
-                    printf( "%%ODS2-E-BLK2BIG, Write to non-existent block %lu\n",
-                            (((pbn * dp->sectorsize) + (n - r.rem) +
-                              dp->sectorsize -1) / dp->sectorsize ) -1 );
-                    status = SS$_ILLBLKNUM;
+                    status = printmsg( IO_WRBLK2BIG, 0,
+                                       (((pbn * dp->sectorsize) + (n - r.rem) +
+                                         dp->sectorsize -1) / dp->sectorsize ) -1 );
                     break;
                 }
             }
-            memset( lbnbuf, 0, 512 * 2 );
+            memset( lbnbuf, 0, (size_t)512 * 2 );
             if( start < dev->eofptr ) {
-                status = dev->devread( dev, r.quot, m, lbnbuf );
-                if( !(status & STS$M_SUCCESS) )
+                if( $FAILS(status = dev->devread( dev, r.quot, m, lbnbuf )) )
                     break;
                 if( m < n )
-                    memset( lbnbuf+m, 0, n - m );
+                    memset( lbnbuf+m, 0, (size_t)n - m );
             }
-            memcpy( lbnbuf+r.rem, buffer, n - r.rem );
+            memcpy( lbnbuf+r.rem, buffer, (size_t)n - r.rem );
             end = start + n;
             if( end > dev->eofptr ) {
                 status = dev->devwrite( dev, r.quot, n, lbnbuf );
@@ -770,7 +736,7 @@ unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
             } else
                 status = dev->devwrite( dev, r.quot, m, lbnbuf );
 
-            if( !(status & STS$M_SUCCESS) )
+            if( $FAILED(status) )
                 break;
             n -= r.rem;
             buffer += n;
@@ -788,14 +754,14 @@ unsigned virt_write( struct DEV *dev, unsigned lbn, unsigned length,
 
 /*********************************************************** virt_readp() */
 
-unsigned virt_readp( struct DEV *dev, unsigned pbn, unsigned length,
+vmscond_t virt_readp( struct DEV *dev, uint32_t pbn, uint32_t length,
                     char *buffer ) {
     disktypep_t dp;
-    unsigned status;
+    vmscond_t status;
     off_t devlimit, eofptr;
     off_t fp, offset;
     char *buf;
-    unsigned avail;
+    uint32_t avail;
 
     dp = dev->disktype;
 
@@ -807,9 +773,8 @@ unsigned virt_readp( struct DEV *dev, unsigned pbn, unsigned length,
     fp = ((off_t)pbn) * dp->sectorsize;
 
     if( fp + (off_t)length > devlimit ) {
-        printf( "%%ODS2-E-BLK2BIG, Read from non-existent block %lu\n",
+        return printmsg( IO_RDBLK2BIG, 0,
                 ((fp + length + dp->sectorsize -1)/dp->sectorsize) );
-        return SS$_ILLBLKNUM;
     }
 
     if( dev->access & MOU_VIRTUAL ) {
@@ -829,13 +794,12 @@ unsigned virt_readp( struct DEV *dev, unsigned pbn, unsigned length,
 
     offset = fp % 512;
 
-    avail = (unsigned)(eofptr - fp);
+    avail = (uint32_t)(eofptr - fp);
     if( avail > length )
         avail = length;
 
     if( offset == 0 ) {
-        status = dev->devread( dev, (unsigned) (fp / 512), avail, buffer );
-        if( !(status & STS$M_SUCCESS) )
+        if( $FAILS(status = dev->devread( dev, (uint32_t) (fp / 512), avail, buffer )) )
             return status;
 
         length -= avail;
@@ -849,9 +813,10 @@ unsigned virt_readp( struct DEV *dev, unsigned pbn, unsigned length,
 #endif
         return status;
     }
-    if( (buf = malloc( (size_t) (offset + avail) )) == NULL )
+    if( (buf = malloc( ((size_t)offset + avail) )) == NULL )
         return SS$_INSFMEM;
-    status = dev->devread( dev, (unsigned) (fp / 512), (unsigned) (offset + avail), buf );
+    status = dev->devread( dev, (uint32_t) (fp / 512),
+                           (uint32_t) (offset + avail), buf );
 
     memcpy( buffer, buf+offset, avail );
     free( buf );
@@ -868,16 +833,16 @@ unsigned virt_readp( struct DEV *dev, unsigned pbn, unsigned length,
 
 /*********************************************************** virt_writep() */
 
-unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
+vmscond_t virt_writep( struct DEV *dev, uint32_t pbn, uint32_t length,
                       char *buffer ) {
     disktypep_t dp;
-    unsigned status;
+    vmscond_t status;
     off_t devlimit;
     off_t fp, offset;
     char *buf = NULL;
-    unsigned avail, n, m;
+    uint32_t avail, n, m;
 #ifdef DEBUG_DISKIO
-    unsigned inpbn = pbn, inlen = length;
+    uint32_t inpbn = pbn, inlen = length;
     const char *inbuf = buffer;
 #endif
 
@@ -891,15 +856,14 @@ unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
     fp = ((off_t)pbn) * dp->sectorsize;
 
     if( fp + (off_t)length > devlimit ) {
-        printf( "%%ODS2-E-BLK2BIG, Write to non-existent block %lu\n",
+        return printmsg( IO_WRBLK2BIG, 0,
                 ((fp + length + dp->sectorsize -1)/dp->sectorsize) );
-        return SS$_ILLBLKNUM;
     }
 
     offset = fp % 512;
 
     if( offset == 0 && length % 512 == 0 ) {
-        status = dev->devwrite( dev, (unsigned)(fp / 512), length, buffer );
+        status = dev->devwrite( dev, (uint32_t)(fp / 512), length, buffer );
 #ifdef DEBUG_DISKIO
         dumpblock( inpbn, inlen, inbuf, "Phys Write, status %08X", status );
 #endif
@@ -916,12 +880,11 @@ unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
 
     do {
         if( offset != 0 ) {
-            avail = (unsigned) ( devlimit - (fp -offset) );
+            avail = (uint32_t) ( devlimit - (fp -offset) );
 
             n = (avail > 512)? 512: avail;
 
-            status = dev->devread( dev, (unsigned) (fp / 512), n, buf );
-            if( !(status & STS$M_SUCCESS) )
+            if( $FAILS(status = dev->devread( dev, (uint32_t) (fp / 512), n, buf )) )
                 break;
 
             m = (n > length)? length: n;
@@ -930,16 +893,14 @@ unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
             buffer += m;
             length -= m;
 
-            status = dev->devwrite( dev, (unsigned) (fp / 512), n, buf );
-            if( !(status & STS$M_SUCCESS) )
+            if( $FAILS(status = dev->devwrite( dev, (uint32_t) (fp / 512), n, buf )) )
                 break;
             fp += n;
         }
 
         if( (n = length / 512) > 0 ) {
             n *= 512;
-            status = dev->devwrite( dev, (unsigned) (fp / 512), n, buffer );
-            if( !(status & STS$M_SUCCESS) )
+            if( $FAILS(status = dev->devwrite( dev, (uint32_t) (fp / 512), n, buffer )) )
                 break;
 
             buffer += n;
@@ -948,12 +909,11 @@ unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
         }
 
         if( length > 0 ) {
-            avail = (unsigned) ( devlimit - fp );
+            avail = (uint32_t) ( devlimit - fp );
 
             n = (avail > 512)? 512: avail;
 
-            status = dev->devread( dev, (unsigned) (fp / 512), n, buf );
-            if( !(status & STS$M_SUCCESS) )
+            if( $FAILS(status = dev->devread( dev, (uint32_t) (fp / 512), n, buf )) )
                 break;
 
             m = (n > length)? length: n;
@@ -962,8 +922,7 @@ unsigned virt_writep( struct DEV *dev, unsigned pbn, unsigned length,
             buffer += m;
             length -= m;
 
-            status = dev->devwrite( dev, (unsigned) (fp / 512), n, buf );
-            if( !(status & STS$M_SUCCESS) )
+            if( $FAILS(status = dev->devwrite( dev, (uint32_t) (fp / 512), n, buf )) )
                 break;
 
             fp += n;
@@ -1024,12 +983,17 @@ disktype_t disktype[] = {
 
     DISK(RM02, 32,  5,  823, DISK_BAD144)
     DISK(RM03, 32,  5,  823, DISK_BAD144)
+    DISK(RP02, 10, 20,  203, DISK_BAD144)
+    DISK(RP03, 10, 20,  406, DISK_BAD144)
     DISK(RP04, 22, 19,  411, DISK_BAD144)
     DISK(RP05, 22, 19,  411, DISK_BAD144)
     DISK(RM80, 31, 14,  559, DISK_BAD144)
     DISK(RP06, 22, 19,  815, DISK_BAD144)
     DISK(RM05, 32, 19,  823, DISK_BAD144)
     DISK(RP07, 50, 32,  630, DISK_BAD144)
+
+    DISKS(RS03, 128, 64, 1, 64, 0, DISK_BAD144)
+    DISKS(RS04, 256, 64, 1, 64, 0, DISK_BAD144)
 
 #if 0 /* Not useful now as RSX20-F used ODS-1 */
     DISKS(RM02-T, 576, 30,  5,  823, 0, DISK_BAD144)

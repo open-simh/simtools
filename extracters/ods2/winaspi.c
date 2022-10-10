@@ -1,3 +1,15 @@
+/* This is part of ODS2 written by Paul Nankervis,
+ * email address:  Paulnank@au1.ibm.com
+ *
+ * ODS2 is distributed freely for all members of the
+ * VMS community to use. However all derived works
+ * must maintain comments in their source to acknowledge
+ * the contributions of the original author and
+ * subsequent contributors.   This is free software; no
+ * warranty is offered,  and while we believe it to be useful,
+ * you use it at your own risk.
+ */
+
 #include <windows.h>
 
 #include "scsidefs.h"
@@ -65,7 +77,7 @@ static unsigned aspi_execute( short bus, short id, BYTE Flags, DWORD BufLen,
 static unsigned aspi_identify( short bus, short id, unsigned *sectors,
                                unsigned *bytespersector ) {
 
-    unsigned sts;
+    vmscond_t sts;
     struct SCSI_Inquiry {
         unsigned char device;
         unsigned char dev_qual2;

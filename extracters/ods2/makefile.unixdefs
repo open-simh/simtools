@@ -1,0 +1,78 @@
+# -*- Makefile -*-
+
+# Basic variable definitions for Unix & Unix-like OSs
+#
+# OS-specific file can redefine selectively
+
+# Special defines, e.g.
+# DEFS="-DDEBUG_RMS -DDEBUG_BUILD -D_FILE_OFFSET_BITS=32"
+
+CCFLAGS = -O4 -g
+#-O0 -g -DUSE_LIBEDIT -Wall -pedantic
+# Extra warns about $ in identifiers...
+#  -Wextra
+
+# Large file support
+DEFS += "-D_FILE_OFFSET_BITS=64"
+
+# Include editline support
+
+DEFS += -DUSE_LIBEDIT
+LDLIBS = -ledit -ltermcap
+
+# Include VHD format image file support
+
+VHDOPTS = makefile-vhd.unix
+
+# Default language
+
+ODS2LANG = en_us
+
+# Object file extension
+OBJ = .o
+
+# Executable file extension
+
+EXE =
+
+# Delete file - must be one file spec, as VMS needs commas
+
+DELETE = rm -f
+
+# How to run a program
+RUN = ./
+
+# Copy a file
+COPY = cp -p
+
+# Softlink a file
+LN = ln -sf
+
+# Physical I/O module
+PHYSIO = phyunix
+
+# The top level makefile (used for recursive make)
+#TOPMAKE = makefile.unix
+
+# Files to clean
+
+CLEANFILES =  ods2$(EXE) genmsg$(EXE) makehelp$(EXE) $(OBJS) *.mt *.md *.mdf *.hlb vms_messages_*.msg ssdef.h ssdef.msg
+
+# How to run Perl
+PERL = LC_ALL="C" perl
+
+# Name of dependencies file & how to build
+DEPENDS = makefile.depends
+MAKEDEPEND = makedepend
+
+# How to run sed
+SED = sed
+
+# How to run message
+
+MESSAGE = $(PERL) message
+
+all:
+
+clean:
+	rm -f $(CLEANFILES)

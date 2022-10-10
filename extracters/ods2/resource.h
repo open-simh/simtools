@@ -1,10 +1,11 @@
-//{{NO_DEPENDENCIES}}
-// Microsoft Developer Studio generated include file.
-// Used by ODS2.rc
-//
+/* {{NO_DEPENDENCIES}}
+ * Microsoft Developer Studio generated include file.
+ * Used by ODS2.rc
+ */
 
-// Next default values for new objects
-// 
+/* Next default values for new objects
+ */
+
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        101

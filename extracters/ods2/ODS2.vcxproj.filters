@@ -90,9 +90,6 @@
     <ClCompile Include="helpcmd.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="importcmd.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="initialcmd.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -111,7 +108,13 @@
     <ClCompile Include="spawncmd.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="typecmd.c">
+    <ClCompile Include="winfile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="termio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renamecmd.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -197,6 +200,10 @@
     <ClInclude Include="cmddef.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="winfile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="default.mt" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ods2.rc">

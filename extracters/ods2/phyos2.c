@@ -1,10 +1,28 @@
 /* PHYOS2.C   v1.2   Physical I/O module for OS2 */
 
+/* This is part of ODS2 written by Paul Nankervis,
+ * email address:  Paulnank@au1.ibm.com
+ *
+ * ODS2 is distributed freely for all members of the
+ * VMS community to use. However all derived works
+ * must maintain comments in their source to acknowledge
+ * the contributions of the original author and
+ * subsequent contributors.   This is free software; no
+ * warranty is offered,  and while we believe it to be useful,
+ * you use it at your own risk.
+ */
+
 /*  This version implemented to read from Floppy or CD by
-    guessing that A: or B: will be a floppy and anything
-    else is probably a CD? */
+ *  guessing that A: or B: will be a floppy and anything
+ *  else is probably a CD?
+ */
 
+/* This module has not been compiled in quite some time, and
+ * while some effort has been made to keep up with API changes,
+ * it requires quite a bit of work to bring it up to date.
+ */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -12,22 +30,33 @@
 #define INCL_DOSDEVIOCTL
 #define INCL_NOPMAPI
 #include <os2.h>
+#include "ods2.h"
 #include "phyio.h"
 #include "ssdef.h"
+#include "sysmsg.h"
 
-static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                            char *buffer );
-static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                             const char *buffer );
+static vmscond_t phyio_read( struct DEV *dev, uint32_t block, uint32_t length,
+                             char *buffer );
+static vmscond_t phyio_write( struct DEV *dev, uint32_t block, uint32_t length,
+                              const char *buffer );
 
 unsigned init_count = 0;
 unsigned read_count = 0;
 unsigned write_count = 0;
 
-void phyio_show(void)
-{
-    printf("PHYIO_SHOW Initializations: %d Reads: %d Writes: %d\n",
-           init_count,read_count,write_count);
+void phyio_show( showtype_t type ) {
+    switch( type ) {
+    case SHOW_STATS:
+        printmsg( IO_STATS, MSG_TEXT, init_count, read_count, write_count );
+        return;
+    case SHOW_FILE64:
+        printmsg( IO_NOLARGEFILE, MSG_TEXT );
+        return;
+    case SHOW_DEVICES:
+        return;
+   default:
+        abort();
+    }
 }
 
 
@@ -64,23 +93,19 @@ struct HANDLE {
     int hand_drive;
 } handle[HANDLE_MAX];
 
-void phyio_help(FILE *fp ) {
-    fprintf( fp, "Specify the device to be mounted as a drive letter\n" );
-    fprintf( fp, "E.g. mount D:\n" );
-    fprintf( fp, "The drive letter must be between A: and Z:\n" );
-    fprintf( fp, "The drive is accessed as a physical device\n" );
-    fprintf( fp, "Use ODS2-Image to work with disk images such as .ISO or simulator files.\n" );
+void phyio_help( void ) {
+    (void) helptopic( 0, "MOUNT OS2" );
+
   return;
 }
 
 NOTE: This will not compile.  The API for phyio_init has changed to
 taking a DEV struct.  I'm leaving it this way becauses I don't have the
 ability to test under OS2.  This was left undone when the API was changed...
-before my time.
+before my time. /TL
 
 
-unsigned phyio_init(int devlen,char *devnam,unsigned *hand,struct phyio_info *info)
-{
+vmscond_t phyio_init(int devlen,char *devnam,unsigned *hand,struct phyio_info *info) {
     dev->devread = phyio_read;
     dev->devwrite = phyio_write;
 
@@ -149,9 +174,7 @@ unsigned phyio_init(int devlen,char *devnam,unsigned *hand,struct phyio_info *in
     }
 }
 
-
-unsigned phy_getsect(HFILE hfile,unsigned sector,char *buffer)
-{
+static vmscond_t phy_getsect(HFILE hfile, uint32_t sector,char *buffer) {
     ULONG ulPinout,ulDinout;
     ULONG stat;
     char rawsect[SECTORSIZE + 304];
@@ -171,13 +194,8 @@ unsigned phy_getsect(HFILE hfile,unsigned sector,char *buffer)
     return 1;
 }
 
-
-
-
-
-static unsigned phyio_read(unsigned handno,unsigned block,unsigned length,char *buffer)
-{
-    register unsigned sts = 1;
+static vmscond_t phyio_read(unsigned handno, uint32_t block, uint32_t length, char *buffer) {
+    register vmscond_t sts = SS$_NORMAL;
 #if DEBUG
     printf("PHYIO_READ block %d length %d\n",block,length);
 #endif
@@ -215,7 +233,7 @@ static unsigned phyio_read(unsigned handno,unsigned block,unsigned length,char *
             }
         }
     }
-    if (sts & 1) {
+    if( $SUCCESSFUL(sts) ) {
         read_count++;
     } else {
         printf("PHYOS2 Error %d Block %d Length %d\n",sts,block,length);
@@ -223,9 +241,7 @@ static unsigned phyio_read(unsigned handno,unsigned block,unsigned length,char *
     return sts;
 }
 
-
-static unsigned phyio_write(unsigned handle,unsigned block,unsigned length,char *buffer)
-{
+static vmscond_t phyio_write(unsigned handle, uint32_t block, uint32_t length, char *buffer) {
     write_count++;
     return SS$_WRITLCK;
 }

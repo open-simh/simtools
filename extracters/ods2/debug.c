@@ -14,7 +14,10 @@
  *       ODS2 is distributed freely for all members of the
  *       VMS community to use. However all derived works
  *       must maintain comments in their source to acknowledge
- *       the contibution of the original author.
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
  */
 
 

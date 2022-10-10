@@ -3300,7 +3300,7 @@ vhd_initialize_header(vhd_context_t *ctx, const char *parent_path,
 		err = vhd_open(&parent, parent_path, VHD_OPEN_RDONLY);
 		if (err)
 			return err;
-
+
 		ctx->header.prt_ts = vhd_time(stats.st_mtime);
 		blk_uuid_copy(&ctx->header.prt_uuid, &parent.footer.uuid);
 		if (!size)

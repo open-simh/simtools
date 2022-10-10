@@ -4,7 +4,7 @@ $
 $ default = F$Environment( "DEFAULT" )
 $ this    = F$Environment( "PROCEDURE" )
 $ src     = F$Parse( this, , , "DEVICE",    "SYNTAX_ONLY" ) +  -
-            F$Parse( this, , , "DIRECTORY", "SYNTAX_ONLY" ) 
+            F$Parse( this, , , "DIRECTORY", "SYNTAX_ONLY" )
 $
 $ If ( P1 .eqs. "CLEAN" )
 $ Then

@@ -1,123 +1,132 @@
 # DO NOT DELETE
 
-ods2.o: version.h cmddef.h 
+ods2.o: version.h 
+ods2.o: cmddef.h
 ods2.o: compat.h 
-ods2.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-ods2.o: stsdef.h sysmsg.h cache.h phyvirt.h 
+ods2.o: ods2.h
+ods2.o: rms.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h sysmsg.h
+ods2.o: cache.h phyvirt.h 
 access.o: ssdef.h access.h
-access.o: cache.h f11def.h 
-access.o: vmstime.h descrip.h stsdef.h device.h phyio.h initvol.h ods2.h
-access.o: phyvirt.h compat.h 
-access.o: sysmsg.h
-cache.o: cache.h ods2.h ssdef.h
+access.o: ods2.h 
+access.o: cache.h f11def.h vmstime.h
+access.o: descrip.h stsdef.h device.h phyio.h initvol.h phyvirt.h compat.h
+access.o: sysmsg.h 
+cache.o: cache.h
+cache.o: ods2.h 
+cache.o: ssdef.h
 compat.o: compat.h
 compat.o: descrip.h stsdef.h 
 copycmd.o: cmddef.h 
-copycmd.o: compat.h 
-copycmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-copycmd.o: stsdef.h sysmsg.h
+copycmd.o: compat.h ods2.h rms.h
+copycmd.o: f11def.h vmstime.h descrip.h ssdef.h stsdef.h sysmsg.h
 createcmd.o: cmddef.h 
 createcmd.o: compat.h
-createcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-createcmd.o: stsdef.h sysmsg.h f11def.h 
+createcmd.o: ods2.h rms.h f11def.h vmstime.h
+createcmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
 debug.o: debug.h
 deletecmd.o: cmddef.h 
 deletecmd.o: compat.h
-deletecmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-deletecmd.o: stsdef.h sysmsg.h
-device.o: ods2.h access.h cache.h
-device.o: f11def.h vmstime.h
-device.o: descrip.h ssdef.h stsdef.h device.h phyio.h
+deletecmd.o: ods2.h rms.h f11def.h vmstime.h
+deletecmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+device.o: ods2.h
+device.o: access.h cache.h f11def.h
+device.o: vmstime.h descrip.h ssdef.h stsdef.h device.h phyio.h
 diffcmd.o: cmddef.h 
-diffcmd.o: compat.h 
-diffcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-diffcmd.o: stsdef.h sysmsg.h
+diffcmd.o: compat.h
+diffcmd.o: ods2.h rms.h f11def.h vmstime.h
+diffcmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+diffcmd.o: phyio.h
 dircmd.o: cmddef.h 
 dircmd.o: compat.h 
-dircmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-dircmd.o: stsdef.h sysmsg.h
-direct.o: access.h cache.h
-direct.o: f11def.h vmstime.h
-direct.o: descrip.h ssdef.h stsdef.h direct.h fibdef.h ods2.h
+dircmd.o: ods2.h rms.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h sysmsg.h
+direct.o: access.h ods2.h
+direct.o: cache.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h direct.h
+direct.o: fibdef.h sysmsg.h 
 dismountcmd.o: cmddef.h 
 dismountcmd.o: compat.h
-dismountcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-dismountcmd.o: stsdef.h sysmsg.h access.h cache.h f11def.h
-dismountcmd.o: device.h
+dismountcmd.o: ods2.h rms.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h
+dismountcmd.o: sysmsg.h access.h cache.h device.h
 dismountcmd.o: phyio.h
 extendcmd.o: cmddef.h 
 extendcmd.o: compat.h
-extendcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-extendcmd.o: stsdef.h sysmsg.h
+extendcmd.o: ods2.h rms.h f11def.h vmstime.h
+extendcmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+helpcmd.o: ods2.h 
 helpcmd.o: cmddef.h 
-helpcmd.o: compat.h 
-helpcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-helpcmd.o: stsdef.h sysmsg.h
-importcmd.o: cmddef.h 
-importcmd.o: compat.h
-importcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-importcmd.o: stsdef.h sysmsg.h
+helpcmd.o: compat.h
+helpcmd.o: rms.h f11def.h vmstime.h descrip.h
+helpcmd.o: ssdef.h stsdef.h sysmsg.h version.h
+initialcmd.o: compat.h 
 initialcmd.o: cmddef.h 
-initialcmd.o: compat.h
-initialcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-initialcmd.o: stsdef.h sysmsg.h access.h cache.h f11def.h
-initialcmd.o: device.h
-initialcmd.o: phyio.h initvol.h phyvirt.h
+initialcmd.o: ods2.h rms.h f11def.h vmstime.h descrip.h
+initialcmd.o: ssdef.h stsdef.h sysmsg.h access.h
+initialcmd.o: cache.h device.h phyio.h initvol.h phyvirt.h
 initvol.o: compat.h
-initvol.o: f11def.h 
-initvol.o: vmstime.h descrip.h ssdef.h stsdef.h
-initvol.o: initvol.h ods2.h phyvirt.h rms.h
+initvol.o: f11def.h vmstime.h descrip.h
+initvol.o: ssdef.h stsdef.h initvol.h ods2.h phyvirt.h rms.h sysmsg.h
+mountcmd.o: compat.h 
 mountcmd.o: cmddef.h 
-mountcmd.o: compat.h
-mountcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-mountcmd.o: stsdef.h sysmsg.h access.h cache.h f11def.h 
-mountcmd.o: device.h phyio.h phyvirt.h phyvhd.h
-phyunix.o: device.h
-phyunix.o: access.h cache.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h
-phyunix.o: phyio.h ods2.h phyvirt.h compat.h
+mountcmd.o: ods2.h rms.h f11def.h vmstime.h descrip.h
+mountcmd.o: ssdef.h stsdef.h sysmsg.h access.h
+mountcmd.o: cache.h device.h phyio.h phyvirt.h phyvhd.h
+phyunix.o: cmddef.h 
+phyunix.o: compat.h ods2.h rms.h
+phyunix.o: f11def.h vmstime.h descrip.h ssdef.h stsdef.h sysmsg.h device.h
+phyunix.o: access.h cache.h phyio.h phyvirt.h
 phyvirt.o: compat.h
-phyvirt.o: device.h access.h cache.h f11def.h
-phyvirt.o: vmstime.h
-phyvirt.o: descrip.h ssdef.h stsdef.h phyio.h ods2.h phyvirt.h phyvhd.h
-rms.o: access.h cache.h f11def.h 
-rms.o: vmstime.h descrip.h ssdef.h stsdef.h
-rms.o: device.h phyio.h direct.h fibdef.h ods2.h rms.h compat.h
-rms.o: sysmsg.h
+phyvirt.o: device.h access.h ods2.h cache.h f11def.h vmstime.h descrip.h
+phyvirt.o: ssdef.h stsdef.h phyio.h phyvirt.h sysmsg.h phyvhd.h
+renamecmd.o: cmddef.h 
+renamecmd.o: compat.h
+renamecmd.o: ods2.h rms.h f11def.h vmstime.h
+renamecmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+rms.o: access.h ods2.h 
+rms.o: cache.h
+rms.o: f11def.h vmstime.h descrip.h ssdef.h stsdef.h device.h phyio.h
+rms.o: direct.h fibdef.h rms.h compat.h 
+rms.o: sysmsg.h 
 searchcmd.o: cmddef.h 
 searchcmd.o: compat.h
-searchcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-searchcmd.o: stsdef.h sysmsg.h
+searchcmd.o: ods2.h rms.h f11def.h vmstime.h
+searchcmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
 setcmd.o: cmddef.h 
 setcmd.o: compat.h 
-setcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-setcmd.o: stsdef.h sysmsg.h
+setcmd.o: ods2.h rms.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h sysmsg.h
 showcmd.o: cmddef.h 
-showcmd.o: compat.h 
-showcmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-showcmd.o: stsdef.h sysmsg.h 
-showcmd.o: access.h cache.h f11def.h
-showcmd.o: direct.h phyio.h
-showcmd.o: phyvhd.h phyvirt.h version.h
+showcmd.o: compat.h
+showcmd.o: ods2.h rms.h f11def.h vmstime.h
+showcmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+showcmd.o: access.h cache.h direct.h phyio.h
+showcmd.o: phyvhd.h phyvirt.h version.h 
 spawncmd.o: cmddef.h 
 spawncmd.o: compat.h
-spawncmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-spawncmd.o: stsdef.h sysmsg.h 
-sysmsg.o: ssdef.h rms.h vmstime.h
-sysmsg.o: descrip.h stsdef.h compat.h 
+spawncmd.o: ods2.h rms.h f11def.h vmstime.h
+spawncmd.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+sysmsg.o: ods2.h ssdef.h rms.h
+sysmsg.o: f11def.h vmstime.h descrip.h stsdef.h compat.h 
 sysmsg.o: sysmsg.h
-typecmd.o: cmddef.h 
-typecmd.o: compat.h 
-typecmd.o: ods2.h rms.h vmstime.h descrip.h ssdef.h
-typecmd.o: stsdef.h sysmsg.h
-update.o: access.h cache.h
-update.o: f11def.h vmstime.h
-update.o: descrip.h ssdef.h stsdef.h device.h phyio.h ods2.h
-vmstime.o: vmstime.h descrip.h ssdef.h stsdef.h
-phyvhd.o: device.h
-phyvhd.o: access.h cache.h f11def.h 
-phyvhd.o: vmstime.h descrip.h ssdef.h stsdef.h
-phyvhd.o: phyio.h ods2.h phyvirt.h vhd/libvhd.h 
-phyvhd.o: vhd/blk_uuid.h vhd/vhd.h 
+termio.o: cmddef.h 
+termio.o: compat.h ods2.h rms.h f11def.h vmstime.h
+termio.o: descrip.h ssdef.h stsdef.h sysmsg.h 
+update.o: access.h ods2.h
+update.o: cache.h f11def.h vmstime.h descrip.h ssdef.h stsdef.h device.h
+update.o: phyio.h initvol.h
+vmstime.o: vmstime.h descrip.h ssdef.h
+vmstime.o: stsdef.h ods2.h 
+phyvhd.o: compat.h 
+phyvhd.o: device.h access.h
+phyvhd.o: ods2.h 
+phyvhd.o: cache.h f11def.h vmstime.h
+phyvhd.o: descrip.h ssdef.h stsdef.h phyio.h phyvirt.h sysmsg.h
+phyvhd.o: vhd/libvhd.h 
+phyvhd.o: vhd/blk_uuid.h vhd/vhd.h phyvhd.h
 vhd/libvhd.o: vhd/libvhd.h
 vhd/libvhd.o: vhd/blk_uuid.h vhd/vhd.h vhd/relative-path.h
 vhd/relative-path.o: vhd/relative-path.h
+genmsg.o: sysmsg.h 
+genmsg.o: ods2.h
+genmsg.o: ssdef.h stsdef.h
+makehelp.o: compat.h
+makehelp.o: cmddef.h 
+makehelp.o: ods2.h rms.h
+makehelp.o: f11def.h vmstime.h descrip.h ssdef.h stsdef.h sysmsg.h

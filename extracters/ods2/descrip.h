@@ -7,7 +7,8 @@
         ODS2 is distributed freely for all members of the
         VMS community to use. However all derived works
         must maintain comments in their source to acknowledge
-        the contibution of the original author.
+        the contributions of the original author and
+ * subsequent contributors.
 
         1.4  Changed declarations NOT to define DOLLAR identifiers
              unless DOLLAR is defined (some compilers can't handle $'s!)

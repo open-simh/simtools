@@ -37,6 +37,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <errno.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -85,7 +86,7 @@ LIBVHD_API char *realpath( const char *path, char *resolved ) {
 
     p = resolved;
     if( resolved == NULL ) {
-        resolved = malloc( 1+ MAX_PATH + 1 );
+        resolved = malloc( (size_t)1+ MAX_PATH + 1 );
         if( resolved == NULL ) {
             return NULL;
         }
@@ -132,11 +133,11 @@ LIBVHD_API int asprintf( char **result, const char *fmt, ... ) {
      * still in the field.  This approach is ugly and wasteful, but
      * should work.  (A KB just isn't what it used to be...)
      */
-    if( (*result = malloc( 1 * 100 * 1000 + 1 )) == NULL )
+    if( (*result = malloc( (size_t)1 * 100 * 1000 + 1 )) == NULL )
         return -1;
     va_start( ap, fmt );
     len = vsprintf( *result, fmt, ap );
-    np = realloc( *result, len + 1 );
+    np = realloc( *result, (size_t)len + 1 );
     if( np != NULL )
         *result = np;
     return len;
@@ -184,7 +185,7 @@ next_node(char **path, int *err)
 
 	for (tmp = *path; *tmp != '\0'; tmp++)
 		if (*tmp == DELIMITER) {
-			int size;
+			ptrdiff_t size;
 			char *node;
 
 			size = tmp - start + 1;
@@ -263,28 +264,29 @@ static char *
 up_nodes(int count)
 {
 	char *path, *tmp;
-	int i, ret, len, size;
+	size_t i, len, size;
 
 	if (!count)
-		return strdup("./");
+            return strdup("./");
 
 	len  = strlen("../");
 	size = len * count;
 	if (size >= MAX_NAME_LEN)
-		return NULL;
+            return NULL;
 
 	path = malloc(size + 1);
 	if (!path)
-		return NULL;
+            return NULL;
 
 	tmp = path;
-	for (i = 0; i < count; i++) {
-		ret = sprintf(tmp, "../");
-		if (ret < 0 || ret != len) {
-			free(path);
-			return NULL;
-		}
-		tmp += ret;
+	for (i = 0; i < (unsigned int)count; i++) {
+            int ret;
+            ret = sprintf(tmp, "../");
+            if (ret < 0 || (size_t)ret != len) {
+                free(path);
+                return NULL;
+            }
+            tmp += ret;
 	}
 
 	return path;

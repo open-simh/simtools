@@ -12,10 +12,13 @@
  *       ODS2 is distributed freely for all members of the
  *       VMS community to use. However all derived works
  *       must maintain comments in their source to acknowledge
- *       the contibution of the original author.
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
  */
 
-/* Message code translations for non-VMS systems */
+/* VMS-ish message code translations */
 
 #if !defined( DEBUG ) && defined( DEBUG_SYSMSG )
 #define DEBUG DEBUG_SYSMSG
@@ -25,147 +28,245 @@
 #endif
 #endif
 
+#include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
-/* Should replace with lib$sys_getmsg under VMS
+/* This is similar to, but not quite $PUTMSG.  We don't have VMS signals...
+ */
 
-#ifndef VMS
-*/
-
+#define SYSMSG_INTERNAL
+#include "ods2.h"
 #include "ssdef.h"
 #include "rms.h"
 #include "compat.h"
+#include "stsdef.h"
+
 #include "sysmsg.h"
 
-#define MSG(code,text) { $VMS_STATUS_COND_ID(code), #code, text },
-
-static
-const struct VMSFAC {
-    unsigned int code;
-    const char *const text;
-} fac2text[] = {
-    { SYSTEM$_FACILITY, "SYSTEM" },
-    { RMS$_FACILITY, "RMS" },
-    { COPY$_FACILITY, "COPY" },
-    { DELETE$_FACILITY,  "DELETE" },
-    { 0, NULL },
-    { 0, "NONAME" }
-};
-
-static const char sev2text[(STS$M_SEVERITY>>STS$V_SEVERITY)+1] =
-    { 'W', 'S', 'E', 'I', 'F', '?', '?', '?', };
-
-/* Unknown facility or message code */
-
-#ifndef SS$_NOMSG
-#define SS$_NOMSG 0xFFFFFFFF
+#ifdef _WIN32
+#undef sscanf
+#define sscanf sscanf_s
+#undef fscanf
+#define fscanf fscanf_s
 #endif
 
-static const char nofmt[] = "Message number %08X";
-static char notext[sizeof(nofmt)+8];
+/* Facility name to text translations
+ */
 
 static
-const struct VMSMSG {
-    unsigned int code;
-    const char *const txtcode;
-    char *text;
-} vms2text[] = {
-    MSG(DELETE$_DELVER, "explicit version number or wild card required")
+struct VMSFAC fac2textdef[] = {
+#define GENERATE_FACTAB
+#include "default.md"
+}, /* Entry for unknown facility */
+    nofac = { "NONAME", 0 };
 
-    MSG(COPY$_OPENIN, " error opening %s as input")
+/* Number of entries to search */
+static size_t faclen =  (sizeof(fac2textdef)/sizeof(fac2textdef[0]));
 
-    MSG(RMS$_BUG, "fatal RMS condition detected, process deleted")
-    MSG(RMS$_DIR, "error in directory name")
-    MSG(RMS$_DNF, "directory not found")
-    MSG(RMS$_EOF, "end of file detected")
-    MSG(RMS$_ESS, "expanded string area too small")
-    MSG(RMS$_FNF, "file not found")
-    MSG(RMS$_FNM, "error in file name")
-    MSG(RMS$_IFI, "invalid internal file identifier (IFI) value")
-    MSG(RMS$_NAM, "invalid NAM block or NAM block not accessible")
-    MSG(RMS$_NMF, "no more files found")
-    MSG(RMS$_RSS, "invalid resultant string size")
-    MSG(RMS$_RSZ, "invalid record size")
-    MSG(RMS$_RTB, "%u byte record too large for user's buffer") /* !UL byte */
-    MSG(RMS$_WCC, "invalid wild card context (WCC) value")
-    MSG(RMS$_WLD, "invalid wildcard operation")
-    MSG(SS$_ABORT, "abort")
-    MSG(SS$_BADFILENAME, "bad file name syntax")
-    MSG(SS$_BADIRECTORY, "bad directory file format")
-    MSG(SS$_BADPARAM, "bad parameter value")
-    MSG(SS$_BUGCHECK, "internal consistency failure")
-    MSG(SS$_DATACHECK, "write check error")
-    MSG(SS$_DEVALLOC, "device already allocated to another user")
-    MSG(SS$_DEVASSIGN, "device has channels assigned" )
-    MSG(SS$_DEVICEFULL, "device full - allocation failure")
-    MSG(SS$_DEVMOUNT, "device is already mounted")
-    MSG(SS$_DEVNOTALLOC, "device not allocated")
-    MSG(SS$_DEVNOTDISM, "device not dismounted")
-    MSG(SS$_DEVNOTMOUNT, "device is not mounted")
-    MSG(SS$_DUPFILENAME, "duplicate file name")
-    MSG(SS$_DUPLICATE, "duplicate name")
-    MSG(SS$_ENDOFFILE, "end of file")
-    MSG(SS$_ILLBLKNUM, "illegal logical block number")
-    MSG(SS$_FILELOCKED, "file is deaccess locked")
-    MSG(SS$_FILESEQCHK, "file identification sequence number check")
-    MSG(SS$_ILLEFC, "illegal event flag cluster")
-    MSG(SS$_INSFMEM, "insufficient dynamic memory")
-    MSG(SS$_ITEMNOTFOUND, "requested item cannot be returned")
-    MSG(SS$_NOMOREDEV, "no more devices")
-    MSG(SS$_IVCHAN, "invalid I/O channel")
-    MSG(SS$_DEVOFFLINE, "device is not in configuration or not available")
-    MSG(SS$_IVDEVNAM, "invalid device name")
-    MSG(SS$_NOIOCHAN, "no I/O channel available")
-    MSG(SS$_NOMOREFILES, "no more files")
-    MSG(SS$_NORMAL, "normal successful completion")
-    MSG(SS$_NOSUCHDEV, "no such device available")
-    MSG(SS$_NOSUCHFILE, "no such file")
-    MSG(SS$_NOSUCHVOL, "No such volume")
-    MSG(SS$_NOTINSTALL, "writable shareable images must be installed")
-    MSG(SS$_PARITY, "parity error")
-    MSG(SS$_UNSUPVOLSET, "Volume set not supported")
-    MSG(SS$_WASCLR, "normal successful completion")
-    MSG(SS$_WASSET, "Event flag was set")
-    MSG(SS$_WRITLCK, "write lock error")
-    MSG(SS$_OFFSET_TOO_BIG, "Volume is too large for local file system: needs 64-bit I/O" )
-    {0, NULL, NULL},
-    { SS$_NOMSG, "SS$_NOMSG", notext }
-};
+/* Pointer to active table.
+ * Special labels for facility code 0.
+ */
+
+static
+struct VMSFAC *fac2text = fac2textdef,
+    sysfac =  { "SYSTEM", 0 },
+    shrfac =  { "SHR"   , 0 };
+
+/* Pointer to memory containing dynamically-loaded message file data.
+ */
+static char *msgfile;
+static char *msgfilename;
+
+static const char sev2text[(STS$M_SEVERITY >> STS$V_SEVERITY)+1] =
+    { 'W', 'S', 'E', 'I', 'F', '?', '?', '?', };
+/*     0    1    2    3    4    5    6    7  */
+
+/* Unknown facility or message code
+ */
+static char notext[256];
+
+/* Message data
+ */
+
+static
+struct VMSMSG vms2textdef[] = {
+#define GENERATE_MSGTAB
+#include "default.md"
+},  /* Special item for Unknown message response */
+    nomsg = { "NOMSG", notext, ODS2_NOMSG, 1 };
+/* Number of messages */
+static size_t msglen = sizeof(vms2textdef)/sizeof(vms2textdef[0]);
+
+/* Pointer to active message table */
+struct VMSMSG *vms2text = vms2textdef;
+
+/* Default message display options
+ */
+static options_t message_format = MSG_FULL;
+
+/* Expandable buffer for formatted messages */
 
 static char *buf = NULL;
 static size_t bufsize = 0;
 
-/******************************************************************* xpand() */
+/* Last few formatted messages for callers that hold
+ * pointers across calls.
+ */
+static char *retbuf[10];
+static size_t retidx = 0, lastidx = 0;
 
-static int xpand( size_t used, size_t add ) {
-    char *nbuf;
-    size_t need;
+static int argcount( vmscond_t vmscond );
 
-    need = used + add + 1;                           /* Always allow for \0 */
-    if( need < bufsize ) {
-        return 1;
+static int xpand( size_t used, size_t add );
+static const char *returnbuf( void );
+static int decstr( FILE *mf, size_t *len, char **pp, char **sp );
+
+/******************************************************************* printmsg() */
+
+vmscond_t printmsg( vmscond_t vmscond, unsigned int flags, ... ) {
+    va_list ap;
+    vmscond_t status;
+
+    va_start( ap, flags );
+    status = vprintmsg( vmscond, flags, ap );
+    va_end( ap );
+
+    return status;
+}
+/******************************************************************* vprintmsg() */
+
+vmscond_t vprintmsg( vmscond_t vmscond, unsigned int flags, va_list ap ) {
+    const char *msg, *pfxe;
+    FILE *of = stdout;
+    int nargs;
+    vmscond_t primary;
+
+    if( flags & MSG_TOFILE )
+        of = va_arg( ap, FILE * );
+
+    if( flags & MSG_CONTINUE ) {
+        primary = va_arg( ap, vmscond_t );
+        vmscond |= primary & STS$M_INHIB_MSG;
+    } else
+        primary = vmscond;
+
+    if( (vmscond & STS$M_INHIB_MSG) && !(flags & MSG_ALWAYS) )
+        return primary;
+
+    if( (flags & (MSG_WITHARGS | MSG_NOARGS)) == 0 ) {
+        nargs = argcount( vmscond );
+        if( nargs > 0 )
+            flags |= MSG_WITHARGS;
     }
-    nbuf = realloc( buf, need + 16 + 1);             /* 16 minimizes reallocs */
-    if( nbuf == NULL ) {
-        return 0;
+
+    if( !(flags & MSG_FULL) ) {
+        flags = (flags & ~MSG_FULL) | message_format;
     }
-    buf = nbuf;
-    bufsize = need + 16 + 1;
-    return 1;
+
+    if( (flags & (MSG_WITHARGS | MSG_TEXT)) != (MSG_WITHARGS | MSG_TEXT) ) {
+        fprintf( of, "%s", getmsg_string( vmscond, flags ) );
+        if( !(flags & MSG_NOCRLF) )
+            fputc( '\n', of );
+        return primary | STS$M_INHIB_MSG;
+    }
+
+    msg = getmsg_string( vmscond, flags );
+
+    if( flags & (MSG_FACILITY | MSG_SEVERITY | MSG_NAME) ) {
+        pfxe = strchr( msg, ',' );
+        if( pfxe == NULL ) {
+            abort();
+        }
+        pfxe += 2;
+        fprintf( of, "%.*s", (int)(pfxe - msg), msg );
+    } else {
+        pfxe = msg;
+    }
+
+    vfprintf( of, pfxe, ap );
+
+    if( !(flags & MSG_NOCRLF) )
+        fputc( '\n', of );
+
+    return primary | STS$M_INHIB_MSG;
 }
 
 /******************************************************************* getmsg() */
 
-const char *getmsg( unsigned int vmscode, unsigned int flags, ... ) {
-    const struct VMSMSG *mp = NULL;
+const char *getmsg( vmscond_t vmscond, unsigned int flags, ... ) {
+    char *buf, *msg;
+    va_list ap;
+    size_t prelen, len, fmtlen;
+
+    if( !(flags & MSG_WITHARGS) ) {
+        return getmsg_string( vmscond, flags );
+    }
+
+    buf = retbuf[ lastidx ];
+
+    prelen = 0;
+    errno = 0;
+    (void) getmsg_string( vmscond, flags );
+    if( errno )
+        return strerror( errno );
+
+    fmtlen = strlen( buf );
+
+    if( (msg = strchr( buf, ',')) != NULL ) {
+        prelen = 2 + (size_t)( msg -buf );
+    }
+
+    va_start( ap, flags );
+    len = vsnprintf( buf+fmtlen+1, 1, buf, ap );
+    va_end( ap );
+
+    if( (buf = realloc( buf, fmtlen + 1 + len + 1 )) == NULL )
+        return strerror( errno );
+    retbuf[lastidx] = buf;
+
+    va_start( ap, flags );
+    (void) vsnprintf( buf+fmtlen + 1, len+1, buf + prelen, ap );
+    va_end( ap );
+
+    memmove( buf, buf+fmtlen+1, len + 1 );
+
+    return buf;
+}
+
+/******************************************************************* argcount() */
+static int argcount( vmscond_t vmscond ) {
+    struct VMSMSG *mp, key;
+
+    memset( &key, 0, sizeof( key ) );
+    key.code = vmscond;
+    mp = bsearch( &key, vms2text, msglen,
+                  sizeof(vms2text[0]), msgcmp );
+    if( mp == NULL )
+        return -1;
+
+    return mp->nargs;
+}
+
+/******************************************************************* getmsg_string() */
+
+const char *getmsg_string( vmscond_t vmscond, unsigned int flags ) {
     const struct VMSFAC *fp = NULL;
+    const struct VMSMSG *mp = NULL;
+    struct VMSFAC fackey;
+    struct VMSMSG msgkey;
+
+    memset( &fackey, 0, sizeof( fackey ) );
+    memset( &msgkey, 0, sizeof( msgkey ) );
 
     if( !(flags & MSG_FULL) )
-        flags = (flags & ~MSG_FULL) | MSG_FULL;
+        flags = (flags & ~MSG_FULL) | message_format;
 
     while( 1 ) {
         size_t i = 0, len;
@@ -174,14 +275,30 @@ const char *getmsg( unsigned int vmscode, unsigned int flags, ... ) {
             if( flags & (MSG_FACILITY|MSG_SEVERITY|MSG_NAME) ) {
                 if( !xpand( i, 1 ) )
                     return strerror( errno );
-                buf[i++] = '%';
+                buf[i++] = (flags & MSG_CONTINUE)? '-': '%';
 
                 if( fp == NULL ) {
-                    for( fp = fac2text; fp->text != NULL; fp++ ) {
-                        if( fp->code == $VMS_STATUS_FAC_NO(vmscode) )
-                            break;
+                    uint32_t facno;
+
+                    facno = $VMS_STATUS_FAC_NO(vmscond);
+
+                    if( facno == 0  ) {
+                        fp = &sysfac;
+                        if( !$VMS_STATUS_FAC_SP(vmscond) ) {
+                            uint32_t msgno;
+
+                            msgno = $VMS_STATUS_CODE(vmscond);
+                            if( msgno >= 4096 && msgno < 8192 )
+                                fp = &shrfac;
+                        }
+                    } else {
+                        fackey.code = facno;
+                        fp = bsearch( &fackey, fac2text, faclen,
+                                      sizeof(fac2text[0]), faccmp );
+                        if( fp == NULL ) fp = &nofac;
                     }
                 }
+
                 if( fp->text == NULL )
                     break;
                 if( flags & MSG_FACILITY ) {
@@ -197,28 +314,22 @@ const char *getmsg( unsigned int vmscode, unsigned int flags, ... ) {
                 if( flags & MSG_SEVERITY ) {
                     if( !xpand( i, 2 ) )
                         return strerror( errno );
-                    buf[i++] = sev2text[$VMS_STATUS_SEVERITY(vmscode)];
+                    buf[i++] = sev2text[$VMS_STATUS_SEVERITY(vmscond)];
                     if( flags & MSG_NAME )
                         buf[i++] = '-';
                 }
                 if( flags & MSG_NAME ) {
-                    char *p;
-
                     if( mp == NULL ) {
-                        for( mp = vms2text; mp->text != NULL; mp++ ) {
-                            if( $VMS_STATUS_COND_ID(vmscode) == mp-> code )
-                                break;
-                        }
+                        msgkey.code = vmscond;
+                        mp = bsearch( &msgkey, vms2text, msglen,
+                                      sizeof(vms2text[0]), msgcmp );
                     }
-                    if( mp->text == NULL )
+                    if( mp == NULL )
                         break;
-                    p = strchr( mp->txtcode, '_' );
-                    if( p == NULL )
-                        abort();
-                    len = strlen( ++p );
+                    len = strlen(  mp->ident );
                     if( !xpand( i, len ) )
                         return strerror( errno );
-                    memcpy( buf+i, p, len );
+                    memcpy( buf+i, mp->ident, len );
                     i += len;
                 }
                 if( flags & MSG_TEXT ) {
@@ -229,50 +340,398 @@ const char *getmsg( unsigned int vmscode, unsigned int flags, ... ) {
                 }
             }
             if( flags & MSG_TEXT ) {
-                va_list ap;
                 if( mp == NULL ) {
-                    for( mp = vms2text; mp->text; mp++ ) {
-                        if( $VMS_STATUS_COND_ID(vmscode) == mp-> code )
-                            break;
-                    }
-                    if( mp->text == NULL )
+                    msgkey.code = vmscond;
+                    mp = bsearch( &msgkey, vms2text, msglen,
+                                  sizeof(vms2text[0]), msgcmp );
+                    if( mp == NULL )
                         break;
                 }
-                if( flags & MSG_WITHARGS ) {
-                    va_start( ap, flags );
-                    len = vsnprintf( buf+i, 1, mp->text, ap );
-                    va_end( ap );
-                } else
-                    len = strlen( mp->text );
+                len = strlen( mp->text );
                 if( !xpand( i, len ) )
                     return strerror( errno );
-                if( flags & MSG_WITHARGS ) {
-                    va_start( ap, flags );
-                    (void) vsnprintf( buf+i, len+1, mp->text, ap );
-                    va_end( ap );
-                } else
-                    memcpy( buf+i, mp->text, len );
+
+                memcpy( buf+i, mp->text, len );
+                if( !(flags & (MSG_FACILITY|MSG_SEVERITY|MSG_NAME|MSG_NOUC)) )
+                    buf[i] = toupper( buf[i] );
+
                 i += len;
             }
             buf[i] = '\0';
-            return buf;
+            return returnbuf();
         } while( 0 );
 
         if( fp == NULL || fp->text == NULL )
-            fp = fac2text + (sizeof(fac2text)/sizeof(fac2text[0])) -1;
+            fp = &nofac;
 
-        mp = vms2text + (sizeof(vms2text)/sizeof(vms2text[0])) -1;
-        (void) snprintf( notext, sizeof(notext), nofmt, vmscode );
+        if( mp == NULL || mp->text == NULL ) {
+            msgkey.code = vmscond;
+            mp = bsearch( &msgkey, vms2text, msglen,
+                          sizeof(vms2text[0]), msgcmp );
+            if( mp == NULL || mp->text == NULL ) {
+                msgkey.code = ODS2_NOMSG;
+                mp = bsearch( &msgkey, vms2text, msglen,
+                              sizeof(vms2text[0]), msgcmp );
+                if( mp == NULL || mp->text == NULL ) {
+                    (void) snprintf( notext, sizeof(notext),
+                                     "message number %08X", vmscond );
+                } else {
+                    (void) snprintf( notext, sizeof(notext),
+                                     mp->text, vmscond );
+                    notext[sizeof(notext) -1] = '\0';
+                }
+                mp = &nomsg;
+            }
+        }
     }
+}
+
+/******************************************************************* xpand() */
+
+static int xpand( size_t used, size_t add ) {
+    char *nbuf;
+    size_t need;
+
+    need = used + add + 1;                           /* Always allow for \0 */
+    if( need < bufsize ) {
+        return 1;
+    }
+    nbuf = realloc( buf, need + 32 + 1);             /* 32 minimizes reallocs */
+    if( nbuf == NULL ) {
+        return 0;
+    }
+    buf = nbuf;
+    bufsize = need + 32 + 1;
+    return 1;
+}
+
+/******************************************************************* returnbuf() */
+
+static const char *returnbuf( void ) {
+    const char *rbuf;
+
+    lastidx = retidx;
+    free( retbuf[retidx] );
+    retbuf[retidx++] = buf;
+    retidx %= sizeof( retbuf ) / sizeof( retbuf[0] );
+    rbuf = buf;
+    buf = NULL;
+    bufsize = 0;
+    return rbuf;
+}
+
+/***************************************************************** set_message_format */
+vmscond_t set_message_format( options_t new ) {
+
+    message_format = new & (MSG_FACILITY|MSG_SEVERITY|MSG_NAME|MSG_TEXT);
+    return SS$_NORMAL;
+}
+
+/***************************************************************** set_message_format */
+options_t get_message_format( void ) {
+
+    return message_format;
+}
+
+/******************************************************************* set_message_file */
+
+vmscond_t set_message_file( const char *filename ) {
+    vmscond_t sts;
+    char *newmsg = NULL;
+    char *newfilename = NULL;
+    FILE *mf = NULL;
+
+    if( filename == NULL ) { /* Reset to built-in default tables */
+        fac2text = fac2textdef;
+        vms2text = vms2textdef;
+        faclen = (sizeof(fac2textdef)/sizeof(fac2textdef[0]));
+        msglen = sizeof(vms2textdef)/sizeof(vms2textdef[0]);
+
+        if( msgfile != NULL ) {
+            free( msgfile );
+            msgfile = NULL;
+        }
+        if( msgfilename ) {
+            free( msgfilename );
+            msgfilename = NULL;
+        }
+
+        return SS$_NORMAL;
+    }
+
+    /* Load a file (built by genmsg.c) */
+
+    sts = ODS2_OPENIN;
+    errno = 0;
+    do {
+        size_t size, i;
+        uint32_t facn, msgn;
+        uint32_t code, nargs;
+        int c, n;
+        char *np, *sp;
+        off_t pos;
+
+        if( (newfilename = get_realpath( filename )) == NULL ) {
+            size = strlen( filename ) +1;
+            if( (newfilename = malloc( size)) == NULL ) {
+                sts = SS$_INSFMEM;
+                break;
+            }
+            memcpy( newfilename, filename, size );
+        }
+
+        if( (mf = openf( newfilename, "rb" )) == NULL ) {
+            break;
+        }
+
+        sts = ODS2_BADMSGFILE;
+
+        /* File header record */
+
+        n = 0;
+        if( (c = fscanf( mf, MSG_HEADER_DEC, &facn, &msgn, &n )) == EOF ||
+            c < 2 ||
+            n != MSG_HEADER_DECN )
+            break;
+
+        size = ( (facn * sizeof( struct VMSFAC ) ) +
+                 (msgn * sizeof( struct VMSMSG ) ) );
+
+        if( (c = getc( mf )) != '\0' )
+            break;
+
+        pos = ftell( mf );
+
+        /* Compute string pool size */
+
+        /* Facility records */
+
+        for( i = 0; i < facn; i++ ) {
+            n = 0;
+            if( (c = fscanf( mf, MSG_FAC_DEC, &code, &n )) == EOF ||
+                c < 1 ||
+                n != MSG_FAC_DECN )
+            break;
+
+            if( (c = decstr( mf, &size, NULL, NULL )) == EOF )
+                break;
+        }
+        if( c == EOF || i < facn )
+            break;
+
+        /* Message description records */
+
+        for( i = 0; i < msgn; i++ ) {
+            n = 0;
+            if( (c = fscanf( mf, MSG_MSG_DEC, &code, &nargs, &n )) == EOF ||
+                c < 2 ||
+                n != MSG_MSG_DECN )
+            break;
+
+            if( (c = decstr( mf, &size, NULL, NULL )) == EOF )
+                break;
+            if( (c = decstr( mf, &size, NULL, NULL )) == EOF )
+                break;
+        }
+        if( c == EOF || i < msgn )
+            break;
+
+        /* Allocate enough memory for the tables and the string pool */
+
+        if( fseek( mf, pos, SEEK_SET ) == -1 )
+            break;
+
+        if( (newmsg = malloc( size )) == NULL ) {
+            sts = SS$_INSFMEM;
+            break;
+        }
+
+        np = newmsg;
+        sp = np + ((facn * sizeof( struct VMSFAC )) +
+                   (msgn * sizeof( struct VMSMSG )));
+
+        /* Create each structure along with any strings. */
+
+        /* Facility records */
+
+        for( i = 0; i < facn; i++ ) {
+            struct VMSFAC *fp = (struct VMSFAC *)np;
+
+            np += sizeof( struct VMSFAC );
+
+            n = 0;
+            if( (c = fscanf( mf, MSG_FAC_DEC, &code, &n )) == EOF ||
+                c < 1 ||
+                n != MSG_FAC_DECN )
+            break;
+
+            fp->code = code;
+            if( (c = decstr( mf, &size, &sp, &fp->text )) == EOF )
+                break;
+        }
+        if( c == EOF || i < facn )
+            break;
+
+        /* Message description records */
+
+        for( i = 0; i < msgn; i++ ) {
+            struct VMSMSG *mp = (struct VMSMSG *)np;
+
+            np += sizeof( struct VMSMSG );
+
+            n = 0;
+            if( (c = fscanf( mf, MSG_MSG_DEC, &code, &nargs, &n )) == EOF ||
+                c < 2 ||
+                n != MSG_MSG_DECN )
+            break;
+
+            mp->code = code;
+            mp->nargs = nargs;
+
+            if( (c = decstr( mf, &size, &sp, &mp->ident )) == EOF )
+                break;
+            if( (c = decstr( mf, &size, &sp, &mp->text )) == EOF )
+                break;
+        }
+        if( c == EOF || i < msgn )
+            break;
+
+        /* EOF */
+        n = 0;
+        if( (c = fscanf( mf, MSG_EOF_DEC, &n )) == EOF ||
+            c < 0 ||
+            n != MSG_EOF_DECN || (c = getc( mf )) != 0 )
+            break;
+
+        /* Success.  Install new file. */
+
+        free( msgfile );
+        msgfile = newmsg;
+
+        free( msgfilename );
+        msgfilename = newfilename;
+        newfilename = NULL;
+
+        fac2text = (struct VMSFAC *)newmsg;
+        vms2text = (struct VMSMSG *)(newmsg +
+                                     (facn * sizeof( struct VMSFAC )));
+        msglen = msgn;
+        faclen = (size_t)facn;
+
+        newmsg = NULL;
+
+        sts = SS$_NORMAL;
+    } while( 0 );
+
+    if( mf != NULL ) {
+        int err;
+
+        err = errno;
+        fclose( mf );
+        if( err )
+            errno = err;
+    }
+
+    if( $FAILED(sts) ) {
+        if( errno ) {
+            int err;
+
+            err = errno;
+            printmsg( sts, 0, newfilename );
+            sts = printmsg( ODS2_OSERROR, MSG_CONTINUE, sts,
+                            strerror( err ) );
+        } else
+            sts = printmsg( sts, 0, newfilename );
+
+        if( newmsg != NULL ) free( newmsg );
+        if( newfilename != NULL ) free( newfilename );
+    }
+
+    return sts;
+}
+
+/********************************************************** showmessagefile() */
+vmscond_t show_message( int argc, char **argv ) {
+    unsigned long n;
+
+    if( argc > 2 ) { /* SHOW MESSAGE numeric [numeric...] */
+        for( ; argc > 2; --argc, ++argv ) {
+            n = strtoul( argv[2], NULL, 0 );
+            if( $PRINTED((vmscond_t)n) ){
+                printmsg( HELP_SHOWMSGPRINTED, MSG_TEXT | MSG_NOCRLF );
+                printmsg( (vmscond_t)n, MSG_CONTINUE | MSG_ALWAYS, HELP_SHOWMSGPRINTED );
+            } else
+                printmsg( (vmscond_t)n, MSG_NOARGS | MSG_ALWAYS );
+        }
+        return SS$_NORMAL;
+    }
+    return printmsg( ODS2_MSGFILE, 0, (msgfilename? msgfilename: "/DEFAULT") );
+}
+
+/******************************************************************* decstr() */
+
+static int decstr( FILE *mf, size_t *size, char **pp, char **sp ) {
+    int c;
+    size_t len = 0;
+
+    if( sp != NULL )
+        *sp = NULL;
+
+    while( (c = getc( mf )) != EOF && c != '\0' ) {
+        if( len == 0 ) {
+            len = 1;
+            if( sp != NULL )
+                *sp = *pp;
+        }
+        if( c == '\001' ) {
+            const char *s;
+            size_t slen;
+
+            c = getc( mf );
+            if( c == EOF )
+                return c;
+
+            if( c < PRI_CODEBASE || c > PRI_CODEEND )
+                return EOF;
+
+            s = pristr[ c - PRI_CODEBASE ];
+            len +=
+                slen = strlen( s );
+            if( sp != NULL ) {
+                memcpy( *pp, s, slen );
+                *pp += slen;
+            }
+        } else {
+            if( sp != NULL )
+                *(*pp)++ = c;
+            ++len;
+        }
+    }
+    if( c == EOF )
+        return c;
+
+    *size += len;
+    if( sp != NULL && len != 0 )
+        *(*pp)++ = '\0';
+    return 0;
 }
 
 /******************************************************************* sysmsg_rundown() */
 
 void sysmsg_rundown( void ) {
+    size_t i;
+
+    for( i = 0; i < sizeof( retbuf ) / sizeof( retbuf[0] ); i++ )
+        if( retbuf[i] != buf ) {
+            free( retbuf[i] );
+            retbuf[i] = NULL;
+        }
     free( buf );
     buf = NULL;
+    free( msgfile );
+    msgfile = NULL;
+    free( msgfilename );
+    msgfilename = NULL;
 }
 
-/*
-#endif
-*/
+

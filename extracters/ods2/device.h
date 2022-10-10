@@ -1,14 +1,17 @@
 /* Device.h    Definitions for device routines */
 
 /*
-        This is part of ODS2 written by Paul Nankervis,
-        email address:  Paulnank@au1.ibm.com
+ *      This is part of ODS2 written by Paul Nankervis,
+ *      email address:  Paulnank@au1.ibm.com
 
-        ODS2 is distributed freely for all members of the
-        VMS community to use. However all derived works
-        must maintain comments in their source to acknowledge
-        the contibution of the original author.
-*/
+ *      ODS2 is distributed freely for all members of the
+ *      VMS community to use. However all derived works
+ *      must maintain comments in their source to acknowledge
+ *      the contributions of the original author and
+ *      subsequent contributors.   This is free software; no
+ *      warranty is offered,  and while we believe it to be useful,
+ *      you use it at your own risk.
+ */
 
 #ifndef _DEVICE_H
 #define _DEVICE_H
@@ -21,12 +24,13 @@
 #include <sys/types.h>
 #include "access.h"
 #include "cache.h"
+#include "ods2.h"
 #include "phyio.h"
 
 struct DEV {                    /* Device information */
     struct CACHE cache;
     struct VCB *vcb;            /* Pointer to volume (if mounted) */
-    int         access;         /* Device mount options (e.g., /Write) */
+    options_t   access;         /* Device mount options (e.g., /Write) */
     void       *context;        /* Context for implementation */
 
 #ifdef _WIN32
@@ -57,7 +61,7 @@ struct DEV {                    /* Device information */
     char devnam[1];             /* Device name */
 };
 
-unsigned device_lookup( unsigned devlen, char *devnam, int create,
+vmscond_t device_lookup( size_t devlen, char *devnam, int create,
                         struct DEV **retdev );
 void device_done( struct DEV *dev );
 

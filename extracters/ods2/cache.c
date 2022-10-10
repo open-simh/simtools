@@ -1,50 +1,53 @@
 /* Cache.c   Caching control routines */
 
 /*
-        This is part of ODS2 written by Paul Nankervis,
-        email address:  Paulnank@au1.ibm.com
-
-        ODS2 is distributed freely for all members of the
-        VMS community to use. However all derived works
-        must maintain comments in their source to acknowledge
-        the contibution of the original author.
-*/
+ *      This is part of ODS2 written by Paul Nankervis,
+ *      email address:  Paulnank@au1.ibm.com
+ *
+ *      ODS2 is distributed freely for all members of the
+ *      VMS community to use. However all derived works
+ *      must maintain comments in their source to acknowledge
+ *      the contributions of the original author and
+ *      subsequent contributors.   This is free software; no
+ *      warranty is offered,  and while we believe it to be useful,
+ *      you use it at your own risk.
+ */
 
 /*
-    The theory is that all cachable objects share a common cache pool.
-    Any object with a reference count of zero is a candidate for
-    destruction. All cacheable objects have a 'struct CACHE' as the
-    first item of the object so that cache pointers and object pointers
-    are 'interchangeable'. All cache objects are also part of a binary
-    tree so that they can be located. There are many instances of these
-    binary trees: for files on a volume, file windows, file chunks
-    (segments) etc. Also each object can have an object manager: a
-    routine to handle special object deletion requirements (for example
-    to remove all file chunks before removing a file), or to flush
-    objects (write modified chunks to disk).
-
-    The main routines is cache_find() which is used to search for and
-    place objects in a binary tree which is located by a tree pointer.
-    cache_touch() and cache_untouch() are used to bump and decrement
-    reference counts. Any object with a reference count of zero is a
-    candidate for destruction - but if it requires special action
-    before it is destroyed, such as deleting a subtree, flushing data
-    to disk, etc, then it should have an 'object manager' function
-    assigned which will be called at deletion time to take care of these
-    needs.
-
-    This version of the cache routines attempts to maintain binary tree
-    balance by dynamically changing tree shape during search functions.
-    All objects remain in the binary tree until destruction so that they
-    can be re-used at any time. Objects with a zero reference count are
-    special in that they are kept in a 'least recently used' linked list.
-    When the reference count is decemented a flag is used to indicate
-    whether the object is likely to be referenced again so that the object
-    can be put in the 'correct' end of this list.
-
-    Note: These routines are 'general' in that do not know anything
-    about ODS2 objects or structures....
-*/
+ *  The theory is that all cachable objects share a common cache pool.
+ *  Any object with a reference count of zero is a candidate for
+ *  destruction. All cacheable objects have a 'struct CACHE' as the
+ *  first item of the object so that cache pointers and object pointers
+ *  are 'interchangeable'. All cache objects are also part of a binary
+ *  tree so that they can be located. There are many instances of these
+ *  binary trees: for files on a volume, file windows, file chunks
+ *  (segments) etc. Also each object can have an object manager: a
+ *  routine to handle special object deletion requirements (for example
+ *  to remove all file chunks before removing a file), or to flush
+ *  objects (write modified chunks to disk).
+ *
+ *  The main routines is cache_find() which is used to search for and
+ *  place objects in a binary tree which is located by a tree pointer.
+ *  cache_touch() and cache_untouch() are used to bump and decrement
+ *  reference counts. Any object with a reference count of zero is a
+ *  candidate for destruction - but if it requires special action
+ *  before it is destroyed, such as deleting a subtree, flushing data
+ *  to disk, etc, then it should have an 'object manager' function
+ *  assigned which will be called at deletion time to take care of these
+ *  needs.
+ *
+ *  This version of the cache routines attempts to maintain binary tree
+ *  balance by dynamically changing tree shape during search functions.
+ *  All objects remain in the binary tree until destruction so that they
+ *  can be re-used at any time. Objects with a zero reference count are
+ *  special in that they are kept in a 'least recently used' linked list.
+ *  When the reference count is decemented a flag is used to indicate
+ *  whether the object is likely to be referenced again so that the object
+ *  can be put in the 'correct' end of this list.
+ *
+ *  Note: These routines are 'general' in that do not know anything
+ *  about ODS2 objects or structures....
+ */
 
 #if !defined( DEBUG ) && defined( DEBUG_CACHE )
 #define DEBUG DEBUG_CACHE
@@ -80,7 +83,7 @@ static int cachedeletes = 0;
 
 static int cachedeleteing = FALSE;         /* Cache deletion in progress... */
 
-struct CACHE lrulist = {&lrulist,&lrulist,NULL,NULL,NULL,NULL,0,0,1,0};
+struct CACHE lrulist = {&lrulist, &lrulist, NULL, NULL, NULL, NULL, 0, 0, 1, 0};
 
 static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj );
 
@@ -91,10 +94,10 @@ static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj );
 void cache_show(void)
 {
     printf("CACHE_SHOW Find %d Create %d Purge %d Peak %d Count %d Free %d\n",
-           cachefinds,cachecreated,cachepurges,cachepeak,cachecount,
+           cachefinds, cachecreated, cachepurges, cachepeak, cachecount,
            cachefreecount);
     if (cachecreated - cachedeletes != cachecount) {
-        printf(" - Deleted %d\n",cachedeletes);
+        printf(" - Deleted %d\n", cachedeletes);
     }
 }
 
@@ -102,10 +105,10 @@ void cache_show(void)
 
 /* cache_refcount() - compute reference count for cache subtree... */
 
-int cache_refcount(struct CACHE *cacheobj)
-{
+int cache_refcount( struct CACHE *cacheobj ) {
     register int refcount = 0;
-    if (cacheobj != NULL) {
+
+    if( cacheobj != NULL ) {
         refcount = cacheobj->refcount;
         if (cacheobj->left != NULL) {
             refcount += cache_refcount(cacheobj->left);
@@ -134,7 +137,7 @@ static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj ) {
     while (cacheobj->objmanager != NULL) {
         register struct CACHE *proxyobj;
         cachedeleteing = TRUE;
-        proxyobj = (*cacheobj->objmanager) (cacheobj,FALSE);
+        proxyobj = (*cacheobj->objmanager) (cacheobj, FALSE);
         cachedeleteing = FALSE;
         if( proxyobj == NULL ) {
             if( actualobj != NULL )
@@ -145,12 +148,13 @@ static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj ) {
         cacheobj = proxyobj;
     }
 #if DEBUG
-    if (cachedeleteing) printf("CACHE deletion while delete in progress\n");
+    if (cachedeleteing)
+        printf("CACHE deletion while delete in progress\n");
 #endif
     if (cacheobj->refcount != 0) {
 #if DEBUG
         printf("CACHE attempt to delete referenced object %d:%d\n",
-                cacheobj->objtype,cacheobj->hashval);
+                cacheobj->objtype, cacheobj->hashval);
 #endif
         abort();
         if( actualobj != NULL )
@@ -206,20 +210,24 @@ static void cache_deleter( struct CACHE *cacheobj, struct CACHE **actualobj ) {
         *actualobj = cacheobj;
 
     free(cacheobj);  /* This may be the supplied object, or it may have been replaced by a proxy. */
-    return; 
+    return;
 }
 
 /************************************************************** cache_purge() */
 
 /* cache_purge() - trim size of free list */
 
-void cache_purge(int all)
-{
+void cache_purge( int all ) {
     if (!cachedeleteing) {
-        register struct CACHE *cacheobj = lrulist.lastlru;
+        register struct CACHE *cacheobj;
+
+        cacheobj = lrulist.lastlru;
         cachepurges++;
-        while ( (all || cachefreecount > CACHEGOAL) && cacheobj != &lrulist) {
-            register struct CACHE *lastobj = cacheobj->lastlru;
+
+        while( (all || cachefreecount > CACHEGOAL) && cacheobj != &lrulist ) {
+            register struct CACHE *lastobj;
+
+            lastobj = cacheobj->lastlru;
 #if DEBUG
             if (cacheobj->lastlru->nextlru != cacheobj ||
                 cacheobj->nextlru->lastlru != cacheobj ||
@@ -242,14 +250,16 @@ void cache_purge(int all)
 
 /* cache_flush() - flush modified entries in cache */
 
-void cache_flush(void)
-{
-    register struct CACHE *cacheobj = lrulist.lastlru;
-    while (cacheobj != &lrulist) {
+void cache_flush(void) {
+    register struct CACHE *cacheobj;
+
+    for( cacheobj = lrulist.lastlru;
+         cacheobj != &lrulist;
+         cacheobj = cacheobj->lastlru ) {
+
         if (cacheobj->objmanager != NULL) {
-            (*cacheobj->objmanager) (cacheobj,TRUE);
+            (*cacheobj->objmanager) (cacheobj, TRUE);
         }
-        cacheobj = cacheobj->lastlru;
     }
 }
 
@@ -257,11 +267,12 @@ void cache_flush(void)
 
 /* cache_remove() - delete all possible objects from cache subtree */
 
-void cache_remove(struct CACHE *cacheobj)
-{
+void cache_remove( struct CACHE *cacheobj ) {
     if (cacheobj != NULL) {
-        if (cacheobj->left != NULL) cache_remove(cacheobj->left);
-        if (cacheobj->right != NULL) cache_remove(cacheobj->right);
+        if (cacheobj->left != NULL)
+            cache_remove(cacheobj->left);
+        if (cacheobj->right != NULL)
+            cache_remove(cacheobj->right);
         if (cacheobj->refcount == 0) {
             struct CACHE *delobj;
             do {
@@ -275,8 +286,7 @@ void cache_remove(struct CACHE *cacheobj)
 
 /* cache_touch() - to increase the access count on an object... */
 
-void cache_touch(struct CACHE *cacheobj)
-{
+void cache_touch(struct CACHE *cacheobj) {
     if (cacheobj->refcount++ == 0) {
 #if DEBUG
         if (cacheobj->nextlru == NULL || cacheobj->lastlru == NULL) {
@@ -294,19 +304,23 @@ void cache_touch(struct CACHE *cacheobj)
 
 /************************************************************ cache_untouch() */
 
-/* cache_untouch() - to deaccess an object... */
+/* Deaccess an object.
+ * Recycle => TRUE puts object at front of LRU list, indicating that
+ *            it's likely to be reused soon.  Note that untouch() can
+ *            trigger a purge, so the object can be deleted on return.
+ *            This won't happen if recycle is TRUE because purge will maintain
+ *            CACHEGOAL LRU entries, which must be non-zero.
+ */
 
-void cache_untouch(struct CACHE *cacheobj,int recycle)
-{
-    if (cacheobj->refcount > 0) {
-        if (--cacheobj->refcount == 0) {
-            if (++cachefreecount >= CACHELIM) cache_purge(FALSE);
+void cache_untouch( struct CACHE *cacheobj, int recycle ) {
+    if( cacheobj->refcount > 0 ) {
+        if( --cacheobj->refcount == 0 ) {
 #if DEBUG
-            if (cacheobj->nextlru != NULL || cacheobj->lastlru != NULL) {
+            if( cacheobj->nextlru != NULL || cacheobj->lastlru != NULL ) {
                 printf("CACHE LRU pointers corrupt\n");
             }
 #endif
-            if (recycle) {
+            if( recycle ) {
                 cacheobj->nextlru = lrulist.nextlru;
                 cacheobj->lastlru = &lrulist;
                 cacheobj->nextlru->lastlru = cacheobj;
@@ -317,6 +331,8 @@ void cache_untouch(struct CACHE *cacheobj,int recycle)
                 cacheobj->lastlru->nextlru = cacheobj;
                 lrulist.lastlru = cacheobj;
             }
+            if( ++cachefreecount >= CACHELIM )
+                cache_purge(FALSE);
         }
     } else {
 #if DEBUG
@@ -329,43 +345,51 @@ void cache_untouch(struct CACHE *cacheobj,int recycle)
 /*************************************************************** cache_find() */
 
 /* cache_find() - to find or create cache entries...
+ *
+ *      The grand plan here was to use a hash code as a quick key
+ *      and call a compare function for duplicates. So far no data
+ *      type actually works like this - they either have a unique binary
+ *      key, or all records rely on the compare function - sigh!
+ *      Never mind, the potential is there!  :-)
+ *
+ *      This version will call a creation function to allocate and
+ *      initialize an object if it is not found.
+ */
 
-        The grand plan here was to use a hash code as a quick key
-        and call a compare function for duplicates. So far no data
-        type actually works like this - they either have a unique binary
-        key, or all records rely on the compare function - sigh!
-        Never mind, the potential is there!  :-)
-
-        This version will call a creation function to allocate and
-        initialize an object if it is not found.
-*/
-
-void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
-                  int (*compare_func) ( unsigned hashval, void *keyval,
+void *cache_find( void **root, uint32_t hashval, void *keyval, vmscond_t *retsts,
+                  int (*compare_func) ( uint32_t hashval, void *keyval,
                                         void *node ),
-                  void *(*create_func) ( unsigned hashval, void *keyval,
-                                         unsigned *retsts ) ) {
+                  void *(*create_func) ( uint32_t hashval, void *keyval,
+                                         vmscond_t *retsts ) ) {
 
-    register struct CACHE *cacheobj,**parent = (struct CACHE **) root;
+    register struct CACHE *cacheobj, **parent;
+
+    parent = (struct CACHE **) root;
     cachefinds++;
-    while ((cacheobj = *parent) != NULL) {
-        register int cmp = hashval - cacheobj->hashval;
+
+    while( (cacheobj = *parent) != NULL ) {
+        register int cmp;
+
+        cmp = hashval - cacheobj->hashval;
 #if DEBUG
         if (cacheobj->parent != parent) {
             printf("CACHE Parent pointer is corrupt\n");
         }
 #endif
         if (cmp == 0 && compare_func != NULL) {
-            cmp = (*compare_func) (hashval,keyval,cacheobj);
+            cmp = (*compare_func) (hashval, keyval, cacheobj);
         }
         if (cmp == 0) {
             cache_touch(cacheobj);
-            if (retsts != NULL) *retsts = SS$_NORMAL;
+            if (retsts != NULL)
+                *retsts = SS$_NORMAL;
             return cacheobj;
         }
         if (cmp < 0) {
 #ifdef IMBALANCE
-            register struct CACHE *left_path = cacheobj->left;
+            register struct CACHE *left_path;
+
+            left_path = cacheobj->left;
             if (left_path != NULL && cacheobj->balance-- < -IMBALANCE) {
                 cacheobj->left = left_path->right;
                 if (cacheobj->left != NULL) {
@@ -380,7 +404,9 @@ void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
                 parent = &cacheobj->left;
             }
         } else {
-            register struct CACHE *right_path = cacheobj->right;
+            register struct CACHE *right_path;
+
+            right_path = cacheobj->right;
             if (right_path != NULL && cacheobj->balance++ > IMBALANCE) {
                 cacheobj->right = right_path->left;
                 if (cacheobj->right != NULL) {
@@ -402,9 +428,10 @@ void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
         }
     }
     if (create_func == NULL) {
-        if (retsts != NULL) *retsts = SS$_ITEMNOTFOUND;
+        if (retsts != NULL)
+            *retsts = SS$_ITEMNOTFOUND;
     } else {
-        cacheobj = (*create_func) (hashval,keyval,retsts);
+        cacheobj = (*create_func) (hashval, keyval, retsts);
         if (cacheobj != NULL) {
             cacheobj->nextlru = NULL;
             cacheobj->lastlru = NULL;
@@ -416,7 +443,8 @@ void *cache_find( void **root, unsigned hashval, void *keyval, unsigned *retsts,
             cacheobj->balance = 0;
             *parent = cacheobj;
             cachecreated++;
-            if (cachecount++ >= cachepeak) cachepeak = cachecount;
+            if (cachecount++ >= cachepeak)
+                cachepeak = cachecount;
         }
     }
     return cacheobj;

@@ -3,39 +3,9 @@
 # Makefile for most Unix distributions
 #
 
-# Special defines, e.g.
-# DEFS="-DDEBUG_RMS -DDEBUG_BUILD -D_FILE_OFFSET_BITS=32"
-
-CCFLAGS = -O4 -g
-#-O0 -g -DUSE_READLINE -Wall -pedantic
-# Extra warns about $ in identifiers...
-#  -Wextra
-
-# Include readline support
-
-DEFS = -DUSE_READLINE
-LDLIBS = -lreadline -ltermcap
-
-# Include VHD format image file support
-
-VHDOPTS = makefile-vhd.unix
-
-# Object file extension
-OBJ = .o
-
-EXE =
-
-DELETE = rm -f
-
-# Physical I/O module
-PHYSIO = phyunix
+include makefile.unixdefs
 
 TOPMAKE = makefile.unix
-
-all:
-
-clean:
-	rm -f ods2$(EXE) $(OBJS)
 
 include makefile.generic
 

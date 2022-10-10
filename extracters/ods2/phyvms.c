@@ -1,20 +1,23 @@
 /* PHYVMS.c    Physical I/O module for VMS */
 
 /*
-        This is part of ODS2 written by Paul Nankervis,
-        email address:  Paulnank@au1.ibm.com
+ *      This is part of ODS2 written by Paul Nankervis,
+ *      email address:  Paulnank@au1.ibm.com
 
-        ODS2 is distributed freely for all members of the
-        VMS community to use. However all derived works
-        must maintain comments in their source to acknowledge
-        the contibution of the original author.
-*/
+ *      ODS2 is distributed freely for all members of the
+ *      VMS community to use. However all derived works
+ *      must maintain comments in their source to acknowledge
+ *      the contributions of the original author and
+ *      subsequent contributors.   This is free software; no
+ *      warranty is offered,  and while we believe it to be useful,
+ *      you use it at your own risk.
+ */
 
 /*  How come VMS is so much easier to do physical I/O on than
-    those other ^%$@*! systems?   I can't believe that they have
-    different command sets for different device types, and can
-    even have different command sets depending on what mode they
-    are called from!  Sigh.                                  */
+ *  those other ^%$@*! systems?   I can't believe that they have
+ *  different command sets for different device types, and can
+ *  even have different command sets depending on what mode they
+ *  are called from!  Sigh.                                  */
 
 /* Modified by:
  *
@@ -88,10 +91,10 @@ unsigned sys$dassgn();
 #include "phyio.h"
 #include "phyvirt.h"
 
-static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                            char *buffer );
-static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                             const char *buffer );
+static vmscond_t phyio_read( struct DEV *dev, uint32_t block,
+                             uint32_t length, char *buffer );
+static vmscond_t phyio_write( struct DEV *dev, uint32_t block,
+                              uint32_t length, const char *buffer );
 
 struct ITMLST {
     unsigned short  length;
@@ -99,11 +102,6 @@ struct ITMLST {
     void           *buffer;
     unsigned short *retlen;
 };
-
-#define chk( sts )  { register chksts; \
-                      if ( !( ( chksts = sts ) & STS$M_SUCCESS ) ) \
-                          lib$stop( chksts ); \
-                    }
 
 #define MSGID(sts) ((sts) & (STS$M_COND_ID|STS$M_SEVERITY))
 
@@ -113,7 +111,7 @@ static unsigned write_count = 0;
 
 /*************************************************************** showdevs() */
 static void showdevs( void ) {
-    unsigned long status;
+    vmscond_t status;
     size_t max = 0;
     int pass;
 
@@ -174,12 +172,13 @@ static void showdevs( void ) {
     case SS$_NOMOREDEV:
         break;
     case SS$_NOSUCHDEV:
-        printf( "No devices found\n" );
+        printmsg( IO_NODEVS, MSG_TEXT );
+        break;
     case SS$_NORMAL:
         break;
     default:
-        printf( "%%ODS2-W-ERRDEV, Error scanning devices: %s\n",
-                getmsg( status, MSG_TEXT ) );
+        printmsg( IO_VMSDEVSCAN, 0 );
+        printmsg( status, MSG_CONTINUE, IO_VMSDEVSCAN );
         break;
     }
     return;
@@ -190,12 +189,10 @@ static void showdevs( void ) {
 void phyio_show( showtype_t type ) {
     switch( type ) {
     case SHOW_STATS:
-        printf( "PHYIO_SHOW Initializations: %d Reads: %d Writes: %d\n",
-                init_count, read_count, write_count );
+        printmsg( IO_STATS, MSG_TEXT, init_count, read_count, write_count );
         return;
     case SHOW_FILE64:
-        printf( "Large ODS-2 image files (>2GB) are %ssupported.\n",
-                (sizeof( off_t ) < 8)? "NOT ": "" );
+        printmsg( (sizeof( off_t ) < 8)? IO_NOLARGEFILE: IO_LARGEFILE, MSG_TEXT );
         return;
     case SHOW_DEVICES:
         printf( " Physical devices\n" );
@@ -206,61 +203,19 @@ void phyio_show( showtype_t type ) {
     }
 }
 
+/*************************************************************** phyio_help() */
+
 void phyio_help(FILE *fp ) {
-    fprintf( fp, "mount DUB0:\n" );
-    fprintf( fp, "The device can be specified as a physical device or logical name\n" );
-    fprintf( fp, "You will need the LOGIO privilege\n" );
-    fprintf( fp, "Use show DEVICES for a list of available devices.\n" );
-    fprintf( fp, "For a list of devices, use the DCL SHOW DEVICE command.\n\n" );
+    (void) helptopic( 0, "MOUNT VMS" );
 
     return;
 }
 
-
-/*************************************************************** phyio_path() */
-
-#define MAXPATH 255
-
-char *phyio_path( const char *filnam ) {
-
-    size_t n;
-    unsigned short resultant_path[1 + ( ( MAXPATH + 1 ) / 2)];
-    char *path;
-    unsigned long context, sts, flags;
-    struct dsc$descriptor filespec = {
-        0, DSC$K_DTYPE_T, DSC$K_CLASS_S, NULL
-    };
-    struct dsc$descriptor resultant_filespec = {
-        MAXPATH, DSC$K_DTYPE_T, DSC$K_CLASS_VS, (char *) resultant_path
-    };
-
-    path = NULL;
-    if ( filnam != NULL ) {
-        filespec.dsc$w_length = strlen( filnam );
-        filespec.dsc$a_pointer = (char *) filnam;
-        *resultant_path = 0;
-        context = 0;
-        flags = LIB$M_FIL_NOWILD;
-        sts = lib$find_file( &filespec, &resultant_filespec, &context,
-                             NULL, NULL, &sts, &flags );
-        lib$find_file_end( &context );
-        if ( sts & STS$M_SUCCESS ) {
-            n = *resultant_path;
-            path = (char *) malloc( n + 1 );
-            if ( path != NULL ) {
-                memcpy( path, resultant_path + 1, n );
-                path[n] = '\0';
-            }
-        }
-    }
-    return path;
-}
-
 /*************************************************************** phyio_init() */
 
-unsigned phyio_init( struct DEV *dev ) {
+vmscond_t phyio_init( struct DEV *dev ) {
 
-    unsigned long sts;
+    vmscond_t sts;
     const char *virtual;
 
     init_count++;
@@ -290,17 +245,18 @@ unsigned phyio_init( struct DEV *dev ) {
             vmsfd = open( virtual, O_RDONLY, 0444, opnopts );
         }
         if ( vmsfd < 0 ) {
+            int err;
+
             switch( errno ) {
             case EEXIST:
-                printf( "%%ODS2-E-EXISTS, File %s already exists, not superseded\n",
-                        virtual );
-                sts = SS$_DUPFILENAME;
-                break;
+                printmsg( IO_EXISTS, 0, virtual );
+                return SS$_DUPFILENAME | STS$M_INHIB_MSG;
             default:
-                printf( "%%ODS2-E-OPENERR, Open %s: %s\n",
-                        virtual, strerror( errno ) );
+                err = errno;
+                printmsg( IO_OPENDEV, 0, virtual );
+                return printmsg( ODS2_OSERROR, MSG_CONTINUE, IO_OPENDEV,
+                                 strerror( err ) );
             }
-            return SS$_NOSUCHFILE;
         }
 
         dev->handle = vmsfd;
@@ -308,14 +264,13 @@ unsigned phyio_init( struct DEV *dev ) {
         fab = cc$rms_fab;                       /* Make this a real FAB (bid and bln) */
         fab.fab$l_fna = (char *) virtual;
         fab.fab$b_fns = strlen( virtual );
-        sts = sys$open( &fab );                 /* Lookup file, get file size */
-        if ( sts & STS$M_SUCCESS ) {
+        if( $SUCCESSFUL(sts = sys$open( &fab )) {/* Lookup file, get file size */
             dev->sectors = fab.fab$l_alq;
             sys$close( &fab );
             if ( sizeof( off_t ) < 8 && dev->sectors > 0x3FFFFF ) {
                 close( vmsfd );
                 dev->handle = -1;
-                return SS$_OFFSET_TOO_BIG;      /* Sorry, need 64-bit off_t */
+                return printmsg( IO_OFFSET_TOO_BIG, 0 ); /* Need 64-bit off_t */
             }
         }
     } else { /* Physical */
@@ -335,24 +290,23 @@ unsigned phyio_init( struct DEV *dev ) {
         };
 
         /*  Get some device information: device name, class, and mount status */
+        memset( devname, 0, sizeof( devname ) );
         devdsc.dsc$w_length  = strlen( dev->devnam );
         devdsc.dsc$a_pointer = dev->devnam;
-        sts = sys$getdviw( EFN$C_ENF, 0, &devdsc, &dvi_itmlst, iosb, 0, 0, 0 );
-        if ( !( sts & STS$M_SUCCESS ) ) {
+        if( $FAILS(sts = sys$getdviw( EFN$C_ENF, 0, &devdsc, &dvi_itmlst,
+                                      iosb, 0, 0, 0 )) ) {
             return sts;
         }
-        if ( devclass != DC$_DISK ) {   /* If not a disk, return an error */
+        if( devclass != DC$_DISK ) {   /* If not a disk, return an error */
             return SS$_IVDEVNAM;
         }
         dev->sectors = cylinders * tracks * sectors;
-        if ( !( devchar & DEV$M_MNT ) ) {
-#if 0
+        if( !(devchar & DEV$M_MNT) ) {
+#if 1
 /*
- *  This code will mount the disk if it's not already mounted.  However,
- *  there's no good way to ensure we dismount a disk we mounted (no
- *  easy way to walk the list of devices at exit), so it's been #ifdefed
- *  out.  If you enable it, the "mount" command will mount the disk, but
- *  it'll stay mounted by the process running ODS2, even after image exit.
+ *  This code will mount the disk if it's not already mounted.
+ *  If you enable it, the "mount" command will mount the disk, but
+ *  it'll stay mounted by the process running ODS2 if ODS2 exits abnormally.
  */
             unsigned long mntflags[2];
             struct ITMLST mnt_itmlst[3] = {
@@ -362,21 +316,27 @@ unsigned phyio_init( struct DEV *dev ) {
             };
             mnt_itmlst[0].length = strlen( devname );
             mntflags[0] = MNT$M_FOREIGN | MNT$M_NOASSIST | MNT$M_NOMNTVER;
-            if ( !( dev->access & MOU_WRITE ) ) {
+            if( !(dev->access & MOU_WRITE) ) {
                 mntflags[0] |= MNT$M_NOWRITE;
             }
             mntflags[1] = 0;
             sts = sys$mount( &mnt_itmlst );
-            if ( !( sts & STS$M_SUCCESS ) && ( dev->access & MOU_WRITE ) ) {
+            if( $FAILED(sts) && (dev->access & MOU_WRITE) ) {
                 dev->access &= ~MOU_WRITE;
                 mntflags[0] |= MNT$M_NOWRITE;
                 sts = sys$mount( &mnt_itmlst );
+            }
+            if( $SUCCESSFUL(sts) ) {
+                dev->access |= OS_MOUNTED;
+                printmsg( IO_VMSMOUNT, 0, devname );
+            } else {
+                printmsg( IO_VMSNOMOUNT, 0, devname );
             }
 #else
             sts = SS$_DEVNOTMOUNT;
 #endif
         }
-        if ( sts & STS$M_SUCCESS ) {
+        if( $SUCCESSFUL(sts) ) {
             sts = sys$assign( &devdsc, &dev->handle, 0, 0, 0, 0 );
         }
     }
@@ -386,73 +346,129 @@ unsigned phyio_init( struct DEV *dev ) {
 
 /*************************************************************** phyio_done() */
 
-unsigned phyio_done( struct DEV *dev ) {
+vmscond_t phyio_done( struct DEV *dev ) {
+    vmscond_t status;
+
+    status = SS$_NORMAL;
 
     if ( dev->access & MOU_VIRTUAL ) {
         close( dev->handle );
         virt_device( dev->devnam, NULL );
     } else {
+#if 1
+        if( dev->access & OS_MOUNTED ) {
+            struct dsc$descriptor devdsc;
+
+            devdsc.dsc$b_dtype = DSC$K_DTYPE_T;
+            devdsc.dsc$b_class = DSC$K_CLASS_S;
+            devdsc.dsc$w_length = strlen( dev->devnam );
+            devdsc.dsc$a_pointer = dev->devnam;
+
+            if( $SUCCESSFUL(status = sys$dismou( &devdsc, 0 )) ) {
+                printmsg( IO_VMSDMT, 0, dev->devnam );
+            } else {
+                printmsg( IO_VMSNODMT, 0, dev->devnam );
+            }
+
+            dev->access &= ~OS_MOUNTED;
+        }
+#endif
+
         sys$dassgn( dev->handle );
     }
     dev->handle = 0;
-    return SS$_NORMAL;
+
+    return status;
 }
 
 /*************************************************************** phyio_read() */
 
-static unsigned phyio_read( struct DEV *dev, unsigned block, unsigned length,
-                            char *buffer ) {
+static vmscond_t phyio_read( struct DEV *dev, uint32_t block, uint32_t length,
+                             char *buffer ) {
+    vmscond_t sts;
 
 #if DEBUG
     printf("Phyio read block: %d into %x (%d bytes)\n",block,buffer,length);
 #endif
     read_count++;
-    if ( dev->access & MOU_VIRTUAL ) {
+    if( dev->access & MOU_VIRTUAL ) {
         int res;
-        if ( ( res = lseek( dev->handle, block * 512, SEEK_SET ) ) < 0 ) {
-            perror( "lseek " );
-            printf( "lseek failed %d\n", res );
-            return SS$_PARITY;
+        if( (res = lseek( dev->handle, block * 512, SEEK_SET )) < 0 ) {
+            int err;
+
+            err = errno;
+            printmsg( IO_SEEKERR, block );
+            sts = printmsg( ODS2_OSERROR, MSG_CONTINUE,
+                            IO_SEEKERR, strerror(err) );
+            return sts;
         }
-        if ( ( res = read( dev->handle, buffer, length ) ) != length ) {
+        if( (res = read( dev->handle, buffer, length )) != length ) {
+            int err;
+
             if( res == 0 ) {
                 return SS$_ENDOFFILE;
             }
-            perror( "read " );
-            printf( "read failed %d\n", res );
-            return SS$_PARITY;
+            err = errno;
+            printmsg( IO_READERR, 0, block );
+            if( res == (off_t)-1 ) {
+                sts = printmsg( ODS2_OSERROR, MSG_CONTINUE,
+                                IO_READERR, strerror(err) );
+            } else {
+                sts = printmsg( IO_READLEN, MSG_CONTINUE, IO_READERR,
+                                block, (uint32_t)res, length );
+            }
+            return sts;
         }
         return SS$_NORMAL;
     } else {
-        return sys$qiow( 1, dev->handle, IO$_READLBLK, NULL, 0, 0,
+        unsigned short int iosb[4];
+
+        return sys$qiow( EFN$C_ENF, dev->handle, IO$_READLBLK, iosb, 0, 0,
                          buffer, length, block, 0, 0, 0 );
     }
 }
 
 /************************************************************** phyio_write() */
 
-static unsigned phyio_write( struct DEV *dev, unsigned block, unsigned length,
-                             const char *buffer ) {
+static vmscond_t phyio_write( struct DEV *dev, uint32_t block, uint32_t length,
+                              const char *buffer ) {
+
+    vmscond_t sts;
 
 #if DEBUG
     printf("Phyio write block: %d from %x (%d bytes)\n",block,buffer,length);
 #endif
     write_count++;
-    if ( dev->access & MOU_VIRTUAL ) {
+    if( dev->access & MOU_VIRTUAL ) {
         int res;
-        if ( ( res = lseek( dev->handle, block * 512, 0 ) ) < 0 ) {
-            perror( "lseek " );
-            printf( "lseek failed %d\n", res );
-            return SS$_PARITY;
+        if( (res = lseek( dev->handle, block * 512, 0 )) < 0 ) {
+            int err;
+
+            err = errno;
+            printmsg( IO_SEEKERR, block );
+            sts = printmsg( ODS2_OSERROR, MSG_CONTINUE,
+                            IO_SEEKERR, strerror(err) );
+            return sts;
         }
-        if ( ( res = write( dev->handle, buffer, length ) ) != length ) {
-            perror( "write " );
-            printf( "write failed %d\n", res );
-            return SS$_PARITY;
+        if( (res = write( dev->handle, buffer, length )) != length ) {
+            int err;
+
+            err = errno;
+            printmsg( IO_WRITEERR, 0, block );
+            if( res == (off_t)-1 ) {
+                sts = printmsg( ODS2_OSERROR, MSG_CONTINUE,
+                                IO_WRITEERR, strerror(err) );
+            } else {
+                sts = printmsg( IO_WRITELEN, MSG_CONTINUE, IO_WRITEERR,
+                                block, (uint32_t)res, length );
+            }
+            return sts;
         }
         return SS$_NORMAL;
     } else {
-        return sys$qiow( 1, dev->handle, IO$_WRITELBLK, NULL, 0, 0,
+        unsigned short int iosb[4];
+
+        return sys$qiow( EFN$C_ENF, dev->handle, IO$_WRITELBLK, iosb, 0, 0,
                          buffer, length, block, 0, 0, 0 );
     }
 }

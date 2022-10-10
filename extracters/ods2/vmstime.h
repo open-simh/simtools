@@ -1,18 +1,30 @@
 /*
-
-       Vmstime.h 
-
-       Author: Paul Nankervis
-
-       Please send bug reports to Paulnank@au1.ibm.com
-
-        1.4A Changed default DOLLAR handling to include DOLLAR
-             identifers unless NO_DOLLAR is defined
-             (ie #ifdef DOLLAR to #ifndef NO_DOLLAR)
-        1.5  Moved more header info here and added cvt_internal support
-        1.6A Fixed endian problems in addx/subx
-
-*/
+ *       This is distributed as part of ODS2, originally  written by
+ *       Paul Nankervis, email address:  Paulnank@au1.ibm.com
+ *
+ *       ODS2 is distributed freely for all members of the
+ *       VMS community to use. However all derived works
+ *       must maintain comments in their source to acknowledge
+ *       the contributions of the original author and
+ *       subsequent contributors.   This is free software; no
+ *       warranty is offered,  and while we believe it to be useful,
+ *       you use it at your own risk.
+ */
+/*
+ *
+ *     Vmstime.h
+ *
+ *     Author: Paul Nankervis
+ *
+ *     Please send bug reports to Paulnank@au1.ibm.com
+ *
+ *      1.4A Changed default DOLLAR handling to include DOLLAR
+ *           identifers unless NO_DOLLAR is defined
+ *           (ie #ifdef DOLLAR to #ifndef NO_DOLLAR)
+ *      1.5  Moved more header info here and added cvt_internal support
+ *      1.6A Fixed endian problems in addx/subx
+ *
+ */
 
 
 #ifndef _VMSTIME_H
@@ -41,7 +53,8 @@ typedef unsigned char *pVMSTIME;
 #endif
 
 /* Define status codes we require... note that if the real code values
-   are being included (SSDEF.H) then they should be included first!!! */
+ * are being included (SSDEF.H) then they should be included first!!!
+ */
 
 #ifndef SS__NORMAL
 #define SS__NORMAL 1
@@ -160,20 +173,20 @@ unsigned sys_numtim(unsigned short timvec[7],pVMSTIME timadr);
 unsigned sys_bintim(struct dsc_descriptor *timbuf,pVMSTIME timadr);
 unsigned sys_asctim(unsigned short *timlen,struct dsc_descriptor *timbuf,
                     pVMSTIME timadr,unsigned cvtflg);
-unsigned lib_add_times(VMSTIME time1,VMSTIME time2,VMSTIME result);
+unsigned lib_add_times(pVMSTIME time1,pVMSTIME time2,pVMSTIME result);
 unsigned lib_addx(void *addant,void *addee,void *result,int *lenadd);
 unsigned lib_cvt_from_internal_time(unsigned *operation,
-                                    unsigned *result,VMSTIME input_time);
+                                    unsigned *result,pVMSTIME input_time);
 unsigned lib_cvt_to_internal_time(unsigned *operation,int *input,
-                                  VMSTIME result);
+                                  pVMSTIME result);
 unsigned lib_cvt_vectim(unsigned short timbuf[7],pVMSTIME timadr);
 unsigned lib_day(int *days,pVMSTIME timadr,int *day_time);
 unsigned lib_day_of_week(pVMSTIME timadr,unsigned *weekday);
 unsigned lib_mult_delta_time(int *multiple,pVMSTIME timadr);
 unsigned lib_subx(void *subant,void *subee,void *result,int *lenadd);
-unsigned lib_sub_times(VMSTIME time1,VMSTIME time2,VMSTIME result);
-unsigned vmstime_from_nt(VMSTIME nt_time,VMSTIME vms_time);
-unsigned vmstime_to_nt(VMSTIME vms_time,VMSTIME nt_time);
-int vmstime_compare(VMSTIME time1,VMSTIME time2);
+unsigned lib_sub_times(pVMSTIME time1,pVMSTIME time2,pVMSTIME result);
+unsigned vmstime_from_nt(pVMSTIME nt_time,pVMSTIME vms_time);
+unsigned vmstime_to_nt(pVMSTIME vms_time,pVMSTIME nt_time);
+int vmstime_compare(pVMSTIME time1,pVMSTIME time2);
 
 #endif /* #ifndef _VMSTIME_H */
