@@ -1,0 +1,15 @@
+# -*- Makefile -*-
+
+# Makefile for solaris OS
+
+# Start with generic unix
+
+include makefile.unixdefs
+
+# Use gcc
+
+CC=gcc
+
+TOPMAKE = makefile.solaris
+
+include makefile.generic

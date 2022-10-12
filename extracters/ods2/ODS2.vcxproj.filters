@@ -1,0 +1,213 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="access.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cache.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="device.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="direct.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ods2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="phynt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rms.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="update.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vmstime.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sysmsg.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="compat.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="phyvirt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="initvol.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="debug.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vhd\libvhd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vhd\relative-path.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="phyvhd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="copycmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="createcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="deletecmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="diffcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dircmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dismountcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="extendcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="helpcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="initialcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mountcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="searchcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="setcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="showcmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="spawncmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="winfile.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="termio.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="renamecmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="access.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cache.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="descrip.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="direct.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="fibdef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="phyio.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rms.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="scsidefs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ssdef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vmstime.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="compat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sysmsg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="wnaspi32.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="version.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="phyvirt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="initvol.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="f11def.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ods2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="phyvhd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stsdef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\blk_uuid.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\libvhd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\relative-path.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="vhd\vhd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cmddef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="winfile.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="default.mt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ods2.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>

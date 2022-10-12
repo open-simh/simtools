@@ -1,0 +1,229 @@
+vhd-util is originally an unsupported tool provided with the Xen emulator
+family.  It was not designed as a user tool, but it does have some
+functions that can be used without internals knowledge.
+
+It is a "sharp" tool - you can do irreversible damage with it.
+Use at your own risk.
+
+This version has been modified to:
+
+  o Work on Windows as well as Unix
+  o Resolve a number of compiler-detected issues
+  o Identify the creator OS
+  o Fix some bugs.
+  o The 'scan' command, which operates on LVM volumes, was
+    not ported to Windows.  All other commands (should) work.
+  o An error message is generated when a command fails.
+  o Some safeguards have been added to the 'modify' command.
+  o read -P summarizes file and its parents.
+
+The tool is undocumentd by Xen, except for a few cryptic comments
+in the README that assume the Xen environment.
+
+The following should be more useful as a stand-alone tool.
+
+This document is the result of reverse-engineering the vhd-util code,
+and may contain errors.  As with the tool, use with caution and at
+your own risk.
+
+vhd-util is a command-line utility with the following general syntax:
+
+         vhd-util COMMAND OPTIONS
+
+Most commands produce a cryptic usage with the -h option.
+The target of a command is specified with the (required) -n "option".
+
+Commands tend to fail when they don't make sense - e.g. asking about
+difference disk data structures on a fixed-size disk.
+
+Some terminology:
+     Sector        - Address on virtual disk.  Always 512 bytes.
+     Block         - Allocation unit in sparse disks.  Default 4096 sectors
+                     (2 MB).
+     Fixed disk   - Virtual disk of fixed size = maximum size + small header.
+     Dynamic disk - (Sparse disk) Virtual disk that grows as data is
+                    written.  Simulator sees it as fixed (max) size.
+     Diff disk    - (Snapshot) Dynamic disk that contains (only) changes
+                    to a parent Dynamic (or Diff) disk.  Used for
+                    backups, or to experiment with easy rollback.
+     BAT          - "Block allocation table": map of virtual blocks to
+                     physical sectors in a dynamic/diff disk.
+     Bitmap       - Bits associated with each Block indicating which
+                    sectors within the block have been written.
+
+vhd-util create
+    Create a new disk image file.
+
+    -n filename    File to create
+    -s size        Specify file size (MB)
+    -r             Create a fixed size image file  (default is sparse)
+
+vhd-util snapshot
+    Create a new snapshot (difference image) of a sparse file.
+    Any subsequent modification to the parent file invalidates
+    the snapshot.  The parent filename is stored in the snapshot.
+    Snapshots can be chained to arbitrary depth, at perfomance cost.
+
+    -n filename    File to create
+    -p filename    Filename of parent disk
+    -l limit       Maximum depth of snapshot chain
+    -m             Parent disk is raw (physical).  Not supported on windows.
+
+vhd-util check
+    Check metadata of VHD file for consistency and reports any errors
+    detected.
+
+    -n filename         File to check
+    -p                  Check parents as well
+    -i                  Ignore missing primary footer (repair can fix)
+
+vhd-util read
+    Read and format the metadata of a sparse (dynamic) disk.
+
+    -n filename     File to query
+    -p              Print formatted header and footer.
+    -P              Print formatted summary of file and its parents
+
+    The following options are used for debugging.
+
+    -t sector#      Translate logical sector to VHD location
+    -b block#       Print BAT directory for block
+    -m block#       Print BINARY bitmap.  (Pipe to a hex editor or file)
+    -i sec#         Print block/sector address and written status
+    -a              Print BINARY BAT map entries
+    -j block#       Print allocation status of block
+    -d block#       Print BINARY content of block data
+    -c #            Repeat command # times for consecutivie blocks/sectors.
+    -r sector#      Print BINARY content of sector(s)
+    -x              Print (some) values in hex.
+
+vhd-util query
+    Print key fields from the metadata.  Mostly unlabeled, suitable for
+    consumption by a script.
+
+    -n filename    File to query
+    -v             Print virtual size (MB)
+    -p             Print filename of parent
+    -s             Print physical size (bytes) Includes metadata.
+    -f             Print Xen's "hidden" state field. (Non-standard)
+    -d             Print chain depth (# files from -n to ultimate parent)
+
+vhd-util coalesce
+    Merges a snapshot (differencing) disk into its parent.
+
+    -n filename        File to merge (parent is found automagically)
+
+vhd-util repair
+    Attempt to repair a damaged volume.
+    Copies redundant copy of metadata to correct place at the
+    end of the file.  N.B. OS level data may still be corrupt...
+
+    -n filename       File to repair
+
+vhd-util resize
+    Change the size of an image file.  Can expand, or if
+    unwritten space at end, shrink.  N.B. Does NOT tell the
+    OS filesystem, nor respect it.  Restricted to files created
+    by Xen (including vhd-util).
+
+    Shrink currently aborts with "partially implemented" for
+    dynamic disks...
+
+    -n filename        File to resize
+    -j filename        Journal file (Must not exist,deleted at end.)
+    -s size (MB)       New size
+
+vhd-util fill
+     Reads and rewrites (with the same data) every block of the disk.
+     Effect is to allocate zero blocks for every page of a dynamic
+     (sparse) disk.
+
+    -n filename        File to process
+
+vhd-util modify
+    Modify file metadata
+
+    -n filename        File to modify
+    -P filename        (Extension) change parent only after verifying
+                       that the UUID of the parent matches the old one.
+                       Safer alternative for case where parent has been
+                       renamed or moved.
+
+    The following **dangerous** options are used for debugging.
+
+    -p filename        Change parent to this file.  Actually changing
+                       to a different file will corrupt data.  Think
+                       at least three times before using!
+    -s byteaddress     Move the file footer. Can be used for changing
+                       physical size of file, but it's tricky. Xen "
+                       Change the size of the file containing the VHD
+                       image. This does NOT affect the VHD disk capacity,
+                       only the physical size of the file containing
+                       the VHD. Naturally, it is not possible to set the
+                       file size to be less than what the VHD utilizes.
+                       The operation doesn't actually change the file
+                       size, but it writes the footer in the right
+                       location such that resizing the file (manually, as
+                       a separate step) will produce the correct results.
+
+                       If the new file size is greater than the current
+                       file size, the file must first be expanded and
+                       then altered with this operation.
+
+                       If the new size is smaller than the current size,
+                       the VHD must first be altered with this operation
+                       and then the file must be shrunk.
+
+                       Failing to resize the file will result in a
+                       corrupted VHD."
+    -P is an extension to the Xen tool.
+    For protection against typos, -p must be specified twice.
+
+vhd-util revert
+    Applies a journal file to recover from a failed operation.
+    Resize can fail with VHD in an inconsistent state; the journal file
+    records the changes made so that they can (hopefully) be reversed.
+
+    A VHD file in this state has a special 'poisoned' cookie to prevent
+    it from being accessed normally.
+
+    -n filename        The file to be recovered
+    -j filename        The journal file (specified with -j on the resize)
+
+vhd-util set
+    Set the (Xen-specifix) hidden flag.
+
+    -n filename     File to modify
+    -f hidden       Only "hidden" supported.
+    -v value        Decimal value for field.
+
+vhd-util scan
+    Scan LVM volumes for VHD files and report capacity, size and parent.
+    Unix only.
+
+    -m filter           Select files to consider (match name)
+    -f                  Do a 'fast' scan
+    -c                  Continue on errors
+    -l volume           Scan LVM volume
+    -p                  Pretty-print results
+    -a                  Scan parents
+    -v                  Verbose
+
+For example, to create a sparse image -
+  vhd-util create -n MyVHDFile -s 1024
+
+This creates a sparse 1GB file named "MyVHDFile" that can be mounted
+and populated with data.
+
+One can also base the image on an existing file -
+  vhd-util snapshot -n MyVHDFile -p SomeFile
+
+This creates a sparse VHD file named "MyVHDFile" using "SomeFile"
+as a parent image.  Copy-on-write semantics ensure that writes will be
+stored in "MyVHDFile" while reads will be directed to the most
+recently written version of the data, either in "MyVHDFile" or
+"SomeFile" as is appropriate.
+
+This document is Copyright (C) 2016 Timothe Litt.
+
+See the COPYING file for license.

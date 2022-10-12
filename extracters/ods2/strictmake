@@ -1,0 +1,18 @@
+#!/bin/bash
+# This is how I validate that everything compiles with GCC warnings enabled.
+# ./strictmake -g -DDEBUG (or any other CCFLAGS)
+# If the first argument does not begin with '-', it's the target of the build
+#
+# Exception reasons:
+#  $ in identifier - VMS compatible code
+#  object to function pointer - dlsym requires this to work; it's in the
+#  OpenGroup standard's notes on this (standard) function.
+#  VHD uses long long - but is optional
+
+if [[ "$1" =~ ^- ]]; then
+    TGT=
+else
+    TGT="$1"
+    shift
+fi
+LANG=C 2>&1 make -f makefile.unix $TGT "CCFLAGS=-O4 $* -DUSE_LIBEDIT -Wall -pedantic -Wextra" | grep -vP "(warning: '\\\$' in identifier or number)|\`arg[cv]|(In file included from)|(phyvhd.c:\\d+:\\d+: warning: ISO C forbids conversion of object pointer to function pointer)|(use of C99 long long integer constant)"

@@ -1,0 +1,193 @@
+# -*- Makefile -*-
+
+# Generic makefile for ods2
+#
+# This tries really hard to be OS-agnostic, because
+# otherwise, every little change means updating all
+# the os-specific makefiles.
+#
+# For Unix and Unix-ish OSs, variables are defaulted
+# in makefile.unixdefs, which is included by
+# makefile.<osname>.  Per-OS customizations are set
+# by makefile.<osname>, which then includes this file.
+#
+# If your make doesn't support include (are any left?),
+# combine the files with an editor.
+#
+# Life will be simpler if you softlink Makefile to makefile.<osname>
+#  e.g. ln -s makefile.unix Makefile
+#
+# ###
+
+# See makefile.unixdefs for a list of the available variables.
+
+# VHD format options
+
+include $(VHDOPTS)
+
+# #####################################################
+
+# Language files are of the form LL_CC.{msg, hlp}
+# Where: LL is a language code (e.g. en), and
+#        CC is a country code (e.g. us)
+# .msg files are the message definitions
+# .hlp file  are the helpfile text
+#
+# The base language is en_us, but translations are welcome.
+
+# Filenames of these forms will automatically generate the
+# runtime-loadable help (.hlb) and message (.mdf) files.
+
+# Note that translated messages from a VMS system are required
+# for each language; these are generated with the (DECUS)
+# unmessage utility, are are named "vms_msgdump.<lang>.msg.
+# Output from the message utility has more details.
+
+MSGLANGS = $(wildcard ??_??.msg)
+HLPLANGS = $(wildcard ??_??.hlp)
+
+all : ods2$(EXE) helpfiles msgfiles
+
+SRCS = ods2.c 	\
+access.c  	\
+cache.c  	\
+compat.c  	\
+copycmd.c 	\
+createcmd.c 	\
+debug.c		\
+deletecmd.c	\
+device.c	\
+diffcmd.c 	\
+dircmd.c	\
+direct.c	\
+dismountcmd.c	\
+extendcmd.c	\
+helpcmd.c	\
+initialcmd.c	\
+initvol.c	\
+mountcmd.c	\
+$(PHYSIO).c 	\
+phyvirt.c	\
+renamecmd.c     \
+rms.c		\
+searchcmd.c	\
+setcmd.c	\
+showcmd.c	\
+spawncmd.c	\
+sysmsg.c	\
+termio.c	\
+update.c	\
+vmstime.c	\
+$(VHDLIB)
+
+OBJS = $(SRCS:.c=$(OBJ))
+
+depend: $(MAKEFILE_LIST)
+	$(DELETE) $(DEPENDS)
+	$(MAKE) -f $(TOPMAKE) $(DEPENDS)
+	$(MAKE) -f makefile.vms descrip.mms
+
+# Used to list sourcefiles for updating VC project & git repository.
+# Not used for Makefile builds
+# Run after make depends
+# To get the Windows file list on Unix, use
+# make -f makefile.nt "DELETE=rm -f" depend vclist
+
+vclist:
+	@echo "** Header files **"
+	@$(SED) $(DEPENDS) -e'/ *#/d' -e's/^.*.$(OBJ): //g' -e's/ /\n/g' | sort | uniq
+	@echo ""
+	@echo "** Source files **"
+	@echo $(SRCS) | sed -e's/  */\n/g' | sort | uniq
+
+# This processing is so the kit can contain a generic, up-to-date depends file
+# without requiring makedepend when rebuilding from source.
+#
+# Raw makedepend will include all the system library includes, which is not
+# helpful for this case.  So the sed processing removes dependencies that
+# start with "/" - e.g. /usr/include and friends.
+#
+# The sleep is because make uses high-precision timing; the output can appear
+# to be in the future by a few msec.
+
+$(DEPENDS): $(MAKEFILE_LIST)
+	touch $(DEPENDS)
+	2>/dev/null $(MAKEDEPEND) -o$(OBJ) -I. -f- -- $(CFLAGS) $(CPPFLAGS) $(DEFS) -- $(SRCS) genmsg.c makehelp.c | $(SED)  -e's/ \/[^ ]*\.h/ /g' -e'/^[^:]*: *$$/d' -e's/  */ /g' >$(DEPENDS)
+	@sleep 2
+
+-include $(DEPENDS)
+
+# Currently, the descrip.mms file is updated on Unix.  A makefile.vms
+# exists solely to enable this.  It might be possible to build ODS2
+# on VMS with it using GNU tools.  But that's not the point.
+
+descrip.mms : $(SRCS) $(DEPENDS)
+	$(SED) -i.bak -e's!^OBJS = .*$$!OBJS = $(SRCS:.c=)!' -e'/^# ### BEGIN RULES ###/,$$d' -e'/^OBJS =/y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/' descrip.mms
+	echo "# ### BEGIN RULES ###" >>descrip.mms
+	2>/dev/null $(MAKEDEPEND) -o$(OBJ) -I. -f- -- $(CFLAGS) $(CPPFLAGS) $(DEFS) -- $(SRCS) | $(SED)  -e's/ \/[^ ]*\.h/ /g' -e'/^[^:]*: *$$/d' -e's/  */ /g' | $(SED) -e'/^# DO NOT DELETE/d' -e's/^\([^:]*\)$(OBJ):/\1$$(OBJ):/g' -e'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/' >>descrip.mms
+
+%$(OBJ): %.c
+	$(CC) -c $(CCFLAGS) $(CPPFLAGS) $(DEFS) $< -o $@
+
+ods2$(EXE) : $(OBJS) $(LIBS)
+	$(CC) $(LDFLAGS) -o ods2$(EXE) $(OBJS) $(LDLIBS)
+
+# Message definition files: These provide the text for every condition (message) code.
+#
+# For a new translation:
+#  create a new <lang>.msg file, based on an existing one (e.g. en_us.msg)
+# make does the rest
+# To test, ods2 set message ods2_<lang>.mdf
+
+# Runtime-loadable message file for I18n supports:
+
+msgfiles : $(foreach LANG,$(MSGLANGS),ods2_$(basename $(LANG)).mdf)
+
+ods2_%.mdf : %.mt genmsg.c
+	$(CC) $(CCFLAGS) $(CPPFLAGS) $(DEFS) $(LDFLAGS) '-DTABLEFILE="$<"' -o genmsg$(EXE) genmsg.c $(LDLIBS)
+	$(RUN)genmsg$(EXE) -q $@
+	@$(DELETE) genmsg$(EXE)
+
+# Build ssdef (condition code definitions) from .msg files.
+# Requires Perl.  Generate ssdef.msg for documentatation.
+# The output is not language-specific (aside from the documention file)
+# It's merely the #defines for the facility numbers and condition codes.
+
+ssdef.h : $(ODS2LANG).msg vms_messages_$(ODS2LANG).msg message
+	$(MESSAGE)    -q vms_messages_$(ODS2LANG).msg $(ODS2LANG).msg ssdef.h
+	$(MESSAGE) -m -q vms_messages_$(ODS2LANG).msg $(ODS2LANG).msg ssdef.msg
+
+# Compile-time message definition data file: #included in sysmsg to
+# compile default/fallback definitions.
+
+default.md : $(ODS2LANG).mt genmsg.c
+	$(CC) $(CCFLAGS) $(CPPFLAGS) $(DEFS) $(LDFLAGS) '-DTABLEFILE="$<"' -o genmsg$(EXE) genmsg.c $(LDLIBS)
+	$(RUN)genmsg$(EXE) -dq $@
+	@$(DELETE) genmsg$(EXE)
+
+sysmsg$(OBJ) : default.md
+
+
+# Build message table from .msg file.
+# Requires Perl.
+
+%.mt : %.msg vms_messages_$(basename %).msg message
+	$(MESSAGE) -q -t $(filter-out message,$^) $@
+
+# VMS messages for each language
+
+vms_messages_%.msg : vms_msgdump.%.msg message vms_msgdefs.h
+	$(MESSAGE) -m -q vms_msgdefs.h $< $@
+
+# Help files
+
+helpfiles : ods2.hlb $(foreach LANG,$(HLPLANGS),ods2_$(basename $(LANG)).hlb)
+
+ods2_%.hlb : %.hlp makehelp$(EXE)
+	$(RUN)makehelp$(EXE) -q $< $@
+
+makehelp$(EXE) : makehelp.o compat.o
+	$(CC) $(CCFLAGS) $(CPPFLAGS) $(DEFS) $(LDFLAGS) -o makehelp$(EXE) makehelp.o compat.o $(LDLIBS)
+
+ods2.hlb : ods2_$(ODS2LANG).hlb
+	$(LN) $< $@

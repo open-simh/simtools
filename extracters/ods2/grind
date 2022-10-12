@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Run ods2 with listed arguments
+PROG=./ods2
+#
+# Save valgrind output in grind.txt~ for analysis
+# Display full output on TTY
+# Merge rules in suppress.txt~ with output, creating newsuppress.txt~
+
+touch suppress.txt~
+valgrind --gen-suppressions=all \
+         --show-leak-kinds=all \
+         --leak-check=full     \
+         --num-callers=30      \
+$PROG "$@"                     \
+  3>&1 1>&2 2>&3 | tee  /dev/stderr grind.txt~ | \
+  grindmerge -f suppress.txt~ >newsuppress.txt~
+

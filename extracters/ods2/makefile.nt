@@ -1,0 +1,37 @@
+# -*- Makefile -*-
+
+# Makefile for Windows NT
+#
+
+CCFLAGS = "-Oxs"
+
+LIBS = Shlwapi.lib
+
+# For the direct SCSI module
+#DEFS = -DUSE_ASPI
+#LDLIBS = wnaspi32.lib
+#PHYSIOH = wnaspi32.h scsidefs.h
+#LIBS += wnaspi32.lib
+
+OBJ = .OBJ
+PHYSIO = phynt
+EXE = .EXE
+DELETE = DEL
+
+# Include VHD format image file support
+
+VHDOPTS = makefile-vhd.nt
+
+wnaspi32.lib : wnaspi32.def
+	LIB /DEF:WNASPI32.DEF /MACHINE:IX86
+
+TOPMAKE = makefile.nt
+
+all:
+
+clean:
+	$(DELETE) $(OBJS)
+	$(DELETE) ods2.exe
+
+include makefile.generic
+

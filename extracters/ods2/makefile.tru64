@@ -1,0 +1,27 @@
+# -*- Makefile -*-
+
+# Makefile for Tru64 (DEC/OSF1)
+#
+
+# Start with generic unix
+
+include makefile.unixdefs
+
+# Use gcc
+
+CC=gcc
+
+TOPMAKE = makefile.solaris
+
+include makefile.generic
+
+CCFLAGS = -O4 -g
+
+# I don't think we have libedit
+
+DEFS =
+LDLIBS =
+
+TOPMAKE = makefile.tru64
+
+include makefile.generic

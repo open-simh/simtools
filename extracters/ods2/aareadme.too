@@ -1,0 +1,22 @@
+ODS2 V1.3, 26-SEP-2001
+
+This release of ODS2 has been made by me, working closely with, and
+getting approval from, Paul.
+
+It will compile cleanly on OpenVMS Alpha, Windows NT/2000 using
+Visual C++ V6.0, Tru64 UNIX V5, and Solaris/Sparc using gcc.
+
+To build on Windows 2000:
+
+   C:> nmake -f makefile.nt
+
+To build on VMS:
+
+   $ mmk
+
+
+Hunter
+------
+Hunter Goatley
+goathunter@goatley.com
+http://www.goatley.com/hunter/

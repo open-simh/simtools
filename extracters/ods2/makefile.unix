@@ -1,0 +1,11 @@
+# -*- Makefile -*-
+
+# Makefile for most Unix distributions
+#
+
+include makefile.unixdefs
+
+TOPMAKE = makefile.unix
+
+include makefile.generic
+

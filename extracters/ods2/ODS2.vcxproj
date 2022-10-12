@@ -1,0 +1,276 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{BCCEAED2-1732-D796-1F70-040DE5DA42AD}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <CustomBuildAfterTargets>
+    </CustomBuildAfterTargets>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <CustomBuildAfterTargets />
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <CustomBuildAfterTargets>Link</CustomBuildAfterTargets>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <CustomBuildAfterTargets>Link</CustomBuildAfterTargets>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>USE_VLD;DEBUG_BUILD;USE_VHD;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>vhd\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessToFile>false</PreprocessToFile>
+    </ClCompile>
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>Rpcrt4.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>
+      </DelayLoadDLLs>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CustomBuildStep>
+      <Command>copy $(OutDir)$(TargetName)$(TargetExt) $(SolutionDir)$(TargetName)_$(PlatformShortName)_debug$(TargetExt) </Command>
+      <Outputs>$(SolutionDir)$(TargetName)_$(PlatformShortName)_debug$(TargetExt)</Outputs>
+      <Message>Copying $(TargetName)$(TargetExt)</Message>
+      <Inputs>$(OutDir)$(TargetName)$(TargetExt) </Inputs>
+    </CustomBuildStep>
+    <PreBuildEvent>
+      <Command>del $(SolutionDir)$(TargetName)$(TargetExt)  &gt;nil.bak 2&gt;&amp;1 || exit /b 0</Command>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>USE_VLD;DEBUG_BUILD;USE_VHD;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>vhd\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessToFile>false</PreprocessToFile>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>Rpcrt4.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>
+      </DelayLoadDLLs>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CustomBuildStep>
+      <Command>copy $(OutDir)$(TargetName)$(TargetExt) $(SolutionDir)$(TargetName)_$(PlatformShortName)_debug$(TargetExt) </Command>
+      <Outputs>$(SolutionDir)$(TargetName)_$(PlatformShortName)_debug$(TargetExt)</Outputs>
+      <Message>Copying $(TargetName)$(TargetExt)</Message>
+      <Inputs>$(OutDir)$(TargetName)$(TargetExt) </Inputs>
+    </CustomBuildStep>
+    <PreBuildEvent>
+      <Command>del $(SolutionDir)$(TargetName)$(TargetExt)  &gt;nil.bak 2&gt;&amp;1 || exit /b 0</Command>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PreprocessorDefinitions>USE_VHD;WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>vhd\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <TargetMachine>MachineX86</TargetMachine>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>Rpcrt4.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CustomBuildStep>
+      <Command>copy $(OutDir)$(TargetName)$(TargetExt) $(SolutionDir)$(TargetName)_$(PlatformShortName)$(TargetExt) </Command>
+      <Outputs>$(SolutionDir)$(TargetName)_$(PlatformShortName)$(TargetExt)</Outputs>
+      <Message>Copying $(TargetName)$(TargetExt)</Message>
+      <Inputs>$(OutDir)$(TargetName)$(TargetExt) </Inputs>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>USE_VHD;WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>vhd\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>Rpcrt4.lib;Shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CustomBuildStep>
+      <Command>copy $(OutDir)$(TargetName)$(TargetExt) $(SolutionDir)$(TargetName)_$(PlatformShortName)$(TargetExt) </Command>
+      <Outputs>$(SolutionDir)$(TargetName)_$(PlatformShortName)$(TargetExt)</Outputs>
+      <Message>Copying $(TargetName)$(TargetExt)</Message>
+      <Inputs>$(OutDir)$(TargetName)$(TargetExt) </Inputs>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="access.c" />
+    <ClCompile Include="cache.c" />
+    <ClCompile Include="compat.c" />
+    <ClCompile Include="copycmd.c" />
+    <ClCompile Include="createcmd.c" />
+    <ClCompile Include="debug.c">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="deletecmd.c" />
+    <ClCompile Include="device.c" />
+    <ClCompile Include="diffcmd.c" />
+    <ClCompile Include="dircmd.c" />
+    <ClCompile Include="direct.c" />
+    <ClCompile Include="dismountcmd.c" />
+    <ClCompile Include="extendcmd.c" />
+    <ClCompile Include="helpcmd.c" />
+    <ClCompile Include="initialcmd.c" />
+    <ClCompile Include="initvol.c" />
+    <ClCompile Include="mountcmd.c" />
+    <ClCompile Include="ods2.c" />
+    <ClCompile Include="phynt.c" />
+    <ClCompile Include="phyvhd.c" />
+    <ClCompile Include="phyvirt.c" />
+    <ClCompile Include="renamecmd.c" />
+    <ClCompile Include="rms.c" />
+    <ClCompile Include="searchcmd.c" />
+    <ClCompile Include="setcmd.c" />
+    <ClCompile Include="showcmd.c" />
+    <ClCompile Include="spawncmd.c" />
+    <ClCompile Include="sysmsg.c" />
+    <ClCompile Include="termio.c" />
+    <ClCompile Include="update.c" />
+    <ClCompile Include="vhd\libvhd.c" />
+    <ClCompile Include="vhd\relative-path.c" />
+    <ClCompile Include="vmstime.c" />
+    <ClCompile Include="winfile.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="access.h" />
+    <ClInclude Include="cache.h" />
+    <ClInclude Include="cmddef.h" />
+    <ClInclude Include="compat.h" />
+    <ClInclude Include="debug.h" />
+    <ClInclude Include="descrip.h" />
+    <ClInclude Include="direct.h" />
+    <ClInclude Include="f11def.h" />
+    <ClInclude Include="fibdef.h" />
+    <ClInclude Include="initvol.h" />
+    <ClInclude Include="ods2.h" />
+    <ClInclude Include="phyio.h" />
+    <ClInclude Include="phyvhd.h" />
+    <ClInclude Include="phyvirt.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="rms.h" />
+    <ClInclude Include="scsidefs.h" />
+    <ClInclude Include="ssdef.h" />
+    <ClInclude Include="stsdef.h" />
+    <ClInclude Include="sysmsg.h" />
+    <ClInclude Include="version.h" />
+    <ClInclude Include="vhd\blk_uuid.h" />
+    <ClInclude Include="vhd\libvhd.h" />
+    <ClInclude Include="vhd\relative-path.h" />
+    <ClInclude Include="vhd\vhd.h" />
+    <ClInclude Include="vmstime.h" />
+    <ClInclude Include="winfile.h" />
+    <ClInclude Include="wnaspi32.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ods2.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="default.mt">
+      <FileType>Document</FileType>
+    </ClInclude>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

@@ -1,0 +1,6 @@
+LIBRARY WNASPI32
+EXPORTS
+    GetASPI32SupportInfo @1
+    SendASPI32Command @2
+; Make library with
+; LIB /DEF:WNASPI32.DEF /MACHINE:IX86
