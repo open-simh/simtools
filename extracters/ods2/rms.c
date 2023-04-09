@@ -2737,6 +2737,15 @@ vmscond_t sys_create( struct FAB *fab ) {
                 sts = RMS$_FSZ;
             break;
         case FAB$C_VAR:
+            /* Directories use MRS of 512 but are also NOSPAN */
+            if (i >= sizeof("A.DIR;1") - 1 &&
+                !strcmp(fn + i - (sizeof(".DIR;1") - 1), ".DIR;1")) {
+                if (fab->fab$w_mrs != 512 || !(fab->fab$b_rat & FAB$M_BLK)) {
+                    sts = RMS$_RSZ;
+                    break;
+                }
+                break;
+            }
             if( fab->fab$w_mrs > ((fab->fab$b_rat & FAB$M_BLK)? 510: 32767) )
                 sts = RMS$_RSZ;
             else if( fab->fab$b_fsz )
