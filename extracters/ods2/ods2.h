@@ -113,6 +113,6 @@ typedef uint32_t vmscond_t;
 
 #define OPT_NOSORT    ((options_t)(1u << 31))
 
-typedef int32_t options_t;
+typedef uint32_t options_t;
 
 #endif /* #ifndef _ODS2_H */

@@ -65,6 +65,7 @@ GLOBERR          <unknown error !UL processing !AZ> /FAO=2
 
 
         .FACILITY CREATE,86 /SHARED
+        .LITERAL CREATE_OFFSET          = (86)                                                ! 0x00000050 Warning
         .LITERAL CREATE_CLOSEOUT        = ((CREATE_FACILITY@16) + SHR$_ILLDESQUE + 2)         ! 0x085612d2 Error
         .LITERAL CREATE_CREATED         = ((CREATE_FACILITY@16) + SHR$_ILLDIRCOPY + 3)        ! 0x085612eb Info
         .LITERAL CREATE_EXISTS          = ((CREATE_FACILITY@16) + SHR$_INSVIRMEM + 3)         ! 0x085612f3 Info
@@ -90,7 +91,6 @@ CREDIRFAIL       <failed to create directory !AZ> /FAO=1
 
 
         .FACILITY DELETE,87 /SHARED
-        .LITERAL DELETE_OFFSET          = (87)                                                ! 0x00000050 Warning
         .LITERAL DELETE_OPENIN          = ((DELETE_FACILITY@16) + SHR$_FILDEL)                ! 0x08571320 Warning
 
         .END
@@ -272,6 +272,10 @@ CONFLQUAL        <can not specify both !AZallocate and !AZtruncate> /FAO=2
 
         .END
 
+
+        .FACILITY HELP,92 /SHARED
+
+        .END
 
         .FACILITY HELP,92
 
@@ -483,11 +487,6 @@ VHDNOTVALID      <the VHD library !AZ is not usable> /FAO=1
 
         .END
 
-
-        .FACILITY MOUNT,95 /SHARED
-        .LITERAL MOUNT_OFFSET          = (95)                                                ! 0x00000058 Warning
-
-        .END
 
         .FACILITY MOUNT,95
 
