@@ -27,7 +27,7 @@
 #ifdef DEBUG_BUILD
 #define MODULE_IDENT "Debug build"
 #else
-#define MODULE_IDENT "V3.0"
+#define MODULE_IDENT "V3.0.2"
 #endif
 
 #define MODULE_NAME  ODS2

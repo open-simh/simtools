@@ -1043,6 +1043,7 @@ static vmscond_t copy_to( options_t options, int argc, char **argv ) {
 static vmscond_t copy_1_to( options_t options, char *from, char *to ) {
     vmscond_t sts;
     size_t records = 0, bufsize = 80;
+    int keepnl = 0;
     char *buf = NULL;
     FILE *fromf;
     struct FAB fab;
@@ -1166,6 +1167,13 @@ static vmscond_t copy_1_to( options_t options, char *from, char *to ) {
     case FAB$C_STMLF:
     case FAB$C_STMCR:
         fab.fab$b_rat |= FAB$M_CR;
+        keepnl = 1;
+        break;
+    case FAB$C_UDF:
+        keepnl = 1;
+        break;
+    default:
+        keepnl - 0;
         break;
     }
 
@@ -1278,7 +1286,7 @@ static vmscond_t copy_1_to( options_t options, char *from, char *to ) {
             buf = NULL;
             break;
         }
-        while( (rab.rab$l_rbf = fgetline( fromf, TRUE, &buf, &bufsize )) != NULL ) {
+        while( (rab.rab$l_rbf = fgetline( fromf, keepnl, &buf, &bufsize )) != NULL ) {
             size_t len;
             char * rp;
 
