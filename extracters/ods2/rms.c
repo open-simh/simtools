@@ -1730,7 +1730,7 @@ vmscond_t sys_put( struct RAB *rab ) {
                 break;
             default:
                 if( rfmvar &&
-                    ( (blocks * 512) >= (offset + 2 + (offset & 1)) ) ) {
+                    ( (blocks * 512) > (offset + 2 + (offset & 1)) ) ) {
                     buffer[(offset|1)+0] = -1;
                     buffer[(offset|1)+1] = -1;
                 }
