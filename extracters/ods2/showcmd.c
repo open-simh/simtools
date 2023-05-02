@@ -700,6 +700,8 @@ void show_version( int full ) {
             {"Visual Studio 2022 version 17.1",         1931},
             {"Visual Studio 2022 version 17.2",         1932},
             {"Visual Studio 2022 version 17.3",         1933},
+            ("Visual Studio 2022 version 17.4",         1934),
+            ("Visual Studio 2022 version 17.5",         1935),
             {"Visual Studio 2022+", 100000}, }, *ip;
         for( ip = ides; ip->ver < _MSC_VER; ip++ )
             ;
