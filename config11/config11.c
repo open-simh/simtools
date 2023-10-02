@@ -71,7 +71,6 @@ for ( ;; ) {
 	if (*inp == 0) break;
 	for (cp = inp; *cp != 0; cp++) *cp = toupper (*cp);
 	for (rank = 0; rank < RANK_LNT; rank++) {
-		printf ("cmp: \"%s\" == \"%s\"?\n", inp, namtab[rank]);
 	    if (strcmp (inp, namtab[rank]) == 0) break;  }
 	if (rank >= RANK_LNT) {
 	    printf ("Unknown controller, valid names are:");
