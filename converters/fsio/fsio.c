@@ -638,12 +638,12 @@ static struct mountedFS *findMount(
   uint8_t unitpresent = 0;
   unsigned int i;
   char *endptr, *ptr;
-  char origdev[32];
+  char origdev[33];
 
   if ((ptr = strchr(dev, ':')) != NULL) {
     *ptr++ = '\0';
 
-    strncpy(origdev, dev, sizeof(origdev));
+    strncpy(origdev, dev, sizeof(origdev)-1);
 
     /*
      * Determine validity of the device name and whether a unit number is
