@@ -1,6 +1,23 @@
 
 ----------- Mike Hill's entries ------------------
 
+18-Oct-2023: Mike Hill
+        - README.MAC
+          Finally completed the 'macro11 Reference Manual' in source form
+          Generate the manual with ... macro11 README.MAC -l README.LST -ysl 8 -e BMK
+
+22-Aug-2023: Mike Hill
+        - assemble.c
+          Ignore .PAGE if .NLIST (list_level < 0)
+          Do not list .PAGE with comment if '.NLIST COM'
+          Strip trailing spaces/tabs from .TITLE string (page heading)
+          Strip trailing spaces/tabs from .SBTTL string (TOC)
+        - stream2.c
+          Do not translate <FF> to '.PAGE' if .NLIST (list_level < 0)
+        - macro11.h
+          Updated to version 0.9 and set date to "(22 Aug 2023)"
+        Re-ran all tests (all OKAY) - just in case.
+
 29-Jun-2023: Mike Hill
         Add -apb and -ff command-line qualifiers
         - listing.h

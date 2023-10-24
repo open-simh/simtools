@@ -1,9 +1,1389 @@
+	.NLIST			; Don't list the preamble (unless '-e LIS')
+	.NLIST	SEQ,LOC,BIN	; Disable listing SEQuence, LOCation, & BINary
+
+
+;	***********************************************************************
+;	**          m a c r o 1 1   R E F E R E N C E   M A N U A L          **
+;	***********************************************************************
+;	**    The COPYRIGHT NOTICE appears at the end of this source file    **
+;	***********************************************************************
+
+;	+---------------------------------------------------------------------+
+;	|   H O W   T O   C R E A T E   T H E   m a c r o 1 1   M A N U A L   |
+;	+---------------------------------------------------------------------+
+;
+;	macro11 should be used to create the Reference Manual as follows:-
+;
+;		macro11 README.MAC -l README.LST -ysl 8 -e BMK
+;
+;	Some additional optional qualifiers:-
+;
+;	-e LIS		Lists the preamble (not recommended)
+;	-dc LIS,CND	Force listing of the whole source file (not recommended)
+;	-ysl 6		Truncates symbols (like .INCLUDE) to max. 6 characters
+;	-ym11		Enables m11 (2.11BSD Unix) extensions (CNZ and .MACR)
+;	-dc TTM		Makes 'Sample Listing' and symbol table 132 columns wide
+;	-s $BRIEF=1	Cuts out some of the "unneeded" documentation
+;	-s $GLSYM=1	Defines all opcode and directive symbols to be GLOBAL
+;	-s $TEST=1	Test the directives by appending '\\\' to them (nasty)
+
+;	See the end of THIS file (not the listing file) for where to find the
+;	original MACRO-11 Manual PDF file and other reference material.
+
+;------------------------------------------------------------------------------
+
+	.NLIST	CND		; Disable listing unsatisfied conditionals
+	.IIF DF	$BRIEF	.NLIST SYM  ; Do not list the symbol table if '$BRIEF'
+
+;-	.ENABL	BMK		; Select benchmark mode (no date/time etc.)
+;-	.DSABL	GBL		; Do not allow external symbols
+;-	.DSABL	LC		; Force all source to upper-case
+
+;------------------------------------------------------------------------------
+
+;
+; Older versions of macro11 did not support .IF P1 or .IF P2 (but we use these)
+;
+;	Code taken from SOS-11 (with '$' prefixed):-
+;
+;		$P1 =  0 on the first pass and -1 on the second pass
+;		$P2 = -1 on the first pass and  0 on the second pass
+;
+;		.IIF EQ $P1 ; We are on the first  pass [not needed here]
+;		.IIF EQ $P2 ; We are on the second pass
+;
+
+	.IIF NDF $P2 $P2 = 0	; If $P2 is not defined [i.e. on pass 1] ...
+$P2	=	^C<$P2>		; ... we want $P2 to be non-zero [on pass 1] ...
+;- $P1	=	^C<$P2>		; ... and we want $P1 to be the opposite
+
+;------------------------------------------------------------------------------
+
+;
+; Older versions of macro11 did not support .PAGE (but did assemble .REPT 0)
+;
+
+	.REPT	0
+	.MACRO	.PAGE
+	.ENDM	.PAGE
+	.ENDR
+
+;------------------------------------------------------------------------------
+
+;
+; h - Heading (will appear in the TOC)
+;
+
+	.MACRO	h	A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+	.SBTTL	A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
+	.ENDM	h
+
+;
+; c - Comment (ignored)
+;
+
+	.MACRO	c	A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+	.ENDM	c
+
+;
+; o - Opcode (declare opcodes)
+;
+
+	.MACRO	o	A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+	.IIF EQ	$P2	.MEXIT
+	.IRP	OP,<A B C D E F G H I J K L M N O P Q R S T U V W X Y Z>
+OP	=:	OP
+	.IIF DF	OP & $GLSYM	.GLOBL	OP
+	.ENDR
+	.ENDM	o
+
+;
+; d - Directive (declare directives [without the preceding '.'])
+;
+
+	.IF NDF	$TEST
+
+	.MACRO	d	A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+	.IIF EQ	$P2	.MEXIT
+	.IRP	DIR,<A B C D E F G H I J K L M N O P Q R S T U V W X Y Z>
+.'DIR	=:	.'DIR
+	.IIF DF .'DIR & $GLSYM	.GLOBL .'DIR
+	.ENDR
+	.ENDM	d
+
+	.IFF	; NDF $TEST
+
+	.MACRO	d	A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+;-	.IIF EQ	$P2	.MEXIT
+	.IRP	DIR,<A B C D E F G H I J K L M N O P Q R S T U V W X Y Z>
+.'DIR	=:	.'DIR
+	.IIF DF .'DIR & $GLSYM	.GLOBL .'DIR
+	.PRINT	; *** .'DIR \\\
+	.IIF DIF "DIR","END" .IIF DIF "DIR","ENDR"	.'DIR	\\\
+;+	.IIF EQ 0	.ENDC	; End the .IFxxx in case we started one
+	.ENDR
+	.ENDM	d
+
+	.ENDC	; NDF $TEST
+
+;------------------------------------------------------------------------------
+;	The macro11 Reference Manual actually starts ... HERE ...
+;------------------------------------------------------------------------------
+
+	.LIST
 	.TITLE	macro11 - Manual and Features
 	.IDENT	/MSHILL/
-	.REM	/25-May-2023/
+	.REM	/18-Oct-2023/
 
-; This file is a place-holder for the macro11 documentation.
-; It will, in course, be replaced by a document which,
-; when assembled, can be used as a manual.
+h	Preface
+c	-------
+c
+;	The objective of macro11 is to provided a portable assembler for
+;	PDP-11 MACRO-11 source code.  Every attempt has been made to make
+;	macro11 produce equivalent object code to MACRO-11.  The resulting
+;	executable program should be the same as on the original platform.
 
-	.END
+;	Source code which would produce errors on the original platform may
+;	produce different results using macro11.  However, some effort has
+;	been made to detect errors and handle them similarly to the original.
+
+;	macro11 includes most of the features of MACRO-11 up to V05.05.
+;	Enhancements, differences, and omissions are explained later.
+
+;	This manual is intended to accompany the MACRO-11 Manual (see below).
+;	We show the differences between macro11 and MACRO-11 and illustrate
+;	additional features of macro11 which may prove useful when creating
+;	(or modifying) code which needs to be compatible with MACRO-11.
+
+;	This manual pertains to macro11 0.9 (from August 22, 2023).
+;	macro11 - portable MACRO-11 assembler for DEC PDP-11.
+;	  - and -
+;	dumpobj - Version from February 13, 2023.
+
+;	The table of contents (TOC) is structured the same as the MACRO-11
+;	Manual.  Equivalent sections like (C.1) are shown in parenthesis.
+;	Use the MACRO-11 Manual to find the original text for comparison.
+
+;	Reference documentaton for MACRO-11 V05.05:-
+;
+;		PDP-11 MACRO-11 Language Reference Manual.
+;		Order Number AA-KX10A-TC May 1988.
+;		Including Update Notice 1, AD-KX10A-T1.
+;		For MACRO-11 Version 5.5 on IAS, MICRO/RSX, MICRO/RSTS,
+;		    RSTS/E, RSX-llM, RSX-llM-PLUS, RT-11, P/OS, and VAX/VMS.
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;	The following sections are very similar to the MACRO-11 Manual:-
+;		Character Set (3.1)
+;		.LIST and .NLIST Directive Symbolic Arguments (6.1.1)
+;		.ENABL and .DSABL Directive Symbolic Arguments (6.2.1)
+;		.PSECT Directive Symbolic Arguments (6.7.1)
+;		.ASECT and .CSECT Directives Default Values (6.7.2)
+;		Special Characters (B.1)
+;		Summary of Address Mode Syntax (B.2 also see Chapter 5)
+;		Embedded Assembler Directives (B.3 also see Chapters 6 & 7)
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;	The permanent symbol table VALUES (Appendix C in MACRO-11) are listed
+;	in the symbol table at the end of this document.
+;
+;		Opcodes (C.1), (C.2), and (C.3) are the symbols starting
+;		with a letter.
+;
+;		Directives (C.4) are the symbols starting with a dot ('.').
+;		Note that these are NOT defined as symbols in MACRO-11 but
+;		ARE defined (and have values) in macro11.
+;
+;		Symbols starting with a dollar-sign ('$') are used internally
+;		to create this manual.
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	Differences between PORTABLE macro11 and PDP-11 MACRO-11
+c	--------------------------------------------------------
+c
+	.REM	~
+
+		E N H A N C E M E N T S
+		-----------------------
+
+The macro11 listing file contains enhancements which MACRO-11 does not have.
+.IF directives (also .IFT, .IFF, and .IFTF) put '=' in the flags field to
+show if they are true (1=) or not (0=).  .IF with an expression shows the
+value of the expression in 6-digits (e.g. '012345=') instead of '1=' or '0='.
+Some directives (e.g.  .NARG, .NCHR, and .NTYPE) list the returned value.
+macro11 lists the PSECT number in 3-digits (e.g. 001) with .PSECT, .SAVE,
+and .RESTORE directives.  If a symbol table is shown [.LIST SYM] a list
+of all PSECTs with their numbers is appended.
+
+.IF ... .ENDC pairs may be nested more than the 16 levels which MACRO-11 allows.
+
+The following instructions do not generate errors on MACRO-11 but DO generate
+warnings on macro11 (register mode, where Rn is one of R0-R5, SP, PC):-
+	JMP	Rn
+	CALLR	Rn
+	JSR	Rm,Rn
+	CALL	Rn
+	TSTSET	Rn
+	WRTLCK	Rn
+
+macro11 documents the following .ENABL / .DSABL "undocumented" arguments:-
+	BMK	Benchmark: remove references to date/time etc. from the listing
+	DBG	Has no function in macro11 (MACRO-11 writes ISD object records)
+
+macro11 documents the following .LIST / .NLIST "undocumented" arguments:-
+	LD	Lists values in decimal (similar to .LIST HEX) insted of octal
+
+PAL-11R defines .IFEQ .IFZ etc. as backwards compatible. (DOS-11 also ignored
+the .EOT directive).  'macro11 -stringent' flags these with a warning.  It does
+not flag .IF Z etc.  See the 'Obsolete (but allowed) Directives' section for a
+complete list.
+
+With macro11 it is possible to put absolute symbols in their respective PSECTS
+within the object file.  This is not possible with MACRO-11.  See '-a0'.
+
+The object file always stores global symbol names sorted in Radix-50 order
+within PSECTs whereas MACRO-11 may not.  Some complex records [RLD type 17] may
+be different to MACRO-11 because macro11 can perform more optimizations.
+
+
+		D I F F E R E N C E S
+		---------------------
+
+On MACRO-11 the errors are listed as a single letter (A, ...) on the same line
+as the source line.  On macro11 the errors are listed preceding the source line.
+With command-line option '-se' you will also see an asterisk on the same line.
+One asterisk per reported message for that line.
+
+macro11 generates three levels of 'verbose error' message:-
+	WARNING	- Will probably (but may not) assemble as expected
+	ERROR	- Will probably NOT assemble correctly (similar to MACRO-11)
+	FATAL	- Would probably cause MACRO-11 to abort the assembly (see -fe)
+
+Unlike MACRO-11, in macro11 .NLIST SEQ does not allocate space for the sequence
+number (line number) in the listing.  The listing line will be 8 characters
+shorter (the 'error' field and the sequence field will be missing).  This is
+because the 'error' field is not normally needed by macro11 (see above).
+
+Bugs in MACRO-11 source-code may not have the same effect with macro11.
+For example, MACRO-11 on RSX-11M/M-PLUS treats a form-feed which is not at the
+end of a line as an invalid character.  macro11 treats this as a page-throw
+request (the same as MACRO-11 on RT-11).
+
+In MACRO-11, .PRINT statements will be printed on the console.  By default,
+macro11 does not do this.  Use the '-sp' qualifier to achieve this effect.
+
+MACRO-11 treats .NOCROXX the same as .NOCROSS (also .INCLU, .LIBRA, etc.)
+macro11 does the same unless '-ysl' is set to greater than 6.
+
+For .PSECT (etc.) arguments, MACRO-11 ignores characters beyond the third.
+For example .PSECT BLOCK,ABSOLUTE,NOS is the same as .PSECT BLOCK,ABS,NOSAVE.
+macro11 expects these arguments to be exactly as documented.
+
+By default, .PAGE (and a <FF> or ^L) will not perform a true page-throw.  Two
+blank lines will be left in the listing.  You can force a <FF> to be written
+instead by using the '-ff' qualifier.  Unlike MACRO-11, macro11 does not list
+(or track) page numbers.
+
+By default, a missing '.END' does not produce a warning in macro11.  A warning
+WILL be generated if either '-strict -strict -strict' or '-stringent' is
+provided on the command line.
+
+
+		O M I S S I O N S
+		-----------------
+
+macro11 does not report an error when too many formal parameters are passed
+to a macro call.  E.g. .MACRO TEST PARAM followed by TEST 1,2.  Extra
+formal parameters will simply be ignored (apart from syntax checking).
+
+.ENABL ABS is ignored by macro11.  Use dumpobj to generate the LDA if possible.
+.DSABL PNC is ignored by macro11.  Object code generation is always enabled.
+.DSABL REG is ignored by macro11.  R0-R5, SP, and PC are always defined.
+
+.MDELETE does nothing in macro11.  MACRO-11 since V05.00 will generate an
+error if a '.MDELETEd' macro is referenced after deletion.
+
+macro11 does not support cross-referencing.  This means that .CROSS and .NOCROSS
+(introduced in MACRO-11 V05.00) do not generate cross-reference information.
+They do, however, expect their parameters (if any) to be defined symbols.
+If they are not defined, they will be treated as external global symbols.
+
+Invalid control characters (e.g. ^X) are not flagged by macro11 whereas
+MACRO-11 since V05.04 [on RT-11, earlier on RSX-11M/M-PLUS] does detect them.
+
+macro11 only supports up to 254 unique named PSECTs whereas MACRO-11 V05.05
+has no limit to the number of PSECTs allowed (but only lists the first 256).
+
+Global register assignments are not written to the object file by macro11 but
+are by MACRO-11.  E.g. R7 == %7 will NOT be written to the object file by
+macro11 whereas MACRO-11 would write the equivalent of 'R7 == 7' to the object
+file.
+
+2.11BSD m11 .PSECT name,BSS will not zero-fill the 'name'd PSECT.
+
+	.ENDREM	~
+
+.page
+h	m11 (from 2.11BSD Unix) Additions / Compatibility
+c	-------------------------------------------------
+c
+;	m11 (documented separately) is the assembler from 2.11BSD Unix.
+;	macro11 provides backwards compatibility with source-code designed
+;	for m11.  Generated object code will only be in either RSX or RT-11
+;	format.  No attempt has been made to follow the default PSECT
+;	attributes of m11.
+
+;	Some m11 features are enabled using '-ym11' and some are disabled
+;	using '-strict -strict -strict' or '-stringent'.
+
+;	m11 provides the following additions to MACRO-11:-
+;		A _ B	= 'A' shifted by 'B' bits (disabled by '-yus')
+;		^PLname	= 0 (but 'name' must be a known .PSECT name)
+;		^PHname	= Highest address in .PSECT 'name'
+;		CNZ	= <CLN ! CLZ>
+;		.MACR	= .MACRO
+
+;	In m11, .IF DF and .IF NDF allow the right-hand-side to be empty which
+;	equates to FALSE.  This will be disabled with '-strict -strict' or
+;	higher (e.g. -stringent).
+
+;	.ENABL PIC and .DSABL PIC have no function in (and are ignored by)
+;	macro11.
+
+;	m11 provides the following additional PSECT attributes:-
+;		.PSECT name,PRV = RW
+;		.PSECT name,SHR = RO
+;		.PSECT name,INS = I
+;		.PSECT name,DAT = D
+;		.PSECT name,BSS = RW,DAT (but will not be set to zero)
+;		.PSECT name,B   = RW,DAT (but will not be set to zero)
+;		.PSECT name,HGH = Attribute ignored
+;		.PSECT name,LOW = Atrribute ignored
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	Character Set (3.1)
+c	-------------------
+c
+;	Char	Designation		Function
+;	----	-----------		--------
+;	:	Colon			Label terminator.
+;	::	Double colon		Label terminator; defines the label
+		;			as a global label.
+;	=	Equal sign		Direct assignment operator and macro
+		;			keyword indicator.
+;	==	Double equal sign	Direct assignment operator; defines
+		;			the symbol as a global symbol.
+;	=:	Equal sign colon	Direct assignment operator; macro
+		;			keyword indicator; causes error
+		;			in listing if an attempt is made to
+		;			change the value of the symbol.
+;	==:	Double equal sign colon	Direct assignment operator; defines
+		;			the symbol as a global symbol;
+		;			causes error in listing if an attempt
+		;			is made to change the value of the
+		;			symbol.
+;	%	Percent sign		Register term indicator.
+;	<TAB>	Horizontal tab		Item terminator or field terminator.
+;	<SP>	Space			Item terminator or field terminator.
+;	#	Number sign		Immediate expression indicator.
+;	@	At sign			Deferred addressing indicator.
+;	(	Left parenthesis	Initial register indicator.
+;	)	Right parenthesis	Terminal register indicator.
+;	.	Period			Current location counter.
+;	,	Comma			Operand field separator.
+;	;	Semicolon		Comment field indicator.
+;	<	Left angle bracket	Initial argument or expression indic.
+;	>	Right angle bracket	Terminal argument or expression indic.
+;	+	Plus sign		Unary plus, arithmetic addition.
+		;			operator, or autoincrement indicator.
+;	-	Minus sign		Unary minus, arithmetic subtraction.
+		;			operator, or autodecrement indicator.
+;	*	Asterisk		Arithmetic multiplication operator.
+;	/	Slash			Arithmetic division operator.
+;	&	Ampersand		Logical AND operator.
+;	!	Exclamation point	Logical inclusive OR operator.
+;	"	Double quote		Double ASCII character indicator.
+;	'	Single quote		Single ASCII character indicator or
+		;			concatenation indicator.
+;	^	Circumflex		Universal unary operator or argument
+		;			indicator.
+;	\	Backslash		Macro call numeric argument indicator.
+;	_	Underscore		[m11 only] Arithmetic shift operator.
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	Relocation and Linking (Chapter 4)
+c	----------------------------------
+c
+;	macro11 produces equivalent object code to MACRO-11.  The object files
+;	may be transferred to a PDP-11 (or emulator) to be linked (TKB or LINK).
+
+;	macro11 can create either RSX-11M/M-PLUS or RT-11 (including RSTS/E)
+;	formatted object modules.
+
+;	Although m11 (from 2.11BSD Unix) source format is supported (see the
+;	-ym11 qualifier) it is not possible to create an object file in the
+;	same format as m11.
+
+;	dumpobj may be used to dump the contents of a macro11 object file
+;	and also MACRO-11 object files copied from a PDP-11.  dumpobj may
+;	also be used to create an absolute binary (paper-tape) image from
+;	an object file.
+
+;	Unlike MACRO-11 on RT-11, macro11 cannot directly create a paper-tape
+;	formatted (LDA) file.  On RT-11 this may be done using the .ENABL ABS
+;	directive or either of the qualifiers /E:ABS or /ENABLE:ABS.
+
+;	You may choose to use obj2bin (documented separately) to link multiple
+;	object modules or, for a single object module with only one PSECT, you
+;	may create a paper-tape (LDA) image using dumpobj (documented here).
+
+;	Recommended way to create a paper-tape image from an object file:
+;
+;		dumpobj -q OBJECT.obj IMAGE.lda
+;
+;	The source file may only have one PSECT (either ABS or REL) with data in
+;	it and must not reference any undefined symbols.  dumpobj will show the
+;	reasons when the created paper-tape image may not be 100% correct.
+
+;	The 'Sample Assembly Listing' at the end of this manual is also an
+;	example of using dumpobj to create absolute binary (paper-tape) output.
+;	The example creates three PSECTs (of which only CORE contains code) and
+;	creates two global symbols which could just as easily have been local.
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	.LIST and .NLIST Directive Symbolic Arguments (6.1.1)
+c	-----------------------------------------------------
+c
+;	Arg.	Default				Function
+;	---	-------	--------------------------------------------------------
+;	BEX	List	Controls the listing of binary extensions (the locations
+	;		and binary contents beyond those that will fit on the
+	;		source statement line).  This is a subset of BIN.
+;	BIN	List	Controls the listing of generated binary code.  If this
+	;		field is suppressed through a .NLIST BIN directive,
+	;		left-justification of the source code field occurs in
+	;		the same manner described above for the LOC field.
+;	CND	List	Controls the listing of unsatisfied conditional coding
+	;		and associated .IF and .ENDC directives in the source
+	;		program.  A .NLIST CND directive lists only satisfied
+	;		conditional coding.
+;	COM	List	Controls the listing of comments.  This is a subset of
+	;		the SRC argument.  .NLIST COM causes comments starting
+	;		in column 1 to be suppressed.  In macro11, end-of-line
+	;		comments will not be suppressed (except for .NLIST SRC).
+;	LD	No list	Controls radix used for assembly listing.  If you
+	;		specify .LIST LD, contents are given in decimal,
+	;		rather than octal.
+;	HEX	No list	Controls radix used for assembly listing.  If you
+	;		specify .LIST HEX, addresses and contents are given
+	;		in hexadecimal, rather than octal.
+;	LOC	List	Controls the listing of the current location counter
+	;		field.  Normally, this field is not suppressed.
+	;		However, if it is suppressed through the .NLIST LOC
+	;		directive, the suppression of the current location
+	;		counter (LOC) field effectively left-justifies all
+	;		subsequent fields (while preserving positional
+	;		relationships) to the position normally occupied by
+	;		the counter's field.
+;	MC	List	Controls the listing of macro calls and repeat range
+	;		expansions.
+;	MD	List	Controls the listing of macro definitions and repeat
+	;		range expansions.
+;	ME	No list	Controls the listing of macro expansions.
+;	MEB	No list	Controls the listing of macro expansion binary code.
+	;		A .LIST MEB directive lists only those macro expansion
+	;		statements that generate binary code.  This is a subset
+	;		of the ME argument.
+;	SEQ	List	Controls the listing of the sequential numbers assigned
+	;		to the source lines.  If this number field is suppressed
+	;		through a .NLIST SEQ directive, macro11 left-justifies
+	;		all subsequent fields.
+;	SRC	List	Controls the listing of source lines.
+;	SYM	List	Controls the listing of the symbol table (and the PSECT
+	;		list) resulting from the assembly of the source program.
+;	TOC	List	Controls the listing of the table of contents during
+	;		assembly pass 1 (by the .SBTTL directive).
+;	TTM	No list	Controls the listing output format.  TTM is for terminal
+	;		(teletype) mode and reduces the listing width by only
+	;		allocating 8 characters for the BEX listing.  This is
+	;		useful if you want your listing to fit in 80 columns.
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	.ENABL and .DSABL Directive Symbolic Arguments (6.2.1)
+c	------------------------------------------------------
+c
+;	Arg.	Default				Function
+;	---	-------	--------------------------------------------------------
+;	ABS	Disable	No function.  In MACRO-11 enabling this function
+	;		produces output in absolute binary (.LDA) format.
+;	AMA	Disable	Enabling this function causes all relative addresses
+	;		(address mode 67) to be assembled as absolute addresses
+	;		(address mode 37).  This function is useful during the
+	;		debugging phase of program development.
+;	BMK	Disable	Does not list dates and times etc. to make listing
+	;		comparison between versions of macro11 easier.
+;	CDR	Disable	Enabling this function causes source columns from 73
+	;		to the end of the line to be treated as a comment.
+;	CRF	Enable	No function.  In MACRO-11 disabling this function
+	;		inhibits the generation of cross-reference output.
+;	DBG	Disable	No function.  In MACRO-11 enabling this function
+	;		writes internal symbol director (ISD) records
+	;		to the object file.
+;	FPT	Disable	Enabling this function causes floating-point truncation;
+	;		disabling this function causes floating-point rounding.
+;	GBL	Enable	Disabling this function causes macro11 to signal an
+	;		error for all undefined references in assembly pass 2.
+;	LC	Enable	Disabling this function causes macro11 to convert all
+	;		ASCII input to uppercase before processing it.
+;	LCM	Disable	Enabling this function causes the macro11 conditional
+	;		assembly directives .IF IDN and .IF DIF to be
+	;		alphabetically case sensitive.  By default, these
+	;		directives are not case sensitive.
+;	LSB	Disable	This argument permits the enabling or disabling of a
+	;		local symbol block.  Although a local symbol block is
+	;		normally established by encountering a new symbolic
+	;		label, a .PSECT directive, or a .RESTORE directive in
+	;		the source program, a .ENABL LSB directive establishes
+	;		a new local symbol block which is not terminated until
+	;		another .ENABL LSB is encountered, or another symbolic
+	;		label, .PSECT directive, or .RESTORE directive is
+	;		encountered following a paired .DSABL LSB directive.
+;	MCL	Disable	Enabling this function causes macro11 to search all
+	;		known macro libraries for a macro definition that
+	;		matches any undefined symbols appearing in the op code
+	;		field of a MACRO-11 statement.
+;	PNC	Enable	No function.  In MACRO-11 disabling this function
+	;		inhibits binary output until a .ENABL PNC statement
+	;		is encountered within the same module.
+;	REG	Enable	No function.  In MACRO-11 disabling this function
+	;		inhibits the normal MACRO-11 default register
+	;		definitions (R0=%0, ..., R5=%5, SP=%6, PC=%7).
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	.PSECT Directive Symbolic Arguments (6.7.1)
+c	-------------------------------------------
+c
+;	Format:
+;	    .PSECT name, argl, arg2, ... argn
+
+;	Arg.	  Default Meaning
+;	----	  ------- -------
+;	name	  Blank	  ; Establishes the program section name, which is
+	;		    specified as one to six Radix-50 characters.
+	;		    If this argument is omitted, a comma must appear
+	;		    in place of the name parameter.
+;	RO/RW	  RW	  ; Defines which type of access is permitted to the
+	;		    program section.  RT-11 and RSX-llM use only RW.
+;	I/D	  I	  ; Defines the contents of the program section.
+;	GBL/LCL	  LCL	  ; Defines the scope of the program section, as it
+	;		    will be interpreted at link time.  The GBL/LCL
+	;		    arguments apply only in the case of overlays.
+;	ABS/REL	  REL	  ; Defines the relocatability attribute of the program
+	;		    section.
+;	CON/OVR	  CON	  ; Defines the allocation requirements of the program
+	;		    section.
+;	SAV/NOSAV SAV	  ; [RT-11 only] Determines where the Linker allocates
+	;		    storage for the program section
+
+;	See the 'm11 (from 2.11BSD Unix) Additions / Compatibility' section for
+;	a list of m11 PSECT symbolic arguments.
+
+
+h	.ASECT and .CSECT Directives Default Values (6.7.2)
+c	---------------------------------------------------
+c
+;	Directive	Name	Default Values
+;	.ASECT		.ABS .	,RW,I,GBL,ABS,OVR
+;	.CSECT			,RW,I,LCL,REL,CON
+;	.CSECT name	name	,RW,I,GBL,REL,OVR
+;	.PSECT [name]	name	,RW,I,LCL,REL,CON
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	<<<<<<<<<< Part IV - Operating Procedures (Chapters 8 and 9) >>>>>>>>>>
+c
+h	Operating Procedures - Comparison of macro11 to MACRO-11 Qualifiers
+c	-------------------------------------------------------------------
+c
+;	macro11	   RSX-MCR	RSX-DCL		RSTS/RT-11	RT-11 DCL
+;	-------	   -------	-------		----------	---------
+;	-d arg	   /DS:arg	/DISABLE:type	/D:arg		/DISABLE:arg
+;	-d arg	   /NL:arg	/NOSHOW:type	/N:arg		/NOSHOW:arg
+;	-d TTM	   /NL:TTM	/WIDE		/N:TTM		/NOSHOW:TTM
+;	-e arg	   /EN:arg	/ENABLE:type	/E:arg		/ENABLE:arg
+;	-e arg	   /LI:arg	/SHOW:type	/L:arg		/SHOW:arg
+;	-e TTM	   /LI:TTM	/NOWIDE		/L:TTM		/SHOW:TTM
+;	-l file			/LIST:file	-		/LIST:file
+;	-l -			/LIST:TI:	-		/LIST:TT:
+;	-m file	   file/ML	file/LIBRARY	file/M		file/LIBRARY
+;	-o file			/OBJECT:file	-		/OBJECT:file
+;	-p1	   /PA:1	/PASS:1		/P:1		/PASS:1 (obs.)
+;	-p2	   /PA:2	/PASS:2		/P:2		/PASS:2 (obs.)
+;
+;	Note: macro11 allows far more 'arg' values to -d and -e than MACRO-11.
+;	See Part IV (Chapters 8-9) in the MACRO-11 Manual for more information.
+
+.page
+h	Operating Procedures - Using macro11 to assemble and list source code
+c	---------------------------------------------------------------------
+c
+;	macro11 provides a plethora of command-line qualifiers.  These by far
+;	exceed the number provided by MACRO-11, which can be both confusing and
+;	(potentially) rewarding.
+
+;	macro11 can generate object code in either RSX-11M/M-PLUS (-rsx) or
+;	RT-11 (-rt11) format.  Either is also suitable for RSTS/E.
+
+;	Whereas MACRO-11 provides two different qualifiers to set up
+;	.LIST / .NLIST and .ENABL / .DSABL, macro11 only provires one: -e / -d.
+;	Also, macro11 allows multiple arguments to be provided to one qualifier.
+;	For examnple: -e AMA,MEB (equivalent to '.ENABL AMA' and '.LIST MEB').
+;
+;	Another feature of macro11 is to disable the changing of these with
+;	the '-dc' qualifier.  For example: -dc MEB would cause .LIST MEB in
+;	the source-code to be ignored.  Thus with '-e MEB -dc MEB' it is
+;	possible to force macro11 to always have '.LIST MEB' in force.
+;
+;	Unlike MACRO-11, the '-e' and '-d' qualfiers accept all possible
+;	arguments to .LIST / .NLIST and .ENABL / .DSABL.  Additionally,
+;	you may provide '-e LIS' or '-d LIS' which is equivalent to
+;	.LIST / .NLIST without any arguments (enable / disable listing).
+
+;	A number of features are designed to make life easier in a portable
+;	environment.  For example, it may be desirable to extract all modules
+;	from a macro library into a directory (-xtract).  Equally, you may
+;	want to read (understand) the source code of a macro library (-xl).
+
+;	Useful features when developing MACRO-11 source-code are the ablility
+;	to list the first assembler pass (-yl1) or list local symbols (-ylls).
+;	You may also force the listing of lines which would normally be
+;	suppressed (-yfl).
+
+;	A nice addition for code which does not need to be back-ported to
+;	a real PDP-11 is the ability to have longer symbols (-ysl <n>) and
+;	allow underscores in symbol names (-yus).  Care must be taken if
+;	either of these appear in global symbols.  Global symbols are
+;	truncated to 6 characters.  Underscores ('_') are stored with the
+;	value of the undefined Radix-50 character (035 octal).
+
+;	macro11 provides the '-s' qualifier to prepend statements to the
+;	source-code being assembled.  This is useful where certain symbol
+;	definitions need to be made.  For example '-s DEBUG=1' would act
+;	as if 'DEBUG=1' were at the top of the source file.  If spaces
+;	are required, the qualifier needs to be surrounded by double-quotes.
+;	For example: -s "TEXT:\t.ASCII\t/Hello, world!/\t; Message text".
+;
+;	It is actually possible to assemble a program without using a source
+;	file at all.  For example: '-s NOP -s HALT -s .END'.
+
+;	If macro11 does not seem to do what you think it should, you may
+;	enable the internal debugging code (-yd) or enhanced debuggung
+;	(-yd -yd).
+
+;	macro11 will exit 'with status' to indicate whether the assemble
+;	was successful or not.  This may be used in a script when
+;	assembling.
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;	See the 'Summary of macro11 Command Line Qualifiers' section for a
+;	complete list of macro11 command-line qualifiers.
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;	Further information can be found in the 'Operating Procedures - Hints
+;	and Tricks' section.
+
+.page
+h	Operating Procedures - Running dumpobj
+c	--------------------------------------
+c
+;	dumpobj is designed for two purposes:-
+;		1) To analyze the macro11 object files or compare to originals
+;		2) To create an absolute binary (paper-tape) file
+
+;	When analyzing the object file contents by hand (eye) use -align -nosort
+;	and, optionally, -qt and/or -s.
+
+;	When using dumpobj to compare generated object files with originals
+;	from a PDP-11 MACRO-11 assembly, do not use -nosort (or -align).
+
+;	When creating a paper-tape file, use -q to suppress the analysis.
+;
+;	You may modify the origin (base address) and, by default, change
+;	the 'internal relocations' accordingly:-
+;	-o <origin> will add <origin> to all generated absolute addresses.
+;	-of <origin> does the same EXCEPT 'internal relocations' will not
+;	be modified (their absolute addresses will remain unchanged).
+;
+;	You may want to use -w <a>=<d> to write individual words to the
+;	paper-tape file.  For example, -w 0=240,0 would write NOP & HALT
+;	to words 0 and 2 in the paper-tape file.  You may also change non-
+;	contiguous locations, for example '-w 4=6,0,24=26,0'.
+
+;	You may also generate (modify) the transfer address the object file
+;	provided using -x <xfer>.  For example, '-x 1000'.
+
+;	Example (relocate code to address 1000 and 000=NOP, HALT, CLR PC):-
+;
+;		dumpobj -q OBJECT.obj IMAGE.lda -o 1000 -w 0=240,0,5007 -x 2
+;
+;		If OBJECT.obj is an empty file (or the null device) then only
+;		the words from -w will be written.  Thus it is possible for
+;		dumpobj to generate papar-tape files without any source at all.
+
+.page
+h	Operating Procedures - Hints and Tricks
+c	---------------------------------------
+c
+;	macro11 has a number of qualifiers to ensure that the source code
+;	will also assemble correctly under MACRO-11.  Because macro11 is less
+;	strict than MACRO-11 there are four qualifiers to catch or ignore
+;	potential errors which MACRO-11 would find (or, indeed, miss):-
+;
+;	-ysl 8		Symbols like .INCLUDE may not be truncated to 6 chars.
+;	-stringent	The code is expected to conform to the MACRO-11 Manual
+;	-strict		The code should match MACRO-11 as much as possible
+;	-relaxed	The code may contain things MACRO-11 would not accept
+;
+;	Note that the command line may have up to 3 x -strict or 2 x -relaxed.
+;	The more qualifiers, the more strict (or relaxed) the parsing will be.
+;	[ 4 x -strict is equivalent to -stringent. ]
+
+;	Because macro11 is designed for modern computers, the listing is not
+;	the same as the one from MACRO-11.  There are no page numbers or page
+;	headings and page-breaks are shown by leaving two blank lines.  The
+;	sequence (line) numbers match the line in the source file as seen by
+;	an editor.  Also, the lines in the symbol table will be padded with
+;	trailing spaces to make it easier to process if you want to feed it
+;	into another program.
+;
+;	There are two qualifiers to get closer to the MACRO-11 listing:-
+;
+;	-apb		Automatic page-break after 57 listing lines
+;	-ff		Use a form-feed <FF> between listing pages
+
+;	Because non-PDP-11 systems do not have the concept of PDP-11 device
+;	names and PDP-11 directory names, these may be removed from .INCLUDE
+;	and .LIBRARY names using the following two qualifiers:-
+;
+;	-nodev		Ignore 'ddn:' style device names
+;	-nodir		Ignore '[directory]' style names
+
+;	When assembling 2.11BSD m11 source files, you may like to supply
+;	the -ym11 qualifier.  This will suppress some messages which may
+;	not apply.  You may also need to supply the -relaxed (x 2) qualifier.
+
+;	There are a number of qualifiers which are useful when debugging
+;	source code:-
+;
+;	-d	disable <options>
+;	-dc 	disable changing of <options>
+;	-e	enable <options>
+;	-fe	fatal errors will abort assembly
+;	-s	prepend a <statement> to the source
+;	-se	shows source line in error after the error message
+;	-sp	shows .PRINT source lines on stderr (similar to -se)
+;	-yfl	Extension: force listing of suppressed lines
+;	-yl1	Extension: list the first pass too, not only the second
+;	-ylls	Extension: list local symbols when used and in the symbol table
+
+;	Here's how to convert a file with embedded <FF> into an RSX supported
+;	version (with or without <FF>).  This also removes trailing spaces and
+;	tabs from the source and suppresses [extra] blank lines at the top of
+;	pages.  Note .PRINT within macro calls will be listed - these would
+;	need to be deleted by hand (if they exist).
+;
+;		macro11	 -d TOC,SEQ,LOC,BIN,SYM
+;			-dc TOC,SEQ,LOC,BIN,BEX,COM,SYM,LIS,CND,LC,MD,ME,TTM
+;			-ff OLD.MAC -l NEW.MAC
+
+;	=======================================================================
+;
+;	The following qualifiers are recommended for MACRO-11 compatibility:-
+;
+;	macro11 -se -sp -fe -stringent -ysl 8 -nodev -nodir ...
+;
+;	=======================================================================
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	Summary of macro11 Command Line Qualifiers
+c	------------------------------------------
+c
+	.REM	~
+
+> macro11 -yd -h
+
+macro11 - portable MACRO-11 assembler for DEC PDP-11
+  Version 0.9 (22 Aug 2023)
+  Version 0.9 ([ Unknown GIT version ]
+        [ Aug 22 2023 11:09:39 ])
+  Copyright 2001 Richard Krehbiel,
+  modified  2009 by Joerg Hoppe,
+  modified  2015-2017,2020-2023 by Olaf 'Rhialto' Seibert,
+  modified  2023 by Mike Hill.
+
+Usage:
+  macro11 [-o <file>] [-l {- | <file>}] [-p1 | -p2] [-se] [-sp] [-fe[2]]
+          [-h] [-v] [-apb] [-ff] [-e <options>] [-d <options>] [-dc <options>]
+          [-a0] [-rsx | -rt11] [-stringent | -strict | -relaxed]
+          [-ym11] [-ysl <num>] [-yus] [-yfl] [-ylls] [-yl1] [-yd]
+          [-s ["]<statement>["]] [-s ...]
+          [-nodev] [-nodir]
+          [-I <directory>]
+          [-m <file>] [-p <directory>] [-xl] [-xtract]
+          <inputfile> [<inputfile> ...]
+
+Arguments:
+  <inputfile>  MACRO-11 source file(s) to assemble
+
+Options:
+-apb automatic page-break after 57 listing lines (also with -xl).
+-d   disable <options> (see below).
+-dc  disable changing of <options> (see below).
+-e   enable <options> (see below).
+-fe  fatal errors will abort assembly.
+-ff  use a form-feed <FF> between listing pages (also with -apb & -xl).
+-h   print this help.
+-I   gives the name of a directory in which .INCLUDEd files may be found.
+     Sets environment variable "INCLUDE".
+-l   gives the listing file name (.LST).
+     -l - enables listing to stdout.
+-o   gives the object file name (.OBJ).
+-p   gives the name of a directory in which .MCALLed macros may be found.
+     Sets environment variable "MCALL".
+-p1  only assemble pass 1 (not supported or recommended).
+-p2  only assemble pass 2 (not supported or recommended).
+-s   prepend a <statement> to the source (e.g. -s "DEBUG\t=\t1\t\t; Enable").
+-se  shows source line in error after the error message.
+-sp  shows .PRINT source lines on stderr (similar to -se).
+-v   print version.
+
+-a0        Use sections with ABS,OVR for their own local symbol definitions.
+-nodev     Ignore 'ddn:' style device names in .INCLUDE and .LIBRARY filenames.
+-nodir     Ignore '[directory]' style names in .INCLUDE and .LIBRARY filenames.
+-rsx       Generate RSX style object files (default).
+-rt11      Generate RT-11 style object files.
+
+-m         load RSX-11 or RT-11 compatible macro library from which
+           .MCALLed macros can be found.  Similar to .LIBRARY directive.
+           Multiple allowed.  Affected by any -rsx or -rt11 which come before.
+-xl        as -xtract but stores macros to '-l' file. If none, only lists names.
+-xtract    invokes macro11 to expand the contents of the registered
+           macro libraries (see -m) into individual .MAC files in the
+           current directory.  No assembly of input is done.
+           This must be the last command line option!
+
+-relaxed   Relax some of the usual rules for source code.
+-strict    Expect source code to closely match MACRO-11 V05.05.
+-stringent Expect source code to closely match MACRO-11 documentation.
+
+-yd        Extension: enable debugging.
+-yfl       Extension: force listing of suppressed lines.
+-yl1       Extension: list the first pass too, not only the second.
+-ylls      Extension: list local symbols when used and in the symbol table.
+-ym11      Syntax extension: support BSD m11 language extensions.
+-ysl       Syntax extension: change length of symbols (from 6 up to 64).
+-yus       Syntax extension: allow underscore "_" in symbols.
+
+Options for -e, -d, and -dc are:
+   [.ENABL] -e AMA,CDR,FPT,LCM,LSB,MCL
+   [.DSABL] -d GBL,LC
+   [.LIST ] -e LIS,HEX,ME,MEB,TTM
+   [.NLIST] -d BEX,BIN,CND,COM,LOC,MC,MD,SEQ,SRC,SYM,TOC
+
+No source files provided
+
+	.ENDREM	~
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	Summary of dumpobj Command Line Qualifiers
+c	------------------------------------------
+c
+	.REM	~
+
+> dumpobj.exe -h
+
+dumpobj - portable OBJECT file dumper for DEC PDP-11
+  Version from February 13, 2023 compiled on Mar  9 2023 at 09:48:24
+  Copyright 2001 by Richard Krehbiel,
+  modified  2013,2015,2020,2021 by Olaf 'Rhialto' Seibert,
+  modified  2023 by Mike Hill.
+
+Usage:
+  dumpobj [-h] [-q|-qt] [-[no]align] [-nosort] [-s] [-rt11|-rsx] <inputfile>
+          [ [-o[f] <origin>] [-w [<addr>=]<data>] [-x <xfer>] <outputfile> ]
+
+Arguments:
+  -h            show this help text
+  -q            quiet output - only errors will be shown
+  -qt           quiet-text - omit the contents of TXT records
+  -align        align fields when dumping GSD entries
+  -nosort       do not sort the GSD entries (dump them in input order)
+  -s            show a summary of all record types seen in the object file
+  -rt11         expects object file to be in RT-11 format
+  -rsx          expects object file to be in RSX-11M/PLUS format
+  <inputfile>   required .OBJ input file (format can be auto-detected)
+
+  -o <origin>   sets the octal origin for relocatable LDA code (default is 0)
+  -of <origin>  as -o but keep 'internal relocations' fixed not origin based
+  -w <a>=<d>,.. write words to the <outputfile> - [<addr>=]<data>[,...]]
+  -x <xfer>     writes the octal transfer address to the <outputfile>
+  <outputfile>  optional .LDA output file (in PDP-11 punched-tape format)
+
+Examples:
+  dumpobj OBJECT.OBJ                            Dump contents of OBJECT.OBJ
+  dumpobj -qt -align -nosort -s OBJECT.OBJ      Now dump in object file order
+  dumpobj -q -s OBJECT.OBJ                      Only show a summary of records
+  dumpobj -q -s OBJECT.OBJ -w 0                 Show errors ready for LDA o/p
+  dumpobj -q OBJECT.OBJ PTAPE.LDA               Only create an LDA file
+  dumpobj -q OBJECT.OBJ -o 1000 PTAPE.LDA       Relocate code to address 1000
+  dumpobj EMPTY.OBJ -w 0,40=0,5237,0,774 -x 40  0:0,40:HALT,42:INC @#0,46:BR 40
+  dumpobj EMPTY.OBJ -w ... -x ... PTAPE.LDA     Create an LDA file with data
+
+	.ENDREM	~
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+.page
+h	<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Appendices >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+c
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+h	Special Characters (B.1)
+c	------------------------
+c
+;	Char		Function
+;	----		--------
+;	:		Label terminator
+;	=		Direct assignment operator
+;	%		Register term indicator
+;	<TAB>		Item terminator or field terminator
+;	<SP>		Item terminator or field terminator
+;	#		Immediate expression indicator
+;	@		Deferred addressing indicator
+;	(		Initial register indicator
+;	)		Terminal register indicator
+;	, (comma)	Operand field separator
+;	;		Comment field indicator
+;	+		Arithmetic addition operator or autoincrement indicator
+;	-		Arithmetic subtraction operator or autodecrement indic.
+;	*		Arithmetic multiplication operator
+;	/		Arithmetic division operator
+;	&		Logical AND operator
+;	!		Logical OR operator
+;	"		Double ASCII character indicator
+;	' single quote	Single ASCII character or concatenation indicator
+;	.		Assembly location counter
+;	<		Initial argument indicator
+;	>		Terminal argument indicator
+;	^		Universal unary operator or argument indicator
+;	\		Macro call numeric argument indicator
+;	_ underscore	[m11 only] Arithmetic shift operator
+;	vertical tab	Source line terminator
+
+.page
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+h	Summary of Address Mode Syntax (B.2 also see Chapter 5)
+c	-------------------------------------------------------
+c
+;	  Format          Name	    Number		Meaning
+;	----------  --------------  ------  -----------------------------------
+;	R	    Register		0n  Register R contains the operand.
+;
+;	@R or (ER)  Register Deferred	1n  Register R contains the address
+;					    of the operand.
+;
+;	(ER)+	    Autoincrement	2n  The contents of the register
+;					    specified as (ER) are incremented
+;					    after being used as the address of
+;					    the operand.
+;
+;	@(ER)+	    Autoincr. Deferred	3n  The register specified as (ER)
+;					    contains the pointer to the address
+;					    of the operand; the register (ER)
+;					    is incremented after use.
+;
+;	-(ER)	    Autodecrement	4n  The contents of the register
+;					    specified as (ER) are decremented
+;					    before being used as the address
+;					    of the operand.
+;
+;	@-(ER)	    Autodecr. Deferred	5n  The contents of the register
+;					    specified as (ER) are decremented
+;					    before being used as the pointer to
+;					    the address of the operand.
+;
+;	E(ER)	    Index		6n  The expression E, plus the contents
+;					    of the register specified as (ER),
+;					    yield the address of the operand.
+;
+;	@E(ER)	    Index Deferred	7n  The expression E, plus the contents
+;					    of the register specified as (ER),
+;					    yield a pointer to the address of
+;					    the operand.
+;
+;	#E	    Immediate		27  The expression E is the operand
+;					    itself.
+;
+;	@#E	    Absolute		37  The expression E is the address
+;					    of the operand.
+;
+;	E	    Relative		67  The address of the operand E,
+;					    relative to the instruction,
+;					    follows the instruction.
+;
+;	@E	    Relative Deferred	77  The address of the operand is
+;					    pointed to by E, whose address,
+;					    relative to the instruction,
+;					    follows the instruction.
+;
+;	Symbols used in the table (above):-
+;	   n is an integer, 0 to 7, representing a register number.
+;	   R is a register expression.
+;	   E is an expression.
+;	   ER is R (above) or an expression whose value is in the range 0 to 7.
+
+.page
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+h	Embedded Assembler Directives (B.3 also see Chapters 6 and 7)
+c	-------------------------------------------------------------
+c
+;	Form				Operation
+;	----	---------------------------------------------------------------
+;	'	Followed by one ASCII character, a single quote (apostrophe)
+;		generates a word which contains the 7-bit ASCII representation
+;		of the character in the low-order byte and zero in the high-
+;		order byte.  Single quote is also used as a concatenation
+;		indicator in the expansion of macro arguments.
+
+;	"	Followed by two ASCII characters, a double quote generates a
+;		word which contains the 7-bit ASCII representation of the two
+;		characters.  The first character is stored in the low-order
+;		byte; the second character is stored in the high-order byte.
+
+;	^Bn	A temporary radix control, causes the value n to be treated
+;		as a binary number.
+
+;	^Cexpr	A temporary numeric control, causes the expression's value
+;		to be one's complemented.
+
+;	^Dn	A temporary radix control, causes the value n to be treated
+;		as a decimal number.
+
+;	^Fn	A temporary numeric control, causes the value n to be treated
+;		as a 16-bit floating-point number.
+
+;	^On	A temporary radix control, causes the value n to be treated
+;		as an octal number.
+
+;	^PHp	[m11 only] Returns the highest address in PSECT p.
+
+;	^PLp	[m11 only] Returns the lowest address in PSECT p (always 0).
+
+;	^Rccc	Converts ccc to Radix-50 form.
+
+;	^Xn	A temporary radix control, causes the value n to be treated
+;		as a hexadecimal number.  The value n must begin with a digit,
+;		which may be 0.
+
+;	See the MACRO-11 Manual for the directive (e.g. .ASCII) operations.
+;	A list of available directives is in section C.4 below.
+
+.page
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.IF NDF	$BRIEF		;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	.NLIST
+h	[ The symbol values for sections (C.1) - (C.3) are appended ]  ; TOC
+	.LIST
+	.ENDC	; NDF $BRIEF	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+h	PDP-11 Basic (all models) Instruction Set Op Codes (C.1)
+c	--------------------------------------------------------
+c
+o	ADC	ADCB	ADD	ASL	ASLB	ASR	ASRB
+o	BCC	BCS	BEQ	BGE	BGT	BHI	BHIS
+o	BIC	BICB	BIS	BISB	BIT	BITB
+o	BLE	BLO	BLOS	BLT	BMI	BNE	BPL
+o	BPT
+o	BR	BVC	BVS
+o	CALL	CALLR	CCC	CLC	CLN
+o	CLR	CLRB
+o	CLV	CLZ	<CNZ>				; CNZ = BSD m11 only
+o	CMP	CMPB	COM	COMB	DEC	DECB	EMT	HALT
+o	INC	INCB	IOT	JMP	JSR	MOV	MOVB	NEG	NEGB
+o	NOP	RESET	RETURN	ROL	ROLB	ROR	RORB	RTI	RTS
+o	SBC	SBCB	SCC	SEC	SEN	SEV	SEZ
+o	SUB	SWAB	TRAP	TST	TSTB	WAIT
+
+.page
+h	Additional PDP-11/45 and PDP-11/70 Instruction Set Op Codes (C.1)
+c	-----------------------------------------------------------------
+c
+o	ASH	ASHC	DIV	MARK	MFPD	MFPI	MTPD	MTPI
+o	MUL	RTT	SOB	SPL	SXT	XOR
+
+.page
+h	Additional PDP-11 (various models) Instruction Set Op Codes (C.1)
+c	-----------------------------------------------------------------
+c
+o	CSM
+o	FADD	FDIV	FMUL	FSUB
+o	MED6X	MED74C
+o	MFPS	MFPT	MTPS	TSTSET	WRTLCK
+o	<XFC>						; XFC = PDP-11/60 only
+
+.page
+h	Commercial Instruction Set (CIS) Op Codes (C.2)
+c	-----------------------------------------------
+c
+o	ADDN	ADDNI	ADDP	ADDPI	ASHN	ASHNI	ASHP	ASHPI
+o	CMPC	CMPCI	CMPN	CMPNI	CMPP	CMPPI	CVTLN	CVTLNI
+o	CVTLP	CVTLPI	CVTNL	CVTNLI	CVTNP	CVTNPI	CVTPL	CVTPLI
+o	CVTPN	CVTPNI	DIVP	DIVPI
+o	L2D0	L2D1	L2D2	L2D3	L2D4	L2D5	L2D6	L2D7
+o	L3D0	L3D1	L3D2	L3D3	L3D4	L3D5	L3D6	L3D7
+o	LOCC	LOCCI	MATC	MATCI	MOVC	MOVCI	MOVRC	MOVRCI
+o	MOVTC	MOVTCI	MULP	MULPI	SCANC	SCANCI	SKPC	SKPCI
+o	SPANC	SPANCI	SUBN	SUBNI	SUBP	SUBPI
+
+.page
+h	Floating-Point Processor Op Codes (C.3)
+c	---------------------------------------
+c
+o	ABSD	ABSF	ADDD	ADDF	CFCC	CLRD	CLRF	CMPD	CMPF
+o	DIVD	DIVF	LDCDF	LDCFD	LDCID	LDCIF	LDCLD	LDCLF	LDD
+o	LDEXP	LDF	LDFPS	<LDSC>	<LDUB>	MODD	MODF	MULD	MULF
+o	NEGD	NEGF	SETD	SETF	SETI	SETL	<STA0>	<STB0>	<STQ0>
+o	STCDF	STCDI	STCDL	STCFD	STCFI	STCFL	STD	STEXP	STF
+o	STFPS	STST	SUBD	SUBF	TSTD	TSTF
+
+.page
+h	MACRO-11 Directives [start with '.'] (C.4 also see B.3 and Chapter 6)
+c	---------------------------------------------------------------------
+c
+d	ASCII	ASCIZ	ASECT	BLKB	BLKW	BYTE	CROSS	CSECT	DSABL
+d	ENABL	END	ENDC	ENDM	ENDR	ERROR	EVEN	FLT2	FLT4
+d	GLOBL	IDENT	IF	IFF	IFT	IFTF	IIF	INCLUDE	IRP
+d	IRPC	LIBRARY	LIMIT	LIST	<MACR>	MACRO	MCALL	MDELETE	MEXIT
+d	NARG	NCHR	NLIST	NOCROSS	NTYPE	ODD	PACKED	PAGE	PRINT
+d	PSECT	RAD50	RADIX	REM	REPT	RESTORE	SAVE	SBTTL	TITLE
+d	WEAK	WORD					; .MACR = BSD m11 only
+
+.page
+h	Obsolete (but allowed) Directives [start with '.'] (I.1)
+c	--------------------------------------------------------
+c
+d	EOT
+d	IFZ	IFEQ	IFNZ	IFNE	IFL	IFLT
+d	IFG	IFGT	IFLE	IFGE	IFDF	IFNDF
+
+.page
+h	Sample Assembly Listing (also see Appendix H)
+c	---------------------------------------------
+c
+c  Seq	  Loc	Binary	 Label	Opcode	   Arguments	         Comment
+c -----	------	------	-------	------	--------------- ------------------------
+	.LIST	SEQ,LOC,BIN,TTM	; CND,MC,MD,SRC,SYM,TOC
+;-	.NLIST	BEX		;-COM,HEX,ME,MEB
+
+;+	.TITLE	TEST Program
+	.IDENT	/MSHILL/
+
+; Instructions:-
+;
+;	macro11 README.MAC -o README.obj
+;	dumpobj -align -nosort README.obj README.lda
+;	pdp11
+;	sim> load README.lda
+;	sim> examine -m 000-003
+;	sim> examine    004-013
+;	sim> examine -m 014-067
+;	sim> examine -a 070-111
+;	sim> examine -b 112-112
+;	sim> go
+
+	.GLOBL	$GLOBL		; Undefined global sym.
+
+	.PSECT	CORE,RW,REL	; Program section
+
+$TTO	==:	177560 + 4	; Console status reg.
+
+$BASE::	NOP			; 000: Bootstrap ident.
+	BR	30$		; 002: Start program
+
+	.WORD	20$ - $BASE	; 004: Timeout vector
+	.WORD	000340 + 004	; 006: PR7 + 4
+
+	.WORD	20$ - $BASE	; 010: Illegal instr.
+	.WORD	000340 + 010	; 012: PR7 + 10
+
+10$:	BIC	R0,R0		; 014: Clear R0 and ...
+	SEC			; 016: ... set carry
+
+				; 020: .HRESET when ...
+				; 020: ... RUN under ...
+				; 020: ... RT-11 and ...
+				; 020: ... restart @ 000
+
+20$:	HALT			; 020: HALT the CPU
+
+30$:	RESET			; 022: RESET the CPU
+	MOV	#001000,SP	; 024: Setup stack
+	MOV	#$TTO,R0	; 030: ^Printer status
+
+	MOV	PC,R1		; 034: Point to ...
+	ADD	#<$HELLO-.>,R1	; 036: ... $HELLO buf.
+
+	CALL	$OUTS		; 042: Output string ...
+	BR	10$		; 046: ... then HALT
+
+; $OUTS - Output a string.  R0 = ^TTO, R1 = ^String.
+
+	.ENABL	LSB
+
+10$:	TSTB	(R0)		; 050: Printer ready?
+	BPL	10$		; 052: If MI, no
+
+	MOVB	-1(R1),2(R0)	; 054: Print char.
+
+$OUTS::	TSTB	(R1)+		; 062: Reached end?
+	BPL	10$		; 064: If PL, no
+
+	RETURN			; 066: Return from subr.
+
+	.DSABL	LSB
+
+;+	.PAGE	;+Text message
+	.NLIST	BEX
+$HELLO:	.ASCII	"Hello, world!"	; 070: Message text
+	.ASCIZ	<015><012>	; 105: <CR> <LF> <NUL>
+	.BYTE	000,000		; 110: 2 x <NUL>
+	.BYTE	-1		; 112: End marker
+
+	.END	$BASE + 2	; Start at the start!
+
+;------------------------------------------------------------------------------
+
+	.ERROR	.		; .END is not the end! (E.g. -relaxed -relaxed)
+	.NLIST	SEQ,LOC,BIN	; Disable listing SEQuence, LOCation, & BINary
+
+	.PAGE
+	.REM	~
+
+	*****************************************
+	**   C O P Y R I G H T   N O T I C E   **
+	*****************************************
+
+	Copyright (c) 2023, Mike Hill
+	All rights reserved.
+
+	Redistribution and use in source and binary forms, with or without
+	modification, are permitted provided that the following conditions are
+	met:
+
+	o Redistributions of source code must retain the above copyright
+	  notice, this list of conditions and the following disclaimer.
+
+	o Redistributions in binary form must reproduce the above copyright
+	  notice, this list of conditions and the following disclaimer in the
+	  documentation and/or other materials provided with the distribution.
+
+	o Neither the name of the copyright holder nor the names of its
+	  contributors may be used to endorse or promote products derived from
+	  this software without specific prior written permission.
+
+	THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+	"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+	LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+	A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+	HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+	INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+	BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+	OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+	ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+	TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+	USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+	DAMAGE.
+
+-------------------------------------------------------------------------------
+
+	OUTPUT FROM 'dumpobj -align -nosort README.obj'
+	-----------------------------------------------
+
+GSD:
+        MODNAME MACRO1 = 0      flags=0
+        IDENT   MSHILL = 0      flags=0
+        PSECT   . ABS. = 0      OVR RW ABS GBL I flags=104
+        GLOBAL  $GLOBL = 0      REF ABS flags=100
+        GLOBAL  $TTO   = 177564 DEF ABS flags=110
+        PSECT          = 0      CON RW REL LCL I flags=40
+        PSECT   CORE   = 113    CON RW REL LCL I flags=40
+        GLOBAL  $BASE  = 0      DEF REL flags=150
+        XFER    CORE   = 2      flags=10
+ENDGSD
+RLD
+        Location counter definition CORE+0
+TEXT ADDR=0 LEN=113
+        000000: 000240 000407 000020 000344 ........
+        000010: 000020 000350 040000 000261 .....@..
+        000020: 000000 000005 012706 001000 ........
+        000030: 012700 177564 010701 062701 ..t....e
+        000040: 000032 004767 000014 000762 ........
+        000050: 105710 100376 116160 177777 ....p...
+        000060: 000002 105721 100371 000207 ........
+        000070: 062510 066154 026157 073440 Hello, w
+        000100: 071157 062154 006441 000012 orld!...
+        000110: 000000 377                  ...
+ENDMOD
+
+-------------------------------------------------------------------------------
+
+	=========================================================
+	========   R E F E R E N C E   M A T E R I A L   ========
+	=========================================================
+
+MACRO-11 Manual (see the Preface):-
+	https://usermanual.wiki/Document/AAKX10ATCRSTSEV95PDP11MACRO11LanguageReferenceOct87.185150910.pdf
+
+Source code of macro11 and dumpobj:-
+	https://gitlab.com/Rhialto/macro11
+
+Source code of obj2bin:-
+	https://github.com/AK6DN/obj2bin
+
+Source code of the SIMH emulator:-
+	https://github.com/simh/simh
+	https://github.com/simh/Win32-Development-Binaries (how to get binaries)
+
+Source code of the 2.11 BSD m11 assembler:-
+	https://minnie.tuhs.org/cgi-bin/utree.pl?file=2.11BSD/src/new/m11
+		/Document  - m11 documentation (New UCB Edition of m11)
+		/m11.1     - Usage of m11 (manual page)
+
+-------------------------------------------------------------------------------
+
+> REM =======================================================================
+> REM ========   B U I L D   m a c r o 1 1   W I T H   M S V C + +   ========
+> REM =======================================================================
+> "%ProgramFiles(x86)%\Microsoft Visual Studio 9.0\common7\tools\vsvars32.bat"
+> REM The following command is all on a single line ...
+> cl /D "WIN32" /D "_CRT_SECURE_NO_WARNINGS" /TC /W4 
+	macro11.c 
+	assemble.c assemble_aux.c assemble_globals.c extree.c listing.c 
+	macros.c mlb2.c mlb-rsx.c mlb-rt11.c object.c parse.c 
+	rad50.c rept_irpc.c stream2.c symbols.c util.c
+
+-------------------------------------------------------------------------------
+
+	.ENDREM	~
+	.END ; OF FILE

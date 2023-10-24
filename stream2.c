@@ -309,7 +309,7 @@ static char    *file_getline(
     /* Skip any leading '\f' or '\v' on the line */
 
     while (ch = fgetc(fstr->fp), (ch == '\f' || ch == '\v'))
-        if (ch == '\f')
+        if (ch == '\f' && list_level >= 0)
             list_line_act |= LIST_PAGE_BEFORE;
 
     /* Read single characters, end of line when '\n' or '\f' or '\v' hit */
@@ -322,7 +322,7 @@ static char    *file_getline(
         ch = fgetc(fstr->fp);
     }
 
-    if (ch == '\f')
+    if (ch == '\f' && list_level >= 0)
         list_line_act |= LIST_PAGE_AFTER;
 
     if (len == 0)

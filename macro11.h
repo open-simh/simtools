@@ -6,8 +6,9 @@
 #endif
 
 #define PROGRAM_NAME "macro11"
-#define BASE_VERSION "0.8.9"
-#define THIS_VERSION BASE_VERSION " (29 Jun 2023)"     // Mike Hill
+#define BASE_VERSION "0.9"
+#define THIS_VERSION BASE_VERSION " (22 Aug 2023)"     // Mike Hill
+//      THIS_VERSION "0.9"        " (22 Aug 2023)"     // Mike Hill
 //      THIS_VERSION "0.8.9"      " (29 Jun 2023)"     // Mike Hill
 //      THIS_VERSION "0.8.8"      " (25 May 2023)"     // Mike Hill
 //      THIS_VERSION "0.8.7"      " (09 May 2023)"     // Mike Hill

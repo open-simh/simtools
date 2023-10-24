@@ -680,7 +680,9 @@ do_mcalled_macro:
 
                 case P_PAGE:
 
-                    list_line_act |= LIST_PAGE_BEFORE;  /* Special case for .PAGE in case of error */
+                    if (list_level >= 0) {                  /* Only do .PAGE if .LIST is in force */
+                        list_line_act |= LIST_PAGE_BEFORE;  /* Special case for .PAGE in case of error */
+                    }
 
                     /* FALL THROUGH */
 
@@ -804,7 +806,11 @@ do_mcalled_macro:
 
                 case P_PAGE:
                     /* Note that V05.05 even suppresses lines with labels on them (!) */
-                    if (*cp == ';' /* && LIST(COM) */)      /* Choose if .NLIST COM should always suppress .PAGE */
+
+                    if (list_level < 0)
+                        return 1;    /* Ignore .PAGE if .NLIST is in force */
+
+                    if (*cp == ';' && LIST(COM))            /* Choose if .NLIST COM should always suppress .PAGE */
                         list_line_act |= LIST_PAGE_BEFORE;  /* Extension: list the .PAGE if it has a comment */
                     else
                         list_line_act |= LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE;  /* TODO: Check for labels (?) */
@@ -831,8 +837,17 @@ do_mcalled_macro:
                         upcase(module_name);
 
                         strncpy(title_string, cp, 31);
-                        len = strlen(title_string);
                         title_string[strcspn(title_string, "\n")] = '\0';
+
+                        /* Remove trailing spaces and/or tabs */
+                        len = strlen(title_string);
+                        while (--len >= 0) {
+                            if (title_string[len] == ' ' || title_string[len] == '\t')
+                               title_string[len] = '\0';
+                            else
+                               break;
+                        }
+
 #if NODO
                         /* MACRO-11 upper-cases the first character - but it's probably a bug */
                         if (islower((unsigned char) title_string[0]))
@@ -857,8 +872,22 @@ do_mcalled_macro:
                     }
 
                     cp[strcspn(cp, "\n")] = '\0';
+
+                    /* Remove trailing spaces and/or tabs */
+                    {
+                        int             len = strlen(cp);
+
+                        while (--len >= 0) {
+                            if (cp[len] == ' ' || cp[len] == '\t')
+                               cp[len] = '\0';
+                            else
+                               break;
+                        }
+                    }
+
                     /* TODO: Instead of suppressing the sequence number within macro calls ...
                      *       ... we could go back up the chain until we find a 'useful' one */
+
                     fprintf(lstfile, "%*s%*.0d%*s- %.119s\n",
                                      (int) SIZEOF_MEMBER(LSTFORMAT, flag), "",
                                      (int) SIZEOF_MEMBER(LSTFORMAT, line_number),
