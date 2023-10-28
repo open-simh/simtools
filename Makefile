@@ -70,9 +70,9 @@ argtests: macro11
 	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
 	  echo "  $$OPT fol. by option"; \
 	  done
-	@ ./macro11 foo.mac $$OPT -x -v 2> /dev/null; \
+	@ ./macro11 foo.mac $$OPT -xtract -v 2> /dev/null; \
 	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
-	   echo "  -x must be the last option"
+	   echo "  -xtract must be the last option"
 
 LSAN_OPTIONS=suppressions=../macro11.supp
 
