@@ -42,10 +42,12 @@ char           *my_ultoa(
     unsigned long val,
     char *buf,
     unsigned int base);
+
 char           *my_ltoa(
     long val,
     char *buf,
     unsigned int base);
+
 void            my_searchenv(
     char *name,
     char *envname,
@@ -55,18 +57,22 @@ void            my_searchenv(
 /* Cover a few platform-dependencies */
 
 #ifdef WIN32
-
 #define strdup _strdup
 #define putenv _putenv
 #define PATHSEP ";"
 #else
-
 #define PATHSEP ":"
 #endif
 
 
 #define FALSE 0                        /* Everybody needs FALSE and TRUE */
 #define TRUE 1
+
+
+#define NODO 0                         /* Use in '#if NODO ... #endif' if we know we don't want to do something */
+#define TODO 0                         /* Use in '#if TODO ... #endif' where there really is something to-do */
+#define DODO 1                         /* Use in '#if DODO ... #endif' to do something you wanted to-do */
+                                       /* grep "ODO" to find all occurrances of these and "TODO" comments */
 
 
 /* EOL says whether a char* is pointing at the end of a line */
@@ -87,6 +93,7 @@ void            padto(
 void           *memcheck(
     void *ptr);
 
-char *defext (char *fn, const char *ext);
+char           *defext(char *fn,
+    const char *ext);
 
 #endif /* UTIL__H */

@@ -107,3 +107,5 @@ $
 	.word	^rRAD50CHARACTERS ; 070254 extra characters ignored
 	.word	^r  A..EXTRA	; 000001 extra characters ignored
 	.word	^r  A..EXTRA+1	; 000002 extra characters ignored
+
+        .end

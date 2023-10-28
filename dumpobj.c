@@ -529,7 +529,7 @@ void got_gsd(
             break;
         default:
             sprintf(gsdline, "\t***Unknown GSD entry type %d flags=%o\n", cp[i + 5] & 0xff, flags);
-            if (!loud) fprintf(stderr, /* "%s", */ gsdline+1);
+            if (!loud) fprintf(stderr, "%s", gsdline+1);
             badfmt++;
             break;
         }

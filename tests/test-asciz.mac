@@ -17,8 +17,10 @@ SOH = 1
         .asciz &###&                    ; another weird delimiter
         .asciz =DEF=                    ; syntax error: assignment
         .asciz =###=                    ; syntax error: assignment
-	.even
+        .even
         .asciz :SOH:                    ; colon makes it look like two labels
         .asciz :###:                    ; syntax error: bad label
         .asciz ^###^                    ; previous versions of this macro11
-	; used ^/.../ quoting as an extension; however this should be ^...^.
+        ; used ^/.../ quoting as an extension; however this should be ^...^.
+
+        .end

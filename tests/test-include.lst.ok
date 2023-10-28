@@ -1,67 +1,85 @@
-       1                                ;;;;;
-       2                                ;
-       3                                ; Test some delimiters for the .INCLUDE directive
-       4                                ;
-       5                                
-       6                                        .include "incl.mac"
-       1                                ;;;;;
-       2                                ;
-       3                                ; file to be included
-       4                                
-       5 000000 000001                  	.word	1	; to show it is included
-       5                                
-       7                                        .include /incl.mac/
-       1                                ;;;;;
-       2                                ;
-       3                                ; file to be included
-       4                                
-       5 000002 000001                  	.word	1	; to show it is included
-       5                                
-       8                                        .include \incl.mac\
-       1                                ;;;;;
-       2                                ;
-       3                                ; file to be included
-       4                                
-       5 000004 000001                  	.word	1	; to show it is included
-       5                                
-       9                                        .include ?incl.mac?
-       1                                ;;;;;
-       2                                ;
-       3                                ; file to be included
-       4                                
-       5 000006 000001                  	.word	1	; to show it is included
-       5                                
-      10                                        .include >incl.mac>
-       1                                ;;;;;
-       2                                ;
-       3                                ; file to be included
-       4                                
-       5 000010 000001                  	.word	1	; to show it is included
-       5                                
-      11                                
-      12                                ; these are errors: (in MACRO V05.05, some terminate the assembler)
-      13                                
-test-include.mac:14: ***ERROR Bad .INCLUDE file name
-      14                                        .include <incl.mac>
-test-include.mac:15: ***ERROR Bad .INCLUDE file name
-      15                                        .include <incl.mac<
-test-include.mac:16: ***ERROR Redefining permanent symbol '.INCLU'
-      16                                        .include =incl.mac=             ; looks like assignment
-      17                                        .include :incl.mac:             ; looks like a label
-      18                                
-      19                                ; this is an error: file does not existst
-      20                                
-test-include.mac:21: ***ERROR Unable to find .INCLUDE file "does-not-exist.mac"
-      21                                	.include "does-not-exist.mac"
-      21                                
+test-include.mac:14: ***FATAL Bad .INCLUDE file name
+test-include.mac:15: ***FATAL Bad .INCLUDE file name
+test-include.mac:21: ***FATAL Unable to find .INCLUDE file "does-not-exist.mac"
+      1                                 ;;;;;
+      2                                 ;
+      3                                 ; Test some delimiters for the .INCLUDE directive
+      4                                 ;
+      5
+      6                                         .include "incl.mac"
+
+
+      1                                 ;;;;;
+      2                                 ;
+      3                                 ; file to be included
+      4
+      5 000000  000001                  	.word	1	; to show it is included
+
+
+      7                                         .include /incl.mac/
+
+
+      1                                 ;;;;;
+      2                                 ;
+      3                                 ; file to be included
+      4
+      5 000002  000001                  	.word	1	; to show it is included
+
+
+      8                                         .include \incl.mac\
+
+
+      1                                 ;;;;;
+      2                                 ;
+      3                                 ; file to be included
+      4
+      5 000004  000001                  	.word	1	; to show it is included
+
+
+      9                                         .include ?incl.mac?
+
+
+      1                                 ;;;;;
+      2                                 ;
+      3                                 ; file to be included
+      4
+      5 000006  000001                  	.word	1	; to show it is included
+
+
+     10                                         .include >incl.mac>
+
+
+      1                                 ;;;;;
+      2                                 ;
+      3                                 ; file to be included
+      4
+      5 000010  000001                  	.word	1	; to show it is included
+
+
+     12                                 ; these are errors: (in MACRO V05.05, some terminate the assembler)
+     13
+test-include.mac:14: ***FATAL Bad .INCLUDE file name
+     14                                         .include <incl.mac>
+test-include.mac:15: ***FATAL Bad .INCLUDE file name
+     15                                         .include <incl.mac<
+test-include.mac:16: ***WARNING Redefining permanent symbol '.INCLU'
+     16                                         .include =incl.mac=             ; looks like assignment
+     17 000012                                  .include :incl.mac:             ; looks like a label
+     18
+     19                                 ; this is an error: file does not exist
+     20
+test-include.mac:21: ***FATAL Unable to find .INCLUDE file "does-not-exist.mac"
+     21                                 	.include "does-not-exist.mac"
+     22
+     23         000001                          .end
 
 
 Symbol table
 
-.       000012R      001 .INCLU  000012R      001 INCL.M  000012R      001 
+INCL.M  000012R          .INCLU  000012R         
 
 
-Program sections:
+Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000012    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000012    001   (RW,I,LCL,REL,CON)

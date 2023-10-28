@@ -64,3 +64,5 @@ s2:     .word 3, 4      ; string descriptor
 d1:     .word 5, 6      ; string descriptor
 l1:     .word 7, 10     ; long integer
 t1:     .ascii /NOPABC/ ; translation table
+
+        .end

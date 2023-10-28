@@ -27,7 +27,7 @@ CFLAGS.object = ${OBJFORMAT}
 
 ALL_SRCS = $(MACRO11_SRCS) $(DUMPOBJ_SRCS)
 
-all: macro11 dumpobj
+all: macro11 dumpobj readme.lst
 
 tags: macro11 dumpobj
 	ctags *.c *.h
@@ -45,9 +45,12 @@ git-info.h:
 	./make-git-info
 
 # Bootstrap dependency on the git header file, which otherwise
-# gets generated too late.
+# (sometime) gets generated too late.
 macro11.o: git-info.h
-macro11.c: git-info.h
+dumpobj.o: git-info.h
+
+readme.lst: macro11 README.MAC
+	./macro11 README.MAC -l readme.lst -ysl 8 -e BMK
 
 clean:
 	-rm -f $(MACRO11_OBJS) $(DUMPOBJ_OBJS) macro11 dumpobj

@@ -84,3 +84,5 @@ rtwo:   rts     rtwo            ; bad
 rfour:  rts     rfour           ; bad
 rsix:   rts     rsix            ; bad
 reight: rts     reight          ; bad
+
+        .end

@@ -40,3 +40,5 @@ a=1
 ;; page 2-3:
 ;; An operator is terminated by a space, tab, or any non-Radix-50 character,
         mov@a,r0
+
+        .end

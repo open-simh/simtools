@@ -9,3 +9,5 @@ y:	.word	0
 	clr	y	; should be pc-relative, no relocation
 
 	.enabl ama	; after this, Y would be @#Y
+
+        .end

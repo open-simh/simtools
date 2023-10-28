@@ -1,80 +1,78 @@
-       1                                ;;;;
-       2                                ;
-       3                                ; Test the packed decimals.
-       4                                ;
-       5                                        .list   hex     ; Not yet supported...
-       6                                
-       7 000000    017                          .packed ,       u0
-       8 000001    014                          .packed +,      p0
-       9 000002    015                          .packed -,      n0
-      10                                
-      11 000003    017                          .packed 0,      u0len
-      12 000004    014                          .packed +0,     p0len
-      13 000005    015                          .packed -0,     n0len
-      14                                
-      15 000006    037                          .packed 1,      u1len
-      16 000007    034                          .packed +1,     p1len
-      17 000010    035                          .packed -1,     n1len
-      18                                
-      19 000011    001     057                  .packed 12,     u12len
-      20 000013    001     055                  .packed -12,    n12len
-      21 000015    001     054                  .packed +12,    p12len
-      22                                
-      23 000017    022     077                  .packed 123,    u123len
-      24 000021    001     043     117          .packed 1234,   u124len
-      25 000024    022     064     137          .packed 12345,  u125len
-      26                                
-test-packed.mac:27: ***ERROR Redefining permanent symbol 'LAB'
-      27 000027    061     101     137  lab:    .packed 31415,  lab     ; M error (multiply defined)
-test-packed.mac:28: ***ERROR Redefining permanent symbol 'L2'
-      28 000032    057                  l2::    .packed 2,l2            ; M error (multiply defined)
-      29        000003                  l3 = 3
-      30 000033    077                          .packed 3,l3            ; redef'n ok
-      31        000004                  l4 == 4
-      32 000034    117                          .packed 4,l4            ; redef'n ok
-      33        000005                  l5 =: 5                         ; M error; why???
-test-packed.mac:34: ***ERROR Redefining permanent symbol 'L5'
-      34 000035    137                          .packed 5,l5            ; M error
-      35                                
-      36 000036    022     064     126          .packed 1234567890123456789012345678901
-         000041    170     220     022  
-         000044    064     126     170  
-         000047    220     022     064  
-         000052    126     170     220  
-         000055    037                  
-      37                                        ; too long:
+      1                                 ;;;;
+      2                                 ;
+      3                                 ; Test the packed decimals.
+      4                                 ;
+      5                                         .list   hex
+      6
+      7   0000      0F                          .packed ,       u0
+      8   0001      0C                          .packed +,      p0
+      9   0002      0D                          .packed -,      n0
+     10
+     11   0003      0F                          .packed 0,      u0len
+     12   0004      0C                          .packed +0,     p0len
+     13   0005      0D                          .packed -0,     n0len
+     14
+     15   0006      1F                          .packed 1,      u1len
+     16   0007      1C                          .packed +1,     p1len
+     17   0008      1D                          .packed -1,     n1len
+     18
+     19   0009      01      2F                  .packed 12,     u12len
+     20   000B      01      2D                  .packed -12,    n12len
+     21   000D      01      2C                  .packed +12,    p12len
+     22
+     23   000F      12      3F                  .packed 123,    u123len
+     24   0011      01      23      4F          .packed 1234,   u124len
+     25   0014      12      34      5F          .packed 12345,  u125len
+     26
+test-packed.mac:27: ***WARNING Redefining permanent symbol 'LAB'
+     27   0017      31      41      5F  lab:    .packed 31415,  lab     ; M error (multiply defined)
+test-packed.mac:28: ***WARNING Redefining permanent symbol 'L2'
+     28   001A      2F                  l2::    .packed 2,l2            ; M error (multiply defined)
+     29           0003                  l3 = 3
+     30   001B      3F                          .packed 3,l3            ; redef'n ok
+     31           0004                  l4 == 4
+     32   001C      4F                          .packed 4,l4            ; redef'n ok
+     33           0005                  l5 =: 5                         ; M error; why???
+test-packed.mac:34: ***WARNING Redefining permanent symbol 'L5'
+     34   001D      5F                          .packed 5,l5            ; M error
+     35
+     36   001E      12      34      56          .packed 1234567890123456789012345678901
+          0021      78      90      12
+          0024      34      56      78
+          0027      90      12      34
+          002A      56      78      90
+          002D      1F
+     37                                         ; too long:
 test-packed.mac:38: ***ERROR Too many packed decimal digits
-      38                                        .packed 12345678901234567890123456789012
-      39                                
-      40                                ; In the original, .ntype must occur in a macro.
-      41                                ; As an extension, we allow it also outside macros.
-      42                                        .macro  name arg1,arg2
-      43                                        .narg   lab             ; redefinition
-      44                                        .nchr   lab,//          ; redefinition
-      45                                        .ntype  lab,#3          ; redefinition
-      46                                        .endm
-      47                                
-      48 000056                                 name
-test-packed.mac:48->NAME:1: ***ERROR Redefining permanent symbol 'LAB'
-       1        000000                          .narg   lab             ; redefinition
-test-packed.mac:48->NAME:2: ***ERROR Redefining permanent symbol 'LAB'
-       2                                        .nchr   lab,//          ; redefinition
-test-packed.mac:48->NAME:3: ***ERROR Redefining permanent symbol 'LAB'
-       3                                        .ntype  lab,#3          ; redefinition
-      49                                        .end
-      49                                
+     38                                         .packed 12345678901234567890123456789012
+     39
+     40                                 ; In the original, .ntype must occur in a macro.
+     41                                 ; As an extension, we allow it also outside macros.
+     42                                         .macro  name arg1,arg2
+     43                                         .narg   lab             ; redefinition
+     44                                         .nchr   lab,//          ; redefinition
+     45                                         .ntype  lab,#3          ; redefinition
+     46                                         .endm
+     47
+     48   002E                                  name
+test-packed.mac:48->NAME:1: ***WARNING Redefining permanent symbol 'LAB'
+      1           0000                          .narg   lab             ; redefinition
+test-packed.mac:48->NAME:2: ***WARNING Redefining permanent symbol 'LAB'
+      2           0002                          .nchr   lab,//          ; redefinition
+test-packed.mac:48->NAME:3: ***WARNING Redefining permanent symbol 'LAB'
+      3           0017                          .ntype  lab,#3          ; redefinition
+     49           0001                          .end
 
 
 Symbol table
 
-.       000056R      001 LAB     000027R      001 P0    = 000000           U0LEN = 000001           U1LEN = 000001           
-L2      000032RG     001 N0    = 000000           P0LEN = 000001           U123LE= 000003           
-L3    = 000001           N0LEN = 000001           P12LEN= 000002           U124LE= 000004           
-L4    = 000001 G         N12LEN= 000002           P1LEN = 000001           U125LE= 000005           
-L5    = 000005           N1LEN = 000001           U0    = 000000           U12LEN= 000002           
+LAB     0017R            L5    = 0005             N12LEN= 0002             P12LEN= 0002             U12LEN= 0002        
+L2      001ARG           N0    = 0000             P0    = 0000             U0    = 0000             U123LE= 0003        
+L3    = 0001             N0LEN = 0001             P0LEN = 0001             U0LEN = 0001             U124LE= 0004        
+L4    = 0001 G           N1LEN = 0001             P1LEN = 0001             U1LEN = 0001             U125LE= 0005        
 
 
-Program sections:
+Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000056    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  0000    00      (RW,I,GBL,ABS,OVR)
+        002E    01      (RW,I,LCL,REL,CON)

@@ -2,7 +2,7 @@
 ;
 ; Test the packed decimals.
 ;
-        .list   hex     ; Not yet supported...
+        .list   hex
 
         .packed ,       u0
         .packed +,      p0

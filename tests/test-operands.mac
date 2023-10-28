@@ -13,18 +13,21 @@
         mark    100             ; too large
         mark    .               ; must be literal
         mark    0,0             ; bad
+        mark    #0              ; warning
 
         emt     0
         emt     1
         emt     255.
         emt     256.            ; too large
         emt     .               ; allowed though strange
+        emt     #0              ; warning
 
         trap    0
         trap    1
         trap    255.
         trap    256.            ; too large
         trap    .               ; allowed though strange
+        trap    #0              ; warning
 
 ; OC_1GEN
 

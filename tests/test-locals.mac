@@ -42,3 +42,5 @@ lab4:   beq     1$
 lab5:   beq     1$
 3$:     beq     4$
 4$:     beq     lab5
+
+        .end

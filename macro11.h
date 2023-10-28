@@ -1,16 +1,31 @@
 #ifndef MACRO11_H
 #define MACRO11_H
 
+#ifndef SKIP_GIT_INFO
 #include "git-info.h"
+#endif
 
-#define BASE_VERSION "0.8"
+#define PROGRAM_NAME "macro11"
+#define BASE_VERSION "0.9"
+#define THIS_VERSION BASE_VERSION " (22 Aug 2023)"     // Mike Hill
+//      THIS_VERSION "0.9"        " (22 Aug 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.9"      " (29 Jun 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.8"      " (25 May 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.7"      " (09 May 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.6"      " (04 May 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.5"      " (28 Apr 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.4"      " (04 Apr 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.3"      " (28 Mar 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.2"      " (21 Mar 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.1"      " (09 Mar 2023)"     // Mike Hill
+//      THIS_VERSION "0.8"        " (07 Jul 2022)"     // Olaf 'Rhialto' Seibert
+//      THIS_VERSION "0.3"        " (April 21, 2009)"  // Joerg Hoppe
+//      THIS_VERSION "0.2"        "   July 15, 2001"   // Richard Krehbiel
 
 #if defined(GIT_VERSION)
-#define VERSIONSTR BASE_VERSION" ("GIT_VERSION"\n\t"GIT_AUTHOR_DATE")"
+#define VERSIONSTR   BASE_VERSION " (" GIT_VERSION "\n        " GIT_AUTHOR_DATE ")"
 #else
-#define VERSIONSTR BASE_VERSION" (07 Jul 2022)"
-/*#define VERSIONSTR "0.3 (April 21, 2009)" */
-/*#define VERSIONSTR "0.2   July 15, 2001"  */
+#define VERSIONSTR   THIS_VERSION " compiled on " __DATE__ " at " __TIME__ ")"
 #endif
 
 

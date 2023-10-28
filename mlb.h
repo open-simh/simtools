@@ -1,6 +1,8 @@
 #ifndef MLB_H
 #define MLB_H
 
+/* Routines to open and read entries from a macro library */
+
 /*
 
 Copyright (c) 2001, Richard Krehbiel
@@ -38,8 +40,6 @@ DAMAGE.
 
 #include "stream2.h"
 
-/* Routines to open and read entries from a macro library */
-
 typedef struct mlbent {
     char           *label;
     unsigned long   position;
@@ -68,13 +68,20 @@ typedef struct mlb_vtbl {
 extern MLB     *mlb_open(
     char *name,
     int allow_object_library);
+
 extern BUFFER  *mlb_entry(
     MLB *mlb,
     char *name);
+
 extern void     mlb_close(
     MLB *mlb);
+
 extern void     mlb_extract(
     MLB *mlb);
+
+extern void     mlb_list(
+    MLB *mlb,
+    FILE *fp);
 
 extern struct mlb_vtbl mlb_rsx_vtbl;
 extern struct mlb_vtbl mlb_rt11_vtbl;
