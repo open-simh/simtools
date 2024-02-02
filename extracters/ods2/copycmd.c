@@ -1173,7 +1173,7 @@ static vmscond_t copy_1_to( options_t options, char *from, char *to ) {
         keepnl = 1;
         break;
     default:
-        keepnl - 0;
+        keepnl = 0;
         break;
     }
 
