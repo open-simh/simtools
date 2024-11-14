@@ -58,6 +58,7 @@ static int sector_size = 0;
 
 static int interleave = 0;
 static int track_skew = 0;
+static int track0 = 0;
 
 static int round = 0;
 
@@ -98,7 +99,8 @@ static int lbn2pbn(int lbn)
 
     /* PBN */
     sector %= sectors;
-    track++;
+    if (!track0)
+        ++track;
     track  %= tracks;
 
     return track * sectors + sector;
@@ -111,14 +113,18 @@ __attribute__((noreturn))
 static void usage(const char* prog)
 {
     fprintf(stderr, "%s -T tracks -S sectors -B sector_size"
-                    " -i interleave -k track_skew [-r] infile outfile\n", prog);
+                    " -i interleave -k track_skew [-0] [-r] infile outfile\n",
+                    prog);
 
     fprintf(stderr, "\nTypical parameters:\n"
                     "RX01:                   -T 77 -S 26 -B 128 -i 2 -k 6\n"
                     "RX02 (single density):  -T 77 -S 26 -B 128 -i 2 -k 6\n"
                     "RX02 (double density):  -T 77 -S 26 -B 256 -i 2 -k 6\n"
                     "RX50:                   -T 80 -S 10 -B 512 -i 2 -k 2\n"
-                    "\nSupported sector sizes (in bytes): 128, 256, 512\n");
+                    "\nSupported sector sizes (in bytes): 128, 256, 512\n\n");
+
+    fprintf(stderr, "-0 = To leave track 0 in place (else, wrapped around)\n"
+                    "-r = To do an inverse (PBN to LBN) conversion\n");
     exit(2);
 }
 
@@ -146,7 +152,7 @@ int main(int argc, char* argv[])
     int p, q;
 
     p = optind;
-    while ((q = getopt(argc, argv, "T:S:B:i:k:r")) != EOF) {
+    while ((q = getopt(argc, argv, "T:S:B:i:k:0r")) != EOF) {
         switch (q) {
         case 'T':
             tracks = atoi(optarg);
@@ -166,6 +172,9 @@ int main(int argc, char* argv[])
             break;
         case 'k':
             track_skew = atoi(optarg);
+            break;
+        case '0':
+            track0 = 1;
             break;
         case 'r':
             if (!reverse) {

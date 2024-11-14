@@ -22,10 +22,11 @@ Directory | Contents
 ---- | ----
 asc | Convert ASCII file line endings
 decsys | Convert decimal listing file to a DECtape file
-dtos8cvt | Convert a PDP-8 DECtape image from OS/8 format to simulator format.
+dtos8cvt | Convert a PDP-8 DECtape image from OS/8 format to simulator format
 gt7cvt | Convert a gt7 magtape dump to a SIMH magtape
 hpconvert | Convert an HP disc image between SIMH and HPDrive formats
 indent | Convert simulator sources to 4-column tabs
+lbn2pbn | Logical-to-physical converter for single-sided floppy disk images
 littcvt | Remove density maker from litt format tapes
 m8376 | Assembles 8 PROM files into a 32bit binary file
 mt2tpc | Convert a simh simulated magtape to TPC format
