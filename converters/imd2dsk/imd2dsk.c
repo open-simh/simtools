@@ -40,7 +40,6 @@
 
 #include <assert.h>
 #include <ctype.h>
-#include <getopt.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -52,12 +51,10 @@
     __pragma(pack(push, 1))                     \
     __VA_ARGS__                                 \
     __pragma(pack(pop))
-#else
-#  if defined(__GNUC__)
-#    define PACKED(...)                         \
+#elif defined(__GNUC__)
+#  define PACKED(...)                           \
     __VA_ARGS__                                 \
     __attribute__((packed))
-#  endif
 #endif
 
 
@@ -567,7 +564,7 @@ int main(int argc, char* argv[])
     long pos;
 
     p = 1;
-    if (argc > 3) {
+    if (argc > 1) {
         do {
             if (strcmp(argv[p], "-v") == 0) {
                 ++verbose;
