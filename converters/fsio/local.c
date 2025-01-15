@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -351,6 +351,7 @@ struct FSdef localFS = {
   "local            Local file access\n",
   0,
   0,
+  NULL,
   NULL,
   NULL,
   NULL,

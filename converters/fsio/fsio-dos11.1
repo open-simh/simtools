@@ -1,4 +1,4 @@
-.TH FSIO-DOS11 1 "Jun 21,2019" "FFS I/O - DOS-11"
+.TH FSIO-DOS11 1 "Feb 14,2021" "FFS I/O - DOS-11"
 .SH NAME
 fsio-dos11 \- Foreign File System I/O - DOS-11
 .br
@@ -14,6 +14,9 @@ group number and user number. Wildcard characters are only valid with the
 .SH NEWFS OPERATION
 \fInewfs\fP creates a blank RK05 image (2.5MB, 4800 blocks) with no UFD
 entries.
+.SH COPY OPERATION
+In ASCII mode ('-a'), characters will be converted to 7-bits and NULL and
+delete characters will not be copied.
 .SH SET OPERATION
 The following \fIset\fP commands are supported:
 .br
@@ -46,6 +49,7 @@ Creates an empty UFD and sets default UIC for file access.
 .BR fsio-rt11 (1)
 .BR fsio-dosmt (1)
 .BR fsio-os8 (1)
+.BR fsio-unixv7 (1)
 .SH AUTHOR
 John Forecast, <john@forecast.name>
 .br

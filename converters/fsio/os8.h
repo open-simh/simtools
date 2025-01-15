@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 John Forecast. All Rights Reserved.
+ * Copyright (C) 2019 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -217,6 +217,7 @@ struct os8OpenFile {
   uint16_t              wordpos;        /* Current word offset */
   uint8_t               bytepos;        /* Current byte position */
   off_t                 written;        /* # of bytes written to the file */
+  uint8_t               eof;            /* EOF seen on last read */
 };
 
 /*

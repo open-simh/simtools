@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -385,9 +385,21 @@ static int dosmtReadBytes(
           break;
       }
     }
-    *buf++ = file->buf[file->nextb++];
-    len--;
-    count++;
+    if (SWISSET('a')) {
+      char ch = file->buf[file->nextb++] & 0177;
+
+      if ((ch != 0) && (ch != 0177)) {
+        *buf++ = ch;
+        count++;
+      }
+      len--;
+      if (ch == '\n')
+        break;
+    } else {
+      *buf++ = file->buf[file->nextb++];
+      len--;
+      count++;
+    }
   }
   return count;
 }
@@ -982,6 +994,7 @@ static void *dosmtOpenFileW(
     file->nextb = 0;
     file->tm = 0;
     file->error = 0;
+    memset(file->buf, 0, DOSMTRCLNT);
   }
   return file;
 }
@@ -1015,8 +1028,8 @@ static off_t dosmtFileSize(
   uint32_t length;
 
   /*
-   * Compute the length of this file. The estimate may larger than the
-   * actual size of the file size don't know the actual EOF position
+   * Compute the length of this file. The estimate may be larger than the
+   * actual size of the file since we don't know the actual EOF position
    * within the last block of the file.
    */
   do {
@@ -1097,13 +1110,21 @@ static void dosmtCloseFile(
 
     data->eot = tapeGetPosition(mount->container);
 
-    if (tapeWriteEOM(mount->container, 1) == 0)
+    /*
+     * Write 2 tape marks indicating the end of tape (DOS/BATCH requires
+     * 3 TM in a row, 1 for the EOF and the last 2 to indicate EOT) and then
+     * backup over the last 2 TMs.
+     */
+    if ((tapeWriteTM(mount->container) == 0) ||
+        (tapeWriteTM(mount->container) == 0))
       file->error = 1;
 
     if (file->error != 0) {
       ERROR("Panic: Error writing on \"%s\"\n", mount->name);
       exit(3);
     }
+
+    tapeSetPosition(mount->container, data->eot);
   }
 
   free(file);
@@ -1302,6 +1323,7 @@ struct FSdef dosmtFS = {
   0,
   dosmtMount,
   dosmtUmount,
+  NULL,
   NULL,
   NULL,
   dosmtSet,

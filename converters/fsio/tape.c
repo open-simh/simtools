@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -568,7 +568,7 @@ int tapeWriteEOM(
  *
  * Returns:
  *
- *      1 if EOM record successfully written, 0 otherwise
+ *      1 if TM record successfully written, 0 otherwise
  *
  --*/
 int tapeWriteTM(

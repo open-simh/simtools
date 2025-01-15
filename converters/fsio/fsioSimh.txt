@@ -83,6 +83,36 @@ pair <cr><lf> which RT-11 requires. In addition, unless the file ends
 exactly on a block (512 bytes) boundary, a ^Z (octal 32) will be appended
 to the file indicating end-of-file.
 
+Research Unix V7
+----------------
+
+For Unix V7, fsio understands the native disk format so we can transfer
+directly into the bootable SIMH disk ("unix_v7_rl.dsk" in the examples). Note
+that Unix disks may contain multiple partitions but the partition layout was
+not typically recorded on the disk, it was hard coded into the device  driver.
+fsio does support the "-o nnn" switch to mount to specify the block offset of
+the partition to be mounted if it is not the first on the disk. The example
+below will copy an ASCII file into the root directory of the partition (if
+fsio is running on a Unix-like system, the "-a" switch is not needed):
+
+        pi@host:~ $ fsio
+        fsio> mount dl unix_v7_rl.dsk unixv7
+        Pack name:       , File system name:       , Total blocks: 18000
+        fsio> copy -a file.txt dl:file.txt
+        fsio> quit
+        pi@host:~ $
+
+By default, new files will be created with UID 0, GID 0. To override this use:
+
+        fsio> set dl: uid 1
+        fsio> set dl: gid 100
+        fsio> copy -a file.txt dl:file.txt
+
+Research Unix V7 was distributed by DEC as v7m and later as Ultrix-11.
+Ultrix-11 V3.0/V3.1 used a modified disk layout with a 1K byte block size
+which is incompatible with fsio but it did come with /etc/rawfs which allows
+access to disks using a 512 byte block size.
+
 
 Foreign File System Support
 ---------------------------

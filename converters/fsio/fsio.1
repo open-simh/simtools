@@ -1,4 +1,4 @@
-.TH FSIO 1 "Sep 17,2019" "Foreign File System I/O"
+.TH FSIO 1 "Mar 2,2023" "Foreign File System I/O"
 .SH NAME
 fsio \- Foreign File System I/O
 .SH SYNOPSIS
@@ -34,54 +34,56 @@ verb [switches] args ...
 The following verbs are supported:
 
 .br
-.B "\fImount\fP   \- make a container file available to fsio"
+.B "\fImount\fP   \- Make a container file available to fsio"
 .br
-.B "\fIumount\fP  \- remove knowledge of a container file from fsio"
+.B "\fIumount\fP  \- Remove knowledge of a container file from fsio"
 .br
-.B "\fInewfs\fP   \- create and new container and empty file system"
+.B "\fInewfs\fP   \- Create a new container and empty file system"
 .br
-.B "\fIset\fP     \- set parameters on a mounted file system"
+.B "\fImkdir\fP   \- Create a new empty directory on a mounted file system"
 .br
-.B "\fIinfo\fP    \- display information about the container file system"
+.B "\fIset\fP     \- Set parameters on a mounted file system"
 .br
-.B "\fIdir\fP     \- list a directory"
+.B "\fIinfo\fP    \- Display information about the container file system"
 .br
-.B "\fIdump\fP    \- dump a file in hex or octal"
+.B "\fIdir\fP     \- List a directory"
 .br
-.B "\fIcopy\fP    \- copy a single file"
+.B "\fIdump\fP    \- Dump a file in hex or octal"
 .br
-.B "\fItype\fP    \- type a file on the terminal"
+.B "\fIcopy\fP    \- Copy a single file"
 .br
-.B "\fIdelete\fP  \- delete a file"
+.B "\fItype\fP    \- Type a file on the terminal"
 .br
-.B "\fIstatus\fP  \- display currently mounted file systems"
+.B "\fIdelete\fP  \- Delete a file"
 .br
-.B "\fIdo\fP      \- echo and execute commands from a file"
+.B "\fIstatus\fP  \- Display currently mounted file systems"
 .br
-.B "\fIhelp\fP    \- display help on using fsio"
+.B "\fIdo\fP      \- Echo and execute commands from a file"
 .br
-.B "\fIexit\fP    \- terminate fsio (quit is an alias for exit)"
+.B "\fIhelp\fP    \- Display help on using fsio"
+.br
+.B "\fIexit\fP    \- Terminate fsio (quit is an alias for exit)"
 .br
 .TP
 The following commands are only accepted by file systems which are on magtape devices:
 
 .br
-.B "\fIrewind\fP  \- position the tape to the start of the data stream"
+.B "\fIrewind\fP  \- Position the tape to the start of the data stream"
 .br
-.B "\fIeom\fP     \- position the tape to the end of the data stream"
+.B "\fIeom\fP     \- Position the tape to the end of the data stream"
 .br
-.B "\fIskipf\fP   \- position the tape by skipping forward over files"
+.B "\fIskipf\fP   \- Position the tape by skipping forward over files"
 .br
-.B "\fIskipr\fP   \- position the tape by skipping backward over files"
+.B "\fIskipr\fP   \- Position the tape by skipping backward over files"
 .br
 .SH COMMANDS
 .TP
-.B "\fImount\fP [-dfrx] [-t type] dev[:] file type"
-Make the container file available to fsio.
+.B "\fImount\fP [-dfrx] [-t type] [-o nnn] dev[:] file type"
+Make the container file available to \fBfsio\fP.
 .br
 .RS
 .RS
-.B "\fI\-d\fP      \- generate debug output on stdout"
+.B "\fI\-d\fP      \- Generate debug output on stdout"
 .br
 .B "          Use environment variable \fIFSioDebugLog\fP to"
 .br
@@ -89,44 +91,62 @@ Make the container file available to fsio.
 .br
 .B "          Only available if built with DEBUG enabled"
 .br
-.B "\fI\-f\fP      \- bypass home block validation (RT-11 only)"
+.B "\fI\-f\fP      \- Bypass home block validation (RT-11 only)"
 .br
-.B "\fI\-r\fP      \- mount file system read-only"
+.B "\fI\-o nnn\fP  \- Specify partition block offset (unixv7 only)"
 .br
-.B "\fI\-t type\fP \- specify optional disk type"
+.B "\fI\-r\fP      \- Mount file system read-only"
+.br
+.B "\fI\-t type\fP \- Specify optional disk type"
 .br
 .B "\fI\-x\fP      \- dosmt will use extended filenames when writing"
 .br
-.B "\fIdev[:]\fP  \- user supplied name for the mount"
+.B "\fIdev[:]\fP  \- User supplied name for the mount"
 .br
-.B "\fIfile\fP    \- name of the container file"
+.B "\fIfile\fP    \- Name of the container file"
 .br
-.B "\fItype\fP    \- type of container file system"
+.B "\fItype\fP    \- Type of container file system"
 .br
 .RE
 .RE
 .TP
 .B "\fIumount\fP dev[:]"
-Remove knowledge of the container file from fsio.
+Remove knowledge of the container file from \fBfsio\fP.
 .br
 .RS
 .RS
-.B "\fIdev[:]\fP  \- name supplied on a previous mount"
+.B "\fIdev[:]\fP  \- Name supplied on a previous mount"
 .RE
 .RE
 .TP
-.B "\fInewfs\fP [-t type] [-e count] file type"
+.B "\fInewfs\fP [-b blks] [-t type] [-e n] [-i n] file type"
 Create an new container with an empty file system.
 .br
 .RS
 .RS
-.B "\fI\-t type\fP \- use alternate, file-system dependent size"
+.B "\fI\-b blks\fP \- Specify file system size (unixv7)"
 .br
-.B "\fI\-e n\fP    \- Specify extra space for directory entries (RT11, OS/8)"
+.B "\fI\-t type\fP \- Use alternate, device-dependent size"
 .br
-.B "\fIfile\fP    \- name of the container file"
+.B "\fI\-e n\fP    \- Specify extra space for directory entries"
 .br
-.B "\fItype\fP    \- type of container file system"
+.B "          (RT11, OS/8)"
+.br
+.B "\fI\-i n\fP    \- Specify inode count (8 to 65500) (UnixV7)"
+.br
+.B "\fIfile\fP    \- Name of the container file"
+.br
+.B "\fItype\fP    \- Type of container file system"
+.br
+.RE
+.RE
+.TP
+.B "\fImkdir\fP [-p] dev:dirspec"
+Create a new empty directory on a mounted file system.
+.br
+.RS
+.RS
+.B "\fI\-p\fP      \- Create any missing intermediate directories"
 .br
 .RE
 .RE
@@ -136,9 +156,9 @@ Set parameters on a mounted file system.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
-.B "\fIargs ...\fP\- arguments are passed on to the file system"
+.B "\fIargs ...\fP\- Arguments are passed on to the file system"
 .br
 .RE
 .RE
@@ -148,7 +168,7 @@ Display information about the file system(s) within the container file.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .RE
 .RE
 .TP
@@ -157,13 +177,13 @@ List the contents of a specific directory.
 .br
 .RS
 .RS
-.B "\fI\-f\fP      \- display a full (vs. brief) directory"
+.B "\fI\-f\fP      \- Display a full (vs. brief) directory"
 .br
-.B "\fI\-n\fP      \- don't rewind tape before listing directory"
+.B "\fI\-n\fP      \- Don't rewind tape before listing directory"
 .br
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
-.B "\fIdirspec\fP \- filespec to display, may include wildcards"
+.B "\fIdirspec\fP \- Filespec to display, may include wildcards"
 .br
 .RE
 .RE
@@ -173,45 +193,45 @@ Dump the contents of the file in octal, hex or characters.
 .br
 .RS
 .RS
-.B "\fI\-b\fP      \- dump byte (8-bits) at a time"
+.B "\fI\-b\fP      \- Dump byte (8-bits) at a time"
 .br
-.B "\fI\-c\fP      \- dump in character format"
+.B "\fI\-c\fP      \- Dump in character format"
 .br
-.B "\fI\-d\fP      \- dump double-word (32-bits) at a time"
+.B "\fI\-d\fP      \- Dump double-word (32-bits) at a time"
 .br
-.B "\fI\-w\fP      \- dump word (16-bits) at a time"
+.B "\fI\-w\fP      \- Dump word (16-bits) at a time"
 .br
-.B "\fI\-x\fP      \- dump in hex format (default is octal)"
+.B "\fI\-x\fP      \- Dump in hex format (default is octal)"
 .br
-.B "\fI\-n\fP      \- don't rewind magtape before looking for file"
+.B "\fI\-n\fP      \- Don't rewind magtape before looking for file"
 .br
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
-.B "\fIdirspec\fP \- filespec to dump"
+.B "\fIdirspec\fP \- Filespec to dump"
 .br
 .RE
 .RE
 .TP
-.B "\fIcopy\fP [-anpc blks] dev1:srcfile dev2:dstfile"
+.B "\fIcopy\fP [-anp] [-c blks] dev1:srcfile dev2:dstfile"
 Copy a file.
 .br
 .RS
 .RS
-.B "\fI\-a\fP      \- copy in ASCII mode (translates line endings)"
+.B "\fI\-a\fP      \- Copy in ASCII mode (translates line endings)"
 .br
-.B "\fI\-p\fP      \- pad the file with NULLs"
+.B "\fI\-p\fP      \- Pad the file with NULLs"
 .br
-.B "\fI\-n\fP      \- don't rewind magtape before looking for input file"
+.B "\fI\-n\fP      \- Don't rewind magtape before looking for input file"
 .br
-.B "\fI\-c blks\fP \- make contiguous file of specified size"
+.B "\fI\-c blks\fP \- Make contiguous file of specified size"
 .br
-.B "\fIdev1:\fP   \- name supplied on a previous mount"
+.B "\fIdev1:\fP   \- Name supplied on a previous mount"
 .br
-.B "\fIsrcfile\fP \- source file to copy"
+.B "\fIsrcfile\fP \- Source file to copy"
 .br
-.B "\fIdev2:\fP   \- name supplied on a previous mount"
+.B "\fIdev2:\fP   \- Name supplied on a previous mount"
 .br
-.B "\fIdstfile\fP \- destination file to copy"
+.B "\fIdstfile\fP \- Destination file to copy"
 .br
 .RE
 .RE
@@ -221,11 +241,11 @@ Types the contents of the file on stdout.
 .br
 .RS
 .RS
-.B "\fI\-n\fP      \- don't rewind magtape before looking for file"
+.B "\fI\-n\fP      \- Don't rewind magtape before looking for file"
 .br
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
-.B "\fIfilespec\fP\- filespec to type"
+.B "\fIfilespec\fP\- Filespec to type"
 .br
 .RE
 .RE
@@ -235,9 +255,9 @@ Deletes the specified file.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
-.B "\fIfilespec\fP\- filespec to delete"
+.B "\fIfilespec\fP\- Filespec to delete"
 .br
 .RE
 .RE
@@ -251,9 +271,9 @@ Echo and execute commands from a file.
 .br
 .RS
 .RS
-.B "\fI\-q\fP      \- don't echo commands as they are read"
+.B "\fI\-q\fP      \- Don't echo commands as they are read"
 .br
-.B "\fIcmdFile\fP  \- file containing fsio commands"
+.B "\fIcmdFile\fP  \- File containing \fBfsio\fP commands"
 .br
 .RE
 .RE
@@ -263,7 +283,7 @@ Displays help text on stdout.
 .br
 .TP
 .B "\fIexit\fP"
-Causes fsio to exit (the quit command has the same effect).
+Causes \fBfsio\fP to exit (the quit command has the same effect).
 .br
 .TP
 .B "\fIrewind\fP dev:"
@@ -271,7 +291,7 @@ Positions the device to the start of the tape.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
 .RE
 .RE
@@ -281,7 +301,7 @@ Positions the device to the end of the tape.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
 .RE
 .RE
@@ -291,7 +311,7 @@ Positions the device by skipping forward over files.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
 .B "\fIn\fP       \- # of files to skip (must be > 0)"
 .br
@@ -303,7 +323,7 @@ Positions the device by skipping backward over files.
 .br
 .RS
 .RS
-.B "\fIdev:\fP    \- name supplied on a previous mount"
+.B "\fIdev:\fP    \- Name supplied on a previous mount"
 .br
 .B "\fIn\fP       \- # of files to skip (must be > 0)"
 .br
@@ -331,13 +351,16 @@ This function depends on the value of blks:
 .br
 .B "\fIdosmt\fP   \- container file in DOS-11 magtape format"
 .br
-.B "\fIos8\fP     \- OS/8 on RX01, RX01 or RK05"
+.B "\fIos8\fP     \- OS/8 on RX01, RX02 or RK05"
+.br
+.B "\fIunixv7\fP  \- Unix V7"
 .br
 .SH SEE ALSO
 .BR fsio-dos11 (1),
 .BR fsio-rt11 (1)
 .BR fsio-dosmt (1)
 .BR fsio-os8 (1)
+.BR fsio-unixv7 (1)
 .SH AUTHOR
 John Forecast, <john@forecast.name>
 .br

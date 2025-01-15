@@ -1,0 +1,74 @@
+.TH FSIO-UNIXV7 1 "Mar 2,2023" "FFS I/O - UNIX V7"
+.SH NAME
+fsio-unixv7 \- Foreign File System I/O - Unix V7
+.br
+.SH DESCRIPTION
+\fBfsio\fP allows access to Unix V7 file systems using the file system type
+"\fIunixv7\fP". Note that you must use "\fI/etc/rawfs\fP" on Ultrix-11 3.0/3.1
+to access files on disks created by \fBfsio\fP.
+.br
+.SH UNIX V7 PHYSICAL DISKS
+UNIX V7 uses a logical block size of 512 bytes. \fBfsio\fP supports access to
+disks which have their super block stored at block 2. Unix V7 does not write
+any type of signature on the device so the \fImount\fP command uses a set of
+heuristics to determine if the file system is valid.
+.SH MOUNT OPERATION
+\fImount\fP accepts the optional "\fI-t type\fP" switch to provide an additonal
+check on the integrity of the file system (e.g. check for blocks addresses
+larger than the specified disk) (See NEWFS OPERATION below for details).
+.br
+
+\fImount\fP also accepts the optional "\fI-o nnn\fP" switch where nnn is the
+block offset of the start of the partition to be mounted. Since most, if not
+all, UNIX V7 implementations hard code the partition layout for a specific
+disk within the device driver, you will have to examine the device driver
+code to calculate this offset.
+.SH NEWFS OPERATION
+\fInewfs\fP requires either the "\fI-b blocks\fP" or the "\fI-t type\fP" switch
+to determine the size of the container file to be created:
+.br
+.RS
+.TP
+\fIrk05\fP    \- RK05 image (2436 blocks, 776 inodes)
+.br
+.TP
+\fIrl01\fP    \- RL01 image (10240 blocks, 3272 inodes)
+.br
+.TP
+\fIrl02\fP    \- RL02 image (20480 blocks, 6552 inodes)
+.br
+.TP
+\fIrk06\fP    \- RK06 image (27126 blocks, 8680 inodes)
+.br
+.TP
+\fIrk07\fP    \- RK07 image (53790 blocks, 17208 inodes)
+.br
+.RE
+.br
+
+If neither switch is present, an RK05-sized disk will be created.
+.br
+
+By default, inodes occupy 4% of the disk space. This can be overridden by
+using the "\fI-i num\fP" switch, where \fInum\fP can be in the range 8 - 65500
+and the resulting inode space cannot occupy more than 50% of the disk space
+(8 inodes consume 1 disk block).
+.br
+.SH SET OPERATION
+The following \fIset\fP commands are supported:
+.br
+.TP
+.B "\fIuid\fP n"
+Sets the default UID for created files and directories (was 0 after mount).
+.TP
+.B "\fIgid\fP n"
+Sets the default GID for created files and directories (was 0 after mount).
+.SH SEE ALSO
+.BR fsio (1)
+.BR fsio-dos11 (1)
+.BR fsio-dosmt (1)
+.BR fsio-os8 (1)
+.BR fsio-rt11 (1)
+.SH AUTHOR
+John Forecast, <john@forecast.name>
+.br

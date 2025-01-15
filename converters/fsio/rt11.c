@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -1565,7 +1565,7 @@ static int validate(
 
       position += le16toh(data->buf[off + RT11_DI_LENGTH]);
 
-      if ((status & RT11_E_MPTY) != 0)
+      if ((status & RT11_E_EOS) != 0)
         break;
 
       /*
@@ -1656,8 +1656,8 @@ int rt11ReadBytes(
  * Inputs:
  *
  *      file            - pointer to an open file descriptor
- *      buf             - pointer to a buffer to receive the data
- *      len             - # of bytes of data to read
+ *      buf             - pointer to a buffer with the data to be written
+ *      len             - # of bytes of data to write
  *
  * Outputs:
  *
@@ -1881,9 +1881,15 @@ static int rt11Mount(
             }
 
             printf("%s%o:\n", mount->name, i);
-            if (version != NULL)
-              printf("  Version: %s,        System ID: %12s\n",
-                     version, (char *)&data->buf[RT11_HB_SYSID]);
+            if (version != NULL) {
+              char sysid[16];
+
+              memset(sysid, 0, sizeof(sysid));
+              strncpy(sysid, (char *)&data->buf[RT11_HB_SYSID],
+                       strlen(RT11_SYSID));
+
+              printf("  Version: %s,        System ID: %s\n", version, sysid);
+            }
             printf("  Total blocks: %5d, Free blocks: %5d\n"
                    "  Directory segments: %2d (Highest in use: %d)\n"
                    "  Extra bytes/directory entry: %d\n",
@@ -1958,7 +1964,8 @@ static size_t rt11Size(void)
     }
     if (size == ((RT11_MAXPARTSZ - 1) * RT11_BLOCKSIZE))
       fprintf(stderr,
-              "newfs: Invalid device type \"%s\", using default\n", type);
+              "%s: Invalid device type \"%s\", using default\n",
+              command, type);
   }
   return size;
 }
@@ -2027,7 +2034,6 @@ static int rt11Newfs(
    * Remove possible first track
    */
   size = (size - mount->skip) / RT11_BLOCKSIZE;
-  //  size = ((size * RT11_BLOCKSIZE) - mount->skip) / RT11_BLOCKSIZE;
 
   /*
    * Mark partition 0 as valid
@@ -2569,6 +2575,7 @@ struct FSdef rt11FS = {
   rt11Umount,
   rt11Size,
   rt11Newfs,
+  NULL,
   NULL,
   rt11Info,
   rt11Dir,

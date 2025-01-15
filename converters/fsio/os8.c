@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 John Forecast. All Rights Reserved.
+ * Copyright (C) 2019 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -2384,7 +2384,7 @@ static void os8Umount(
  *
  * Returns:
  *
- *      Size of the container file in block of default file system size
+ *      Size of the container file in blocks of default file system size
  *
  --*/
 static size_t os8Size(void)
@@ -2410,7 +2410,7 @@ static size_t os8Size(void)
  * Inputs:
  *
  *      mount           - pointer to a mounted file system descriptor
- *                        (nit in the mounted file system list)
+ *                        (not in the mounted file system list)
  *      size            - the sized (in blocks) of the filesystem
  *
  * Outputs:
@@ -2440,7 +2440,8 @@ static int os8Newfs(
 
       dev++;
     }
-    dev = OS8Devices;
+    fprintf(stderr, "newfs: Unknown device type \"%s\"\n", SWGETVAL('t'));
+    return 0;
   }
  found:
   mount->skip = dev->skip;
@@ -2862,8 +2863,6 @@ static void os8DeleteFile(
   data->buf[file->offset + OS8_DI_FNAME1] = 0;
   data->buf[file->offset + OS8_ED_LENGTH] =
     data->buf[file->offset + file->extra + OS8_DI_LENGTH];
-  data->buf[OS8_DH_ENTRIES] =
-    htole16(os8Value(-(os8Neg(le16toh(data->buf[OS8_DH_ENTRIES])) - 1)));
 
   os8SlideUp(mount, file->offset + OS8_ED_SIZE,
              file->offset + file->entrysz, file->entrysz, file->remain);
@@ -2905,6 +2904,12 @@ static void os8CloseFile(
   struct os8OpenFile *file = filep;
 
   if (file->mode == M_WR) {
+    if (SWISSET('a')) {
+      char ch ='\032';
+
+      os8WriteBytes(file, &ch, 1);
+    }
+    
     if (file->current != 0)
       /*
        * Flush the current buffer.
@@ -2946,7 +2951,41 @@ static size_t os8ReadFile(
 )
 {
   struct os8OpenFile *file = filep;
+  char *bufr = buf;
 
+  if (SWISSET('a')) {
+    char ch;
+    size_t count = 0;
+
+    if (file->eof != 0)
+      return 0;
+    
+    /*
+     * Read a full or partial line from the open file.
+     */
+    while ((buflen != 0) && (os8ReadBytes(file, &ch, 1) == 1)) {
+      if (ch == '\032') {
+        /*
+         * ^Z indicating EOF
+         */
+        file->eof = 1;
+        break;
+      }
+
+      /*
+       * Ignore NULL bytes in ASCII mode
+       */
+      if (ch != '\0') {
+        ch &= 0177;
+        bufr[count++] = ch;
+        buflen--;
+        if (ch == '\n')
+          break;
+      }
+    }
+    return count;
+  }
+  
   return os8ReadBytes(file, buf, buflen);
 }
 
@@ -2997,6 +3036,7 @@ struct FSdef os8FS = {
   os8Umount,
   os8Size,
   os8Newfs,
+  NULL,
   os8Set,
   os8Info,
   os8Dir,

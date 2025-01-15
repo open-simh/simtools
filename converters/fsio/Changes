@@ -33,3 +33,36 @@ Changes Since Alpha Release:
 
 - Merged change from tvrusso to fix compilation on FreeBSD
 
+20-Aug-20
+
+- Fixed bug in OS/8 file deletion which incorrectly reduced the directory
+  file count by 1
+
+- Fix ASCII mode read in OS/8 where it would read an entire block into
+  memory rather than a single line. When copying to local:, this would
+  result in the destination file having unexpected <CR> characters.
+
+15-Feb-21
+
+- Added support Research Unix V7 file systems of RK05, RL01 and RL02 drives
+  using file system type "unixv7"
+
+3-Mar-23
+
+- Added support for RK06 and RK07 Unix V7 drives
+- Added support for creating arbitrary sized Unix V7 file systems
+
+26-Sep-24
+
+- Fixed display of System ID during RT-11 mount if there is non-zero data
+  following the System ID on the disk
+
+13-Nov-24
+
+- Fixed OS/8 ASCII file read/write to to handle ^Z marking the end of file
+
+28-Nov-24
+
+- Fixed RT11 scan to find the size of the partition. The old code would
+  incorrectly terminate on an EMPTY marker rather than END-OF-SEGMENT.
+

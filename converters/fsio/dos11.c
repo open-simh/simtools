@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -2473,6 +2473,7 @@ struct FSdef dos11FS = {
   dos11Umount,
   dos11Size,
   dos11Newfs,
+  NULL,
   dos11Set,
   dos11Info,
   dos11Dir,

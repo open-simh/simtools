@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -35,12 +35,13 @@
 /*
  * Mode for open files
  */
-enum openMode           { M_RD, M_WR };
+enum openMode           { M_RD, M_WR, M_UNKNOWN };
 
 #include "dos11.h"
 #include "rt11.h"
 #include "dosmt.h"
 #include "os8.h"
+#include "unixv7.h"
 
 /*
  * All of the supported file systems are natively little endian so we only
@@ -81,7 +82,7 @@ enum openMode           { M_RD, M_WR };
 #endif
 
 extern uint32_t swPresent;
-extern char *swValue[];
+extern char *command, *swValue[];
 
 #define SWISSET(c)      ((swPresent & (1 << (c - 'a'))) != 0)
 #define SWSET(c)        swPresent |= (1 << (c - 'a'))
@@ -114,6 +115,7 @@ struct FSdef {
   void                  (*umount)(struct mountedFS *);
   size_t                (*size)(void);
   int                   (*newfs)(struct mountedFS *, size_t);
+  int                   (*mkdir)(struct mountedFS *, uint8_t, char *);
   void                  (*set)(struct mountedFS *, uint8_t, uint8_t);
   void                  (*info)(struct mountedFS *, uint8_t, uint8_t);
   void                  (*dir)(struct mountedFS *, uint8_t, char *);
@@ -157,11 +159,13 @@ struct mountedFS {
     struct RT11data     _rt11;
     struct DOSMTdata    _dosmt;
     struct OS8data      _os8;
+    struct UNIXV7data   _unixv7;
   }                     FSdata;
 #define dos11data       FSdata._dos11
 #define rt11data        FSdata._rt11
 #define dosmtdata       FSdata._dosmt
 #define os8data         FSdata._os8
+#define unixv7data      FSdata._unixv7
 };
 
 extern int FSioReadBlob(struct mountedFS *, off_t, unsigned int, void *);

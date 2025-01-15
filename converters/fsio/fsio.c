@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 John Forecast. All Rights Reserved.
+ * Copyright (C) 2018 - 2025 John Forecast. All Rights Reserved.
  * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -85,7 +85,7 @@
  *      file is open, and this routine should verify that it contains a valid
  *      file system. This routine may print out information about the file
  *      system. Return 1 if the file system is valid, 0 if the file system is
- *      invalid and -1 if the file system is invalid and an erroir message
+ *      invalid and -1 if the file system is invalid and an error message
  *      has already been printed.
  *
  *  void (*umount)(struct mountedFS *mount);
@@ -97,8 +97,10 @@
  *
  *  size_t (*size)(void)
  *
- *      Return the number of byte used for the container file. The command
- *      line switch (-t type) may be used to override the default size.
+ *      Return the number of bytes used for the container file. The command
+ *      line switch (-t type) may be used to override the default size. If
+ *      there is a problem computing the size of a container file (e.g. -t
+ *      switch missing), print an error message and return (size_t)-1.
  *
  *  int (*newfs)(struct mountedFS *mount, size_t size);
  *
@@ -107,6 +109,15 @@
  *      in the "size" parameter. The file system is never completely mounted
  *      by this command. This routine returns 1 if the file system was
  *      successfully created, 0 otherwise.
+ *
+ *  int (*mkdir)(struct mountedFS *mount, uint8_t unit, char *fname);
+ *
+ *      Create a new empty directory on the mounted file system. This routine
+ *      returns 1 if the directory was successfully created, 0 otherwise. If
+ *      the "-p" switch is present (SWISSET('p')), any missing intermediate
+ *      directories will be created. If the "-p" switch is present and 0 is
+ *      returned, an unknown number of intermediate directories may have
+ *      been created.
  *
  *  void (*set)(struct mountedFS *mount, uint8_t unit, uint8_t present);
  *
@@ -123,7 +134,7 @@
  *      FS_UNITVALID set (see above), "present" is non-zero if a unit number
  *      was included on the command line. For example, RT-11 uses "present"
  *      to decide whether to display information about a single file system
- *      ("present" 0) or all file systems in the containder ("present" 1).
+ *      ("present" 0) or all file systems in the container ("present" 1).
  *
  *  void (*dir)(struct mountedFS *mount, uint8_t unit, char *fname);
  *
@@ -284,6 +295,7 @@ int verbose = 0, quiet = 0;
 static void doMount(void);
 static void doUmount(void);
 static void doNewfs(void);
+static void doMkdir(void);
 static void doSet(void);
 static void doInfo(void);
 static void doDir(void);
@@ -311,12 +323,13 @@ struct command {
   cmd_t         func;                   /* Command execution function */
 } cmdTable[] = {
 #ifdef DEBUG
-  { "mount", OPTIONS("dfrt:x"), 3, 3, 0, doMount },
+  { "mount", OPTIONS("dfo:rt:x"), 3, 3, 0, doMount },
 #else
-  { "mount", OPTIONS("frt:x"), 3, 3, 0, doMount },
+  { "mount", OPTIONS("fo:rt:x"), 3, 3, 0, doMount },
 #endif
   { "umount", NULL, 1, 1, 0, doUmount },
-  { "newfs", OPTIONS("e:t:"), 2, 2, 0, doNewfs },
+  { "newfs", OPTIONS("b:e:i:t:"), 2, 2, 0, doNewfs },
+  { "mkdir", OPTIONS("p"), 1, 1, 0, doMkdir },
   { "set", NULL, 2, MAX_CMDLEN, 0, doSet },
   { "info", NULL, 1, 1, 0, doInfo },
   { "dir", OPTIONS("fn"), 1, 1, 0, doDir },
@@ -335,6 +348,8 @@ struct command {
   { "skipr", NULL, 2, 2, 0, doSkipRev },
   { NULL, NULL, 0, 0, 0, doExit }
 };
+
+char *command = NULL;                   /* Current command being executed */
 
 /*
  * Switches and values
@@ -406,6 +421,7 @@ extern struct FSdef dos11FS;
 extern struct FSdef rt11FS;
 extern struct FSdef dosmtFS;
 extern struct FSdef os8FS;
+extern struct FSdef unixv7FS;
 
 #define MAX(a, b)       (((a) > (b)) ? (a) : (b))
 #define MIN(a, b)       (((a) < (b)) ? (a) : (b))
@@ -463,6 +479,9 @@ static void FSioInit(void)
 
   os8FS.next = fileSystems;
   fileSystems = &os8FS;
+
+  unixv7FS.next = fileSystems;
+  fileSystems = &unixv7FS;
 }
 
 /*++
@@ -609,7 +628,6 @@ static int checkDev(
  *
  * Inputs:
  *
- *      cmd             - current command name
  *      dev             - pointer to device name + file specification
  *      unit            - return optional unit number here
  *      present         - return unit present indicator here (0 or 1)
@@ -626,7 +644,6 @@ static int checkDev(
  *
  --*/
 static struct mountedFS *findMount(
-  char *cmd,
   char *dev,
   uint8_t *unit,
   uint8_t *present,
@@ -655,13 +672,15 @@ static struct mountedFS *findMount(
           unitno = strtoul(&dev[i], &endptr, 8);
           if (*endptr != '\0') {
             fprintf(stderr,
-                    "%s: Device \"%s\" unit number invalid\n", cmd, origdev);
+                    "%s: Device \"%s\" unit number invalid\n",
+                    command, origdev);
             return NULL;
           }
 
           if (unitno > 0377) {
             fprintf(stderr,
-                    "%s: Device \"%s\" unit number too large\n", cmd, origdev);
+                    "%s: Device \"%s\" unit number too large\n",
+                    command, origdev);
             return NULL;
           }
           dev[i] ='\0';
@@ -670,7 +689,7 @@ static struct mountedFS *findMount(
         }
         fprintf(stderr,
                 "%s: Device \"%s\" contains non-alpha character\n",
-                cmd, origdev);
+                command, origdev);
         return NULL;
       }
 
@@ -683,12 +702,13 @@ static struct mountedFS *findMount(
             ((fs->filesys->flags & FS_UNITVALID) != 0))
           break;
         fprintf(stderr,
-                "%s: \"%s\" does not support unit numbers\n", cmd, fs->name);
+                "%s: \"%s\" does not support unit numbers\n",
+                command, fs->name);
         return NULL;
       }
   
     if (fs == NULL)
-      fprintf(stderr, "%s: Device \"%s\" not mounted\n", cmd, origdev);
+      fprintf(stderr, "%s: Device \"%s\" not mounted\n", command, origdev);
   } else {
     if (getenv("FSioForceLocal") != NULL) {
       fprintf(stderr, "Local file system access requires use of \"local:\"\n");
@@ -938,11 +958,14 @@ static void doNewfs(void)
     /*
      * Get the required container file size.
      */
-    if (filesys->size != NULL)
+    if (filesys->size != NULL) {
       size = (*filesys->size)();
+      if (size == (size_t)-1)
+        return;
+    }
 
     if ((mount.container = fopen(words[0], "w+")) != NULL) {
-      off_t offset = size - 1;
+      off_t offset =  size ? size - 1 : 0;
 
       mount.skip = 0;
 
@@ -972,6 +995,39 @@ static void doNewfs(void)
 }
 
 /*++
+ *      d o M k d i r
+ *
+ *  Create a new empty directory on a mounted file system. This command is
+ *  only available if the file system supports multiple directories.
+ *
+ * Inputs:
+ *
+ *      None
+ *
+ * Outputs:
+ *
+ *      None
+ *
+ * Returns:
+ *
+ *      None
+ *
+ --*/
+static void doMkdir(void)
+{
+  struct mountedFS *mount;
+  char *fname;
+  uint8_t unit, present;
+
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
+    if (mount->filesys->mkdir != NULL)
+      (*mount->filesys->mkdir)(mount, unit, fname);
+    else fprintf(stderr, "mkdir: \"%s\" does not support \"mkdir\" command\n",
+                 mount->filesys->fstype);
+  }
+}
+
+/*++
  *      d o S e t
  *
  *  Set command processing routine.
@@ -995,7 +1051,7 @@ static void doSet(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("set", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if (*fname == '\0') {
       if (mount->filesys->set != NULL)
         (*mount->filesys->set)(mount, unit, present);
@@ -1029,7 +1085,7 @@ static void doInfo(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("info", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if (*fname == '\0')
       (*mount->filesys->info)(mount, unit, present);
     else fprintf(stderr, "info: Does not expect a file name\n");
@@ -1060,7 +1116,7 @@ static void doDir(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("dir", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     (*mount->filesys->dir)(mount, unit, fname);
     return;
   }
@@ -1091,7 +1147,7 @@ static void doDump(void)
   void *file;
   uint8_t unit, present;
 
-  if ((mount = findMount("dump", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if ((file = (*mount->filesys->openFileR)(mount, unit, fname)) != NULL) {
       unsigned int offset = 0, datasz = 2;
       uint8_t data1;
@@ -1210,8 +1266,8 @@ static void doCopy(void)
   void *fileSrc, *fileDest;
   char *endptr;
 
-  mountSrc = findMount("copy", words[0], &unitSrc, &presentSrc, &fnameSrc);
-  mountDest = findMount("copy", words[1], &unitDest, &presentDest, &fnameDest);
+  mountSrc = findMount(words[0], &unitSrc, &presentSrc, &fnameSrc);
+  mountDest = findMount(words[1], &unitDest, &presentDest, &fnameDest);
 
   if ((mountSrc != NULL) && (mountDest != NULL)) {
     fsSrc = mountSrc->filesys;
@@ -1300,7 +1356,7 @@ static void doType(void)
    */
   SWSET('a');
 
-  if ((mount = findMount("type", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if ((file = (*mount->filesys->openFileR)(mount, unit, fname)) != NULL) {
       char buf[BFRSIZ];
       size_t len, i;
@@ -1344,7 +1400,7 @@ static void doDelete(void)
   void *file;
   uint8_t unit, present;
 
-  if ((mount = findMount("delete", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if (mount->filesys->deleteFile != NULL) {
       if ((mount->flags & FS_READONLY) == 0) {
         if ((file = (*mount->filesys->openFileR)(mount, unit, fname)) != NULL)
@@ -1479,6 +1535,9 @@ static void doHelp(void)
     "Create a new container file with an empty file system. The \"-t type\"\n"
     "switch may be used to control the size of the container file, this\n"
     "switch is file-system dependent.\n\n"
+    "  mkdir [-p] dev:dirspec\n\n"
+    "Create a new empty directory on a mounted file system. The \"-p\"\n"
+    "switch may be used to create any missing intermediate directories.\n\n"
     "  set dev: args ...\n\n"
     "Set parameter(s) on a mounted file system.\n\n"
     "  info dev:\n\n"
@@ -1597,7 +1656,7 @@ static void doRewind(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("rewind", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if ((mount->filesys->flags & FS_TAPE) == 0) {
       fprintf(stderr, "rewind: Command only valid on magtapes\n");
       return;
@@ -1633,7 +1692,7 @@ static void doEOM(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("eom", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if ((mount->filesys->flags & FS_TAPE) == 0) {
       fprintf(stderr, "eom: Command only valid on magtapes\n");
       return;
@@ -1670,7 +1729,7 @@ static void doSkipForw(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("skipf", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if ((mount->filesys->flags & FS_TAPE) == 0) {
       fprintf(stderr, "skipf: Command only valid on magtapes\n");
       return;
@@ -1716,7 +1775,7 @@ static void doSkipRev(void)
   char *fname;
   uint8_t unit, present;
 
-  if ((mount = findMount("skipf", words[0], &unit, &present, &fname)) != NULL) {
+  if ((mount = findMount(words[0], &unit, &present, &fname)) != NULL) {
     if ((mount->filesys->flags & FS_TAPE) == 0) {
       fprintf(stderr, "skipr: Command only valid on magtapes\n");
       return;
@@ -1869,6 +1928,7 @@ static void FSioExecute(
       /*
        * Execute the command.
        */
+      command = cmdTable[idx].name;
       (*cmdTable[idx].func)();
     } else fprintf(stderr, "Unknown command \"%s\"\n", words[0]);
   }
