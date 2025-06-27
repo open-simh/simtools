@@ -1,7 +1,7 @@
 /*
  * IMD -> DSK (pure data) file converter
  *
- * Copyright (c) 2024 Tony Lawrence
+ * Copyright (c) 2024-2025 Tony Lawrence
  *
  * Redistribution and use in source and binary forms, with or
  * without modification, are permitted provided that the
@@ -40,6 +40,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -69,8 +70,8 @@ typedef  int32_t        int4;
 /* IMD track header */
 PACKED(struct S_IMDTrkHdr {
     uint1       mode;               /* Track write mode (check only)    */
-    uint1       cyl;                /* Cylinder #                       */
-    uint1       head;               /* Head(side) 0|1 and map flags     */
+    uint1       cyl;                /* Physical cylinder #              */
+    uint1       head;               /* Phys head(side) 0|1 and map flags*/
     uint1       nsect;              /* Number of sectors to follow      */
     uint1       ssize;              /* Sector size or 0xFF for size tbl */
 });
@@ -189,7 +190,7 @@ static int/*bool*/ x_skip_sector(FILE* fp, uint2 ssize)
         return 0/*false*/;
     if (ch < 0  ||  ch > 8)
         return 0/*false*/;
-    if (ch == 0)
+    if (!ch)
         return 1/*true*/;
     return fseek(fp, ch & 1 ? ssize : 1, SEEK_CUR) == 0 ? 1/*T*/ : 0/*F*/;
 }
@@ -200,8 +201,15 @@ static int cyls = 0;
 static int heads = 0;
 static int sectors = 0;
 static int sector_size = 0;
+static uint1 sector_filler = 0;
+static uint1 sector[SECTOR_SIZE_MAX];
+
+#define DA(C, H, S)     (((C) * heads + (H)) * sectors + (S) - one_based)
+#define DA_OFFSET(da)   ((da) * sector_size)
+
 
 /* Sector numbering */
+static int no_maps = 0;         /* =1 no cyl/head maps; =2 no sector maps, either */
 static int max_sect = 0;
 static int zero_sect = 0;
 static int one_based = 1;
@@ -211,7 +219,6 @@ static int one_based = 1;
 static int x_scan_tracks(FILE* fp, const char* file)
 {
     const char* problem = 0;
-    uint1 smap[256];
     char buf[80];
     int track;
 
@@ -259,23 +266,29 @@ static int x_scan_tracks(FILE* fp, const char* file)
         }
         if (heads <= n)
             heads++;
+        if (cyls <= hdr.cyl)
+            cyls  = hdr.cyl + 1;
         if (!hdr.nsect)
             continue;
         if (sectors < hdr.nsect)
             sectors = hdr.nsect;
-        if (fread(smap, hdr.nsect, 1, fp) != 1) {
-            problem = "Cannot read sector map";
-            goto out;
-        }
-        for (n = 0;  n < hdr.nsect;  ++n) {
-            if (!smap[n]) {
-                ++zero_sect;
-                continue;
+        if (no_maps < 2) {
+            uint1 smap[256];
+            if (fread(smap, hdr.nsect, 1, fp) != 1) {
+                problem = "Cannot read sector map";
+                goto out;
             }
-            if (max_sect < smap[n])
-                max_sect = smap[n];
-        }
-        skip = 0;
+            for (n = 0;  n < hdr.nsect;  ++n) {
+                if (!smap[n]) {
+                    ++zero_sect;
+                    continue;
+                }
+                if (max_sect < smap[n])
+                    max_sect = smap[n];
+            }
+            skip = 0;
+        } else
+            skip = hdr.nsect;
         if (hdr.head & SECTOR_CYL_MAP)
             skip += hdr.nsect;
         if (hdr.head & SECTOR_HEAD_MAP)
@@ -349,14 +362,13 @@ static int/*bool*/ x_extract_sector(int C, int H, int S, int track,
                                     FILE* in,  const char* infile,
                                     FILE* out, const char* outfile)
 {
-    static uint1 sector[SECTOR_SIZE_MAX];
     int/*bool*/ duplicate = 0/*false*/;
     const char* problem = 0;
     const char* file = 0;
     int ch;
 
     /* Disk Address */
-    int da = (C * heads + H) * sectors + S - one_based;
+    long da = DA(C, H, S);
     assert(0 <= da  &&  da < cyls * heads * sectors);
 
     if (map[da >> 3] & (1 << (da & 7))) {
@@ -377,17 +389,17 @@ static int/*bool*/ x_extract_sector(int C, int H, int S, int track,
     case 0:
         problem = "Sector data unavailable";
         break;
-    case 1: case 2:
+    case 2: case 1:
         /* normal sector data */
         assert(!problem);
         break;
-    case 3: case 4:
+    case 4: case 3:
         problem = "Deleted data";
         break;
-    case 5: case 6:
+    case 6: case 5:
         problem = "Sector data with error";
         break;
-    case 7: case 8:
+    case 8: case 7:
         problem = "Deleted data with error";
         break;
     default:
@@ -412,14 +424,14 @@ static int/*bool*/ x_extract_sector(int C, int H, int S, int track,
                 file = infile;
                 goto out;
             }
-        } /* else: technically it's still a "compressed" sector */
+        } else/* technically it's still a "compressed" sector */
+            ch = sector_filler;
         memset(sector, ch, sector_size);
         if (!duplicate)
             ++n_compressed;
     }
 
-    da *= sector_size;
-    if (fseek(out, da, SEEK_SET) != 0) {
+    if (fseek(out, DA_OFFSET(da), SEEK_SET) != 0) {
         problem = "File positioning error";
         file = outfile;
         goto out;
@@ -442,7 +454,7 @@ out:
 }
 
 
-static int/*bool*/ x_extract_track(int track, int/*bool*/ no_map,
+static int/*bool*/ x_extract_track(int track,
                                    FILE* in,  const char* infile,
                                    FILE* out, const char* outfile)
 {
@@ -466,12 +478,15 @@ static int/*bool*/ x_extract_track(int track, int/*bool*/ no_map,
     if (!hdr.nsect)
         return 1/*true*/;
 
-    if (fread(smap, hdr.nsect, 1, in) != 1) {
-        problem = "Cannot read sector map";
-        goto out;
-    }
-    skip = 0;
-    if (no_map) {
+    if (no_maps < 2) {
+        if (fread(smap, hdr.nsect, 1, in) != 1) {
+            problem = "Cannot read sector map";
+            goto out;
+        }
+        skip = 0;
+    } else
+        skip = hdr.nsect;
+    if (no_maps) {
         if (hdr.head & SECTOR_CYL_MAP)
             skip += hdr.nsect;
         if (hdr.head & SECTOR_HEAD_MAP)
@@ -498,8 +513,8 @@ static int/*bool*/ x_extract_track(int track, int/*bool*/ no_map,
 
     for (n = 0;  n < hdr.nsect;  ++n) {
         int C = hdr.head & SECTOR_CYL_MAP  ? cmap[n] : hdr.cyl;
-        int H = hdr.head & SECTOR_HEAD_MAP ? hmap[n] : hdr.head & 0xF;
-        int S = smap[n];
+        int H = hdr.head & SECTOR_HEAD_MAP ? hmap[n] : hdr.head & 1;
+        int S = no_maps < 2                ? smap[n] : n + 1;
         if (verbose >= VERBOSE_SECTOR)
             fprintf(stderr, "Extracting: %d/%d/%d\n", C, H, S);
         if (C < 0  ||  C >= cyls) {
@@ -536,8 +551,9 @@ __attribute__((noreturn))
 #endif
 static void usage(const char* prog)
 {
-    fprintf(stderr, "%s [-i] [-v...] infile outfile\n\n", prog);
-    fprintf(stderr, "-i = Ignore cylinder / head maps\n"
+    fprintf(stderr, "%s [-i] [-i] [-c val] [-v...] infile outfile\n\n", prog);
+    fprintf(stderr, "-i = Ignore cylinder / head maps; second -i: Ignore sector maps, too\n"
+                    "-c = Use 'val' as byte-filler in missing sectors (default: 0)\n"
                     "-v = Increase verbosity with each occurrence\n");
     exit(2);
 }
@@ -554,8 +570,6 @@ static void usage(const char* prog)
 
 int main(int argc, char* argv[])
 {
-    /* whether to ignore cyl / head maps */
-    int/*bool*/ no_map = 0/*false*/;
     const char* infile;
     const char* outfile;
     int p, q, tracks;
@@ -570,11 +584,20 @@ int main(int argc, char* argv[])
                 ++verbose;
                 continue;
             }
+            if (strcmp(argv[p], "-c") == 0) {
+                char* end;
+                errno = 0;
+                if (sector_filler  ||  !argv[++p]  ||
+                    !(sector_filler = strtol(argv[p], &end, 0))  ||  errno  ||  *end) {
+                    usage(argv[0]);
+                }
+                continue;
+            }
             if (strcmp(argv[p], "-i") != 0)
                 break;
-            if (no_map)
+            if (no_maps > 1)
                 usage(argv[0]);
-            no_map = 1/*ignore map*/;
+            ++no_maps;
         } while (argv[++p]);
     }
     if (p < argc  &&  strcmp(argv[p], "--") == 0)
@@ -602,7 +625,7 @@ int main(int argc, char* argv[])
     assert(heads <= 2  &&  sectors <= 255  &&  sector_size <= SECTOR_SIZE_MAX);
 
     if (heads <= 0  ||  sectors  <= 0  ||  sector_size <= 0
-        ||  (cyls = (tracks + heads - 1) / heads) <= 0  ||  255 < cyls) {
+        ||  cyls < (tracks + heads - 1) / heads  ||  255 < cyls) {
         fprintf(stderr, "%s: Failed to determine disk geometry, sorry\n", infile);
         return EXIT_FAILURE;
     }
@@ -633,10 +656,12 @@ int main(int argc, char* argv[])
     }
 
     for (p = 0;  p < tracks;  ++p) {
-        if (!x_extract_track(p, no_map, in, infile, out, outfile))
+        if (!x_extract_track(p, in, infile, out, outfile))
             return EXIT_FAILURE;
     }
 
+    if (sector_filler)
+        memset(sector, sector_filler, sector_size);
     for (p = 0;  p < q;  p += 8) {
         int k, n = p >> 3;
         if (map[n] == (1 << 8) - 1)
@@ -651,8 +676,17 @@ int main(int argc, char* argv[])
             S %= sectors;
             C  = H / heads;
             H %= heads;
+            S += one_based;
             fprintf(stderr, "%s: WARNING -- Sector not stored: %d/%d/%d\n",
-                    outfile, C, H, S + one_based);
+                    outfile, C, H, S);
+            if (sector_filler) {
+                long da = DA(C, H, S);
+                assert(0 <= da  &&  da < cyls * heads * sectors);
+                if (fseek(out, DA_OFFSET(da), SEEK_SET) != 0
+                    ||  fwrite(sector, sector_size, 1, out) != 1) {
+                    fprintf(stderr, "%s: Error writing sector filler\n", outfile);
+                }
+            }
         }
     }
 
