@@ -44,6 +44,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define SECTOR_MIN_SIZE 128
+#define SECTOR_MAX_SIZE 512
+
 
 inline
 static size_t filesize(FILE* fp)
@@ -162,8 +165,8 @@ int main(int argc, char* argv[])
             break;
         case 'B':
             sector_size = atoi(optarg);
-            if ((sector_size & (sector_size - 1))
-                ||  sector_size < 128  ||  sector_size > 512) {
+            if (sector_size < SECTOR_MIN_SIZE  ||  sector_size > SECTOR_MAX_SIZE
+                ||  (sector_size & (sector_size - 1))) {
                 sector_size = 0;
             }
             break;
@@ -198,7 +201,7 @@ int main(int argc, char* argv[])
 
     if (!(in = fopen(infile, "rb"))) {
         perror(infile);
-        return 1;
+        return EXIT_FAILURE;
     }
 
     size = filesize(in);
@@ -206,18 +209,18 @@ int main(int argc, char* argv[])
     max_size = q * sector_size;
     if (size > max_size) {
         fprintf(stderr, "%s: file size (%zd) may not exceed %zu\n", infile, size, max_size);
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if (!(out = fopen(outfile, "wb"))) {
         perror(outfile);
-        return 1;
+        return EXIT_FAILURE;
     }
 
     rewind(in);
     round = lcm(sectors, interleave);
     for (p = 0;  p < q;  ++p) {
-        char sector[512];
+        static unsigned char sector[SECTOR_MAX_SIZE];
         int n = lbn2pbn(p);
 #ifdef _DEBUG
         printf("LBN %4d (%2d / %2d)   =   PBN %4d (%2d / %2d)\n",
@@ -236,5 +239,5 @@ int main(int argc, char* argv[])
 
     fclose(out);
     fclose(in);
-    return 0;
+    return EXIT_SUCCESS;
 }

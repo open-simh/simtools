@@ -27,7 +27,7 @@ gt7cvt | Convert a gt7 magtape dump to a SIMH magtape
 hpconvert | Convert an HP disc image between SIMH and HPDrive formats
 imd2dsk | Convert an ImageDisk (IMD) file to DSK (pure data)
 indent | Convert simulator sources to 4-column tabs
-lbn2pbn | Logical-to-physical converter for single-sided floppy disk images
+lbn2pbn | Logical-to-physical (and reverse) converter for single-sided floppy disk images
 littcvt | Remove density maker from litt format tapes
 m8376 | Assembles 8 PROM files into a 32bit binary file
 mt2tpc | Convert a simh simulated magtape to TPC format
