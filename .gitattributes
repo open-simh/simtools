@@ -1,0 +1,4 @@
+*.vcxproj text=crlf
+*.vcxproj.filters text=crlf
+*.sln text=crlf
+* text=auto
