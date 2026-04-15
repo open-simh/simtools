@@ -1,6 +1,7 @@
 /*
- * Routines for reading from an RSX-11 M+ macro library (like RSXMAC.SML)
+ * Routines for reading from an RSX-11M/M-PLUS macro library (like RSXMAC.SML)
  */
+
 /*
 Copyright (c) 2001, Richard Krehbiel
 Copyright (c) 2015, 2017, Olaf Seibert
@@ -146,14 +147,14 @@ DAMAGE.
  *  +------------------------------+------------------------------+
  */
 
-#include <stdio.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "mlb.h"
 #include "rad50.h"
 #include "stream2.h"
-#include "mlb.h"
 #include "util.h"
 
 #define MLBDEBUG_OPEN           0
@@ -171,11 +172,11 @@ static void     mlb_rsx_extract(
     MLB *mlb);
 
 struct mlb_vtbl mlb_rsx_vtbl = {
-    .mlb_open    = mlb_rsx_open,
-    .mlb_entry   = mlb_rsx_entry,
-    .mlb_extract = mlb_rsx_extract,
-    .mlb_close   = mlb_rsx_close,
-    .mlb_is_rt11 = 0,
+    /* .mlb_open    = */ mlb_rsx_open,
+    /* .mlb_entry   = */ mlb_rsx_entry,
+    /* .mlb_extract = */ mlb_rsx_extract,
+    /* .mlb_close   = */ mlb_rsx_close,
+    /* .mlb_is_rt11 = */ 0,
 };
 
 #define BLOCKSIZE               512
@@ -280,7 +281,7 @@ MLB            *mlb_rsx_open(
 
         for (i = 0, j = nr_entries; i < j; i++) {
             char           *ent1,
-                           *ent2;
+                           *ent2 = NULL;
             int             w1, w2;
 
             ent1 = buff + (i * entsize);
@@ -488,6 +489,7 @@ BUFFER         *mlb_rsx_entry(
         i = ent->length;
         while (i > 0) {
             int length;
+            int padded;
 
 #if MLBDEBUG_ENTRY
             fprintf(stderr, "file offset:$%lx\n", (long)ftell(mlb->fp));
@@ -502,7 +504,8 @@ BUFFER         *mlb_rsx_entry(
 #endif
 
             /* Odd lengths are padded with an extra 0 byte */
-            int padded = length & 1;
+            padded = length & 1;
+
             if (length > i) {
                 fprintf(stderr, "line length %d > remaining archive member %d\n", length, i);
                 length = i;
@@ -518,7 +521,7 @@ BUFFER         *mlb_rsx_entry(
                 if (c == '\r' || c == 0)   /* If it's a carriage return or 0,
                                               discard it. */
                     continue;
-                *bp++ = c;
+                *bp++ = (char) c;
             }
             *bp++ = '\n';
             if (padded) {
@@ -538,7 +541,7 @@ BUFFER         *mlb_rsx_entry(
             if (c == '\r' || c == 0)       /* If it's a carriage return or 0,
                                               discard it. */
                 continue;
-            *bp++ = c;
+            *bp++ = (char) c;
         }
     }
 
@@ -571,9 +574,10 @@ void mlb_rsx_extract(
         buf = mlb_entry(mlb, mlb->directory[i].label);
         if (buf != NULL) {
             char *suffix = mlb->is_objlib ? "OBJ" : "MAC";
+            int   length = buf->length;
+
             sprintf(name, "%s.%s", mlb->directory[i].label, suffix);
             fp = fopen(name, "w");
-            int length = buf->length;
             fwrite(buf->buffer, 1, length, fp);
             fclose(fp);
             buffer_free(buf);

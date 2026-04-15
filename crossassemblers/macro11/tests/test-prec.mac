@@ -101,3 +101,11 @@ $
 
         1,2,3
         .1,.2,.3
+
+; Strange cases for ^R operator.  It turns out extra RAD50 characters
+; are ignored; processing starts at the next non-RAD50 character.
+	.word	^rRAD50CHARACTERS ; 070254 extra characters ignored
+	.word	^r  A..EXTRA	; 000001 extra characters ignored
+	.word	^r  A..EXTRA+1	; 000002 extra characters ignored
+
+        .end

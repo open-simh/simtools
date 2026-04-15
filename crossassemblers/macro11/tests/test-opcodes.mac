@@ -59,7 +59,7 @@
         rol     @(r3)+
         asr     @(r3)+
         asl     @(r3)+
-        mark    #33
+        mark    33
         mfpi    @(r3)+
         mtpi    @(r3)+
         sxt     @(r3)+
@@ -200,10 +200,10 @@
         bcs     .
         blo     .       ; same
 
-        emt     #0      ; ...
-        emt     #255.
-        trap    #0      ; ...
-        trap    #255.
+        emt     0       ; ...
+        emt     255.
+        trap    0       ; ...
+        trap    255.
 
         clrb    @(r3)+
         comb    @(r3)+

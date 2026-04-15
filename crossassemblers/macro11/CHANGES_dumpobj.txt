@@ -1,0 +1,68 @@
+
+----------- Mike Hill's entries ------------------
+
+13-Feb-2023: Mike Hill
+        - dumpobj.c
+          RLD 'global reloc' records now count as bad records for LDA output
+          Minor 'LDA output' error message changes etc.
+          #define XFERAD_WHEN_ZERO 2 instead of using a constant (2)
+          #define VERSION to 13-Feb-2023
+
+11-Feb-2023: Mike Hill
+        - dumpobj.c
+          Only compile the auto-detect code #if DEFAULT_OBJECTFORMAT_RT11 < 0
+          #include "git-info.h" #if !defined(SKIP_GIT_INFO)
+          Show the GIT_VERSION and GIT_AUTHOR_DATE if available
+          #define VERSION to 11-Feb-2023
+
+08-Feb-2023: Mike Hill
+        - dumpobj.c
+          Fixed gcc warnings (embedded comments; int<unsigned; shadowed 'cp', etc.)
+          Removed trailing newline if no errors are reported
+
+04-Feb-2023: Mike Hill
+        - dumpobj.c
+          Added -h option to show the help text and examples
+
+02-Feb-2023: Mike Hill
+        Enhancements (fixes) to dumpobj
+        - dumpobj.c
+          LDA output will not write data > MAX_LDA_ADDR
+          Added command options:
+            -align    : aligns GSD fields (easier to read)
+            -noalign  : GSD format remains the same as previous versions
+            -nosort   : does not sort the GSD entries (preserves OBJ order)
+            -of <org> : same as '-o' but does not relocate 'internal' RLDs
+            -w <...>  : add patch words to the LDA file
+            -x        : provide a new LDA transfer address
+          Summary '-s' now shows a list of PSECTs (currently disabled)
+          Error message if an LDA file is written with more than one PSECT with data
+
+01-Feb-2023: Mike Hill
+        Enhancements (fixes) to dumpobj
+        - dumpobj.c
+          Now writes the relocated 'Internal' RLD to the LDA output
+          Added -o <origin> for LDA output
+          Made CSECT + VSECT + 'COMPRTN' + LIBHDR + LIBEND a 'badbin'
+
+31-Jan-2023: Mike Hill
+        Enhancements to dumpobj
+        - dumpobj.c
+          Implement auto-detection of object type when -rt11 and -rsx not specified
+            #define DEFAULT_OBJECTFORMAT_RT11 -1 /* Enables this option */
+          Added '-q' [quiet] and '-qt' [quiet-text] and '-s' [summary] options
+          Changed the usage text accordingly and added information about dumpobj
+          Count bad format (badfmt) and bad binary errors (badbin)
+
+05-Jan-2023: Mike Hill
+        Compile with /W4 (warning level 4) with _CRT_SECURE_NO_WARNINGS
+          In order to get the maximum error checking possible for future edits
+
+04-Jan-2023: Mike Hill
+        Restored portability with C/C++ from Microsoft Visual Studio 9.0
+          Microsoft (R) 32-bit C/C++ Version 15.00.30729.01 for 80x86
+          Microsoft (R) Incremental Linker Version 9.00.30729.01
+          Compile with /W3 (warning level 3) with _CRT_SECURE_NO_WARNINGS
+        - dumpobj.c:
+          For WIN32, use stricmp() instead of strcasecmp()
+          Comment out memcheck() because it is duplicated from util.h
