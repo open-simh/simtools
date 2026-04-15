@@ -325,11 +325,12 @@ EX_TREE        *evaluate_rec(
 
             /* Change some symbols to "undefined" */
 
+#if !DISABLE_EXTREE_IF_DF_NDF
             if (flags & EVALUATE_DEFINEDNESS) {
                 int             is_undefined = 0;
 
                 /* I'd prefer this behavior, but MACRO.SAV is a bit too primitive. */
-#if 0
+#if NODO
                 /* A temporary symbol defined later is "undefined." */
                 if (!(sym->flags & PERMANENT) && sym->stmtno > stmtno)
                     is_undefined = 1;
@@ -351,11 +352,20 @@ EX_TREE        *evaluate_rec(
                     break;
                 }
             }
+#endif
 
             /* Turn defined absolute symbol to a literal */
             if (!(sym->section->flags & PSECT_REL)
                 && !SYM_IS_IMPORTED(sym)) {
+
+#if DISABLE_EXTREE_IF_DF_NDF
                 res = new_ex_lit(sym->value);
+#else
+                if (flags & EVALUATE_DEFINEDNESS && !sym->value)
+                    res = new_ex_lit(1);
+                else
+                    res = new_ex_lit(sym->value);
+#endif
 
                 if (sym->section->type == SECTION_REGISTER) {
                     *outflags |= EVALUATE_OUT_IS_REGISTER;
@@ -624,6 +634,14 @@ EX_TREE        *evaluate_rec(
                 break;
             }
 
+            if (right->type == EX_LIT &&        /* Symbol times -1 == -symbol */
+                right->data.lit == 0xffff) {
+                res = evaluate(new_ex_una(EX_NEG, left), 0);
+                free_tree(left);
+                free_tree(right);
+                break;
+            }
+
             /* Associative: <A*x>*y == A*<x*y> */
             /* If x*y is constant, I can do this math. */
             /* Is this safe?  I will potentially be doing it */
@@ -652,20 +670,58 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            left  = evaluate_rec(tp->data.child.left,  flags, outflags);
             right = evaluate_rec(tp->data.child.right, flags, outflags);
+
+            /* Optimize if right == -1 || 0 || +1 */
+            if (right->type == EX_LIT) {
+                if (right->data.lit == 0) {
+                    /* Can't divide by zero - V05.05 returns 0 without error */
+
+                    /* Note that the RSX-11M/PLUS task builder does not allow
+                     * a divide-by-zero with the following error message ...
+                     * TKB -- *DIAG*-Complex relocation error-divide by zero module x */
+
+                    /* Handle divide by zero (= 0) */
+                    if (!RELAXED)
+                        res = ex_err(new_ex_lit(0), right->cp);
+                    else
+                        res = new_ex_lit(0);
+                    free_tree(left);
+                    free_tree(right);
+                    break;
+                }
+
+                if (right->data.lit == 1) {
+                    /* Handle divide by one (= left) */
+                    res = left;
+                    free_tree(right);
+                    break;
+                }
+
+                if (right->type == EX_LIT &&
+                    right->data.lit == 0xffff) {
+                    /* Handle divide by minus-one (= -left) */
+                    res = evaluate(new_ex_una(EX_NEG, left), 0);
+                    free_tree(left);
+                    free_tree(right);
+                    break;
+                }
+            }
 
             /* Can only divide if both are literals */
             if (left->type == EX_LIT && right->type == EX_LIT) {
-                res = new_ex_lit(left->data.lit / right->data.lit);
-                free_tree(left);
-                free_tree(right);
-                break;
-            }
+                int             dividend = (int) left->data.lit  & 0xffff;
+                int             divisor  = (int) right->data.lit & 0xffff;
 
-            if (right->type == EX_LIT &&        /* Symbol divided by 1 == symbol */
-                right->data.lit == 1) {
-                res = left;
+                if (dividend & 0x8000)
+                    dividend =  dividend - 0x10000;
+
+                if (divisor & 0x8000)
+                    divisor = divisor - 0x10000;
+
+                res = new_ex_lit(dividend / divisor);
+                free_tree(left);
                 free_tree(right);
                 break;
             }
@@ -770,43 +826,57 @@ EX_TREE        *evaluate_rec(
             EX_TREE        *left,
                            *right;
 
-            left = evaluate_rec(tp->data.child.left, flags, outflags);
+            left  = evaluate_rec(tp->data.child.left,  flags, outflags);
             right = evaluate_rec(tp->data.child.right, flags, outflags);
 
-            /* Operate if both are literals */
-            if (left->type == EX_LIT && right->type == EX_LIT) {
-                int shift = right->data.lit;
-                if (shift < 0)
-                    res = new_ex_lit(left->data.lit >> -shift);
-                else
-                    res = new_ex_lit(left->data.lit << shift);
-                free_tree(left);
-                free_tree(right);
-                break;
-            }
-
-            if (right->type == EX_LIT &&        /* Symbol shifted 0 == symbol */
-                right->data.lit == 0) {
+            /* Zero shifted by anything == 0 */
+            if (left->type == EX_LIT &&
+                left->data.lit == 0) {
                 res = left;
                 free_tree(right);
                 break;
             }
 
-            if (right->type == EX_LIT &&        /* Anything shifted 16 == 0 */
-                ((int)right->data.lit > 15 ||
-                 (int)right->data.lit < -15)) {
-                res = new_ex_lit(0);
-                free_tree(left);
-                free_tree(right);
-                break;
-            }
+            if (right->type == EX_LIT) {
+                int             shift = right->data.lit;
 
-            if (right->type == EX_LIT) {        /* Other shifts become * or / */
-                int shift = right->data.lit;
+                /* Symbol shifted 0 == symbol */
+                if (shift == 0) {
+                    res = left;
+                    free_tree(right);
+                    break;
+                }
+
+                if (shift & 0x8000)
+                    shift = shift - 0x10000;
+
+                /* Anything shifted 16 == 0 */
+                if (shift > 15 || shift < -15) {
+                    res = new_ex_lit(0);
+                    free_tree(left);
+                    free_tree(right);
+                    break;
+                }
+
+                /* Operate if both are literals */
+                if (left->type == EX_LIT) {
+                    if (shift < 0)
+                        res = new_ex_lit(left->data.lit >> -shift);
+                    else
+                        res = new_ex_lit(left->data.lit << shift);
+                    free_tree(left);
+                    free_tree(right);
+                    break;
+                }
+
+                /* Other shifts become '*' or '/' */
                 if (shift > 0)
                     res = new_ex_bin(EX_MUL, left, new_ex_lit(1 << shift));
-                else
-                    res = new_ex_bin(EX_DIV, left, new_ex_lit(1 << -shift));
+                else {  /* (shift < 0) */
+                    res = new_ex_bin(EX_AND, left, new_ex_lit(~(0x7fff >> (-shift-1))));
+                    res = new_ex_bin(EX_DIV, res,  new_ex_lit(1 << -shift));
+                    res = new_ex_bin(EX_AND, res,  new_ex_lit(0x7fff >> (-shift-1)));
+                }
                 free_tree(right);
                 break;
             }
@@ -854,18 +924,25 @@ EX_TREE        *evaluate(
         res = evaluate_rec(tp, flags, &outflags);
 
         if (outflags & EVALUATE_OUT_IS_REGISTER) {
-            int regno = get_register(res);
+            int             regno = get_register(res);
 
             if (regno == NO_REG) {
-                report(NULL, "Register expression out of range.\n");
+                report_err(NULL, "Register expression out of range\n");
 #if DEBUG_REGEXPR
                 print_tree(stderr, tp, 0);
                 print_tree(stderr, res, 0);
 #endif /* DEBUG_REGEXPR */
                 /* TODO: maybe make this a EX_TEMP_SYM? */
-                res = ex_err(res, res->cp);
+                {
+                    EX_TREE        *newresult = new_ex_tree(EX_SYM);
+
+                    newresult->cp = res->cp;
+                    newresult->data.symbol = REG_ERR;
+                    free_tree(res);
+                    res = newresult;
+                }
             } else {
-                EX_TREE *newresult = new_ex_tree(EX_SYM);
+                EX_TREE        *newresult = new_ex_tree(EX_SYM);
 
                 newresult->cp = res->cp;
                 newresult->data.symbol = reg_sym[regno];
@@ -915,7 +992,7 @@ EX_TREE        *new_ex_lit(
     EX_TREE        *tp;
 
     tp = new_ex_tree(EX_LIT);
-    tp->data.lit = value;
+    tp->data.lit = value & 0xffff;  /* Force to 16-bits */
 
     return tp;
 }

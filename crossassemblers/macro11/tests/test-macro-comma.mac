@@ -68,3 +68,5 @@ start:  tstarg          ; 0 args
 	tstdef	a=5,b=4
 	tstdef	,a=5,b=4	; Strange case seen in some sources
 	tstdef	a=5,a=4		; Duplicate keyword argument -- legal!
+
+        .end

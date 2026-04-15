@@ -1,3 +1,5 @@
+/* Routines to open and read entries from a macro library */
+
 /*
 Copyright (c) 2017, Olaf Seibert
 All rights reserved.
@@ -33,9 +35,12 @@ DAMAGE.
 
 #include <stdlib.h>
 #include <string.h>
-#include "util.h"
+
 #include "mlb.h"
+
+#include "listing.h"
 #include "object.h"
+#include "util.h"
 
 MLB_VTBL *mlb_vtbls[] = {
     &mlb_rsx_vtbl,
@@ -52,7 +57,7 @@ static MLB     *mlb_open_fmt(
     MLB *mlb = NULL;
     int i;
 
-    for (i = 0; (vtbl = mlb_vtbls[i]); i++) {
+    for (i = 0; (vtbl = mlb_vtbls[i]),vtbl; i++) {
         if (vtbl->mlb_is_rt11 == object_format) {
             mlb = vtbl->mlb_open(name, allow_object_library);
             if (mlb != NULL) {
@@ -103,4 +108,25 @@ void     mlb_extract(
     mlb->vtbl->mlb_extract(mlb);
 }
 
+void     mlb_list(
+    MLB *mlb,
+    FILE *fp)
+{
+    int             i;
+    BUFFER         *buf;
 
+    for (i = 0; i < mlb->nentries; i++) {
+        if (fp == NULL) { /* List-only to stdout */
+            printf("    %s\n", mlb->directory[i].label);
+        } else {          /* Store all macros to a single file */
+            buf = mlb_entry(mlb, mlb->directory[i].label);
+            if (buf != NULL) {
+                if (auto_page_break && i != 0) {
+                    list_throw_page(TRUE);
+                }
+                fwrite(buf->buffer, 1, buf->length, fp);
+                buffer_free(buf);
+            }
+        }
+    }
+}

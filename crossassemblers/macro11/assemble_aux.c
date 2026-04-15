@@ -1,22 +1,21 @@
-
 /*
- Smaller operators for assemble
-*/
+ * Smaller operators for assemble
+ */
 
+#include <assert.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
-#include "util.h"
+#include "assemble_aux.h"  /* My own definitions */
 
-#include "assemble_aux.h"              /* my own definitions */
-
-#include "assemble_globals.h"
-#include "macros.h"
 #include "assemble.h"
+#include "assemble_globals.h"
 #include "listing.h"
-#include "symbols.h"
+#include "macros.h"
 #include "parse.h"
+#include "symbols.h"
+#include "util.h"
 
 
 /* Allocate a new section */
@@ -34,7 +33,6 @@ SECTION        *new_section(
     sect->label = NULL;
     return sect;
 }
-
 
 
 /* This is called by places that are about to store some code, or
@@ -63,6 +61,7 @@ void change_dot(
         current_pc->section->size = DOT + size;
 }
 
+
 /* store_word stores a word to the object file and lists it to the
    listing file */
 
@@ -72,12 +71,16 @@ int store_word(
     int size,
     unsigned word)
 {
+    if (size == 1)
+        if((word & 0x8000) ? word < 0xff00 : word > 0xff)
+            report_warn(str, "Truncated BYTE %o to %o\n", word, word & 0xff);
     change_dot(tr, size);
     list_word(str, DOT, word, size, "");
     return text_word(tr, &DOT, size, word);
 }
 
-/* store_word stores a word to the object file and lists it to the
+
+/* store_displaced_word stores a word to the object file and lists it to the
    listing file */
 
 static int store_displaced_word(
@@ -171,22 +174,21 @@ void free_addr_mode(
     mode->offset = NULL;
 }
 
+
 /* Get the register indicated by the expression */
 
 unsigned get_register(
     EX_TREE *expr)
 {
-    unsigned        reg;
+    unsigned        reg = 0xE;  /* Invalid register number */
 
-    if (expr->type == EX_LIT && expr->data.lit <= 7) {
+    if (expr->type == EX_LIT)
         reg = expr->data.lit;
-        return reg;
-    }
-
-    if (expr->type == EX_SYM && expr->data.symbol->section->type == SECTION_REGISTER) {
+    else if (expr->type == EX_SYM && expr->data.symbol->section->type == SECTION_REGISTER)
         reg = expr->data.symbol->value;
+
+    if (reg <= 7)
         return reg;
-    }
 
     return NO_REG;
 }
@@ -201,7 +203,7 @@ unsigned get_register(
 void implicit_gbl(
     EX_TREE *value)
 {
-    if (pass || !value)
+    if (pass > PASS1 || !value)
         return;                        /* Only do this in first pass */
 
     switch (num_subtrees(value)) {
@@ -209,13 +211,14 @@ void implicit_gbl(
         switch (value->type) {
         case EX_UNDEFINED_SYM:
             {
-                if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {
+                if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL) &&
+                    !isdigit((unsigned char) value->data.symbol->label[0])) {
                     /* Unless it's a local symbol, */
-                    if (enabl_gbl) {
+                    if (ENABL(GBL)) {
                         /* either make the undefined symbol into an
                            implicit global */
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
-                                &absolute_section, &implicit_st);
+                                &absolute_section, &implicit_st, NULL);  /* TODO: Use abs_section_addr() ? */
                     } else {
                         /* or add it to the undefined symbol table,
                            purely for listing purposes.
@@ -224,10 +227,10 @@ void implicit_gbl(
 #define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
 #if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                                &absolute_section, &symbol_st);
+                                &absolute_section, &symbol_st, stack);  /* TODO: Use abs_section_addr() ? */
 #else
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                                &absolute_section, &undefined_st);
+                                &absolute_section, &undefined_st, NULL);  /* TODO: Use abs_section_addr() ? */
 #endif
                     }
                 }
@@ -250,6 +253,7 @@ void implicit_gbl(
     }
 }
 
+
 /* Done between the first and second passes */
 /* Migrates the symbols from the "implicit" table into the main table. */
 
@@ -265,12 +269,20 @@ void migrate_implicit(
         if (sym) {
             continue;                  // It's already in there.  Great.
         }
+
+        if (isym->flags & SYMBOLFLAG_LOCAL)
+            continue;                  /* Do not attempt to migrate local symbols */
+                                       /* These are noticed on pass 1 but they will ...
+                                        * ... be reported as invalid expressions later */
+
         isym->flags |= SYMBOLFLAG_IMPLICIT_GLOBAL;
-        sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
+        sym = add_sym(isym->label, isym->value, isym->flags, isym->section,
+                      &symbol_st, NULL);
         // Just one other thing - migrate the stmtno
         sym->stmtno = isym->stmtno;
     }
 }
+
 
 /* Done between second pass and listing */
 /* Migrates the symbols from the "undefined" table into the main table. */
@@ -288,7 +300,8 @@ void migrate_undefined(
             continue;                  /* It's already in there.  Great. */
         }
         isym->flags |= SYMBOLFLAG_UNDEFINED; /* Just in case */
-        sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
+        sym = add_sym(isym->label, isym->value, isym->flags, isym->section,
+                      &symbol_st, NULL);
         /* Just one other thing - migrate the stmtno */
         sym->stmtno = isym->stmtno;
     }
@@ -337,6 +350,7 @@ int express_sym_offset(
 
     return 0;
 }
+
 
 /*
   Translate an EX_TREE into a TEXT_COMPLEX suitable for encoding
@@ -434,6 +448,7 @@ int complex_tree(
     }
 }
 
+
 /* store a word which is represented by a complex expression. */
 
 static void store_complex(
@@ -451,13 +466,14 @@ static void store_complex(
     text_complex_begin(&tx);           /* Open complex expression */
 
     if (!complex_tree(&tx, value)) {   /* Translate */
-        report(refstr, "Invalid expression (complex relocation)\n");
+        report_err(refstr, "Invalid expression (complex relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
         text_complex_commit(tr, &DOT, size, &tx, 0);
     }
 }
+
 
 /* store_complex_displaced is the same as store_complex but uses the
    "displaced" RLD code */
@@ -477,13 +493,14 @@ static void store_complex_displaced(
     text_complex_begin(&tx);
 
     if (!complex_tree(&tx, value)) {
-        report(refstr, "Invalid expression (complex displaced relocation)\n");
+        report_err(refstr, "Invalid expression (complex displaced relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
         text_complex_commit_displaced(tr, &DOT, size, &tx, 0);
     }
 }
+
 
 /*
   mode_extension - writes the extension word required by an addressing
@@ -559,6 +576,7 @@ void mode_extension(
     free_addr_mode(mode);
 }
 
+
 /* eval_defined - take an EX_TREE and returns TRUE if the tree
    represents "defined" symbols. */
 
@@ -581,6 +599,7 @@ int eval_defined(
     }
 }
 
+
 /* eval_undefined - take an EX_TREE and returns TRUE if it represents
    "undefined" symbols. */
 
@@ -601,6 +620,7 @@ int eval_undefined(
     }
 }
 
+
 /* push_cond - a new conditional (.IF) block has been activated.  Push
    its context. */
 
@@ -614,6 +634,7 @@ void push_cond(
     conds[last_cond].file = memcheck(strdup(str->name));
     conds[last_cond].line = str->line;
 }
+
 
 /*
   pop_cond - pop stacked conditionals. */
@@ -646,6 +667,7 @@ void go_section(
     current_pc->section = sect;
     DOT = sect->pc;
 }
+
 
 /*
   store_value - used to store a value represented by an expression
@@ -682,6 +704,7 @@ void store_value(
     }
 }
 
+
 /* do_word - used by .WORD, .BYTE, and implied .WORD. */
 
 int do_word(
@@ -693,7 +716,7 @@ int do_word(
     int comma;
 
     if (size == 2 && (DOT & 1)) {
-        report(stack->top, ".WORD on odd boundary\n");
+        report_warn(stack->top, ".WORD on odd boundary [.EVEN implied]\n");
         store_word(stack->top, tr, 1, 0);       /* Align it */
     }
 
@@ -708,11 +731,23 @@ int do_word(
 
             if (value->type != EX_ERR && value->cp > cp) {
                 store_value(stack, tr, size, value);
-
                 cp = value->cp;
             } else {
-                report(stack->top, "Invalid expression in .WORD\n");
-                cp = "";                /* force loop to end */
+                char *byteword[] = { "BYTE", "WORD" };
+
+                if (value->type == EX_ERR &&
+                    value->cp != NULL &&
+                    value->data.child.right == NULL &&
+                    value->data.child.left != NULL &&
+                    value->data.child.left->type == EX_LIT) {
+                    report_warn(stack->top, "Invalid expression stored in .%s\n", byteword[size - 1]);
+
+                    store_value(stack, tr, size, value->data.child.left);
+                    cp = value->cp;
+                } else {
+                    report_err(stack->top, "Invalid expression in .%s\n", byteword[size - 1]);
+                    cp = "";                /* force loop to end */
+                }
             }
 
             free_tree(value);
@@ -727,6 +762,7 @@ int do_word(
     return 1;
 }
 
+
 /*
   check_branch - check branch distance.
 */
@@ -740,7 +776,7 @@ int check_branch(
     int             s_offset;
 
     if (offset & 1) {
-        report(stack->top, "Bad branch target (odd address)\n");
+        report_err(stack->top, "Bad branch target (odd address)\n");
     }
 
     /* Sign-extend */
@@ -753,10 +789,95 @@ int check_branch(
 
         /* printf can't do signed octal. */
         my_ltoa(s_offset, temp, 8);
-        report(stack->top, "Branch target out of range (distance=%s)\n", temp);
+        report_err(stack->top, "Branch target out of range (distance=%s)\n", temp);
         return 0;
     }
     return 1;
+}
+
+
+/* write_psect_globals writes out the psect header and globals for each psect */
+/* if gsd == NULL we only test the globals are unique and update the psect info */
+
+void write_psect_globals(
+    GSD *gsd)
+{
+    SYMBOL         *sym;
+    SECTION        *psect;
+    SYMBOL_ITER     sym_iter;
+    int             isect;
+    unsigned        nsyms = 0;
+    SYMBOL        **symbols = NULL;
+
+    /* TODO: Warnings if global symbols or PSECTs have '_' in them (?) */
+
+    /* Count the global symbols in the table */
+    for (sym = first_sym(&symbol_st, &sym_iter); sym != NULL; sym = next_sym(&symbol_st, &sym_iter))
+        if (sym->flags & SYMBOLFLAG_GLOBAL)
+            nsyms++;
+
+    /* Sort them by name */
+    if (nsyms) {
+        SYMBOL      **symbolp = symbols = memcheck(malloc(nsyms * sizeof (SYMBOL *)));
+
+        for (sym = first_sym(&symbol_st, &sym_iter); sym != NULL; sym = next_sym(&symbol_st, &sym_iter))
+            if (sym->flags & SYMBOLFLAG_GLOBAL)
+                *symbolp++ = sym;
+
+        qsort(symbols, nsyms, sizeof(SYMBOL *), symbol_compar);
+
+        if (nsyms > 1) {
+            unsigned      i = 0,
+                          j = 0;
+
+            while (++j < nsyms) {
+                if (symbols[i] && strncmp(symbols[i]->label, symbols[j]->label, 6) == 0) {
+                    if (strncmp(symbols[i]->label, symbols[j]->label, 6) == 0) {
+                        report_fatal(NULL, "Global symbol %s (in %s) causes %s (in %s) to be ignored\n",
+                            symbols[i]->label,
+                                (symbols[i]->section->label[0] == '\0') ? ". BLK." : symbols[i]->section->label,
+                            symbols[j]->label,
+                                (symbols[j]->section->label[0] == '\0') ? ". BLK." : symbols[j]->section->label);
+
+                        symbols[j] = NULL;
+                   }
+               } else {
+                   i = j;
+               }
+            }
+        }
+    }
+
+    /* write out each PSECT with its global stuff */
+    /* Sections must be written out in the order that they
+     * appear in the assembly file.  */
+    for (isect = 0; isect < sector; isect++) {
+        psect = sections[isect];
+
+        if (gsd)
+            gsd_psect(gsd, psect->label, psect->flags, psect->size);
+        psect->sector = isect;         /* Assign it a sector */
+        psect->pc = 0;                 /* Reset its PC for second pass */
+
+        if (gsd && nsyms) {
+            unsigned      i;
+
+            for (i = 0; i < nsyms; i++) {
+                if (symbols[i] && symbols[i]->section == psect) {
+                    gsd_global(gsd, symbols[i]->label,
+                               ((symbols[i]->flags & SYMBOLFLAG_DEFINITION) ? GLOBAL_DEF  : 0) |
+                               ((symbols[i]->flags & SYMBOLFLAG_WEAK)       ? GLOBAL_WEAK : 0) |
+                               ((symbols[i]->section->flags & PSECT_REL)    ? GLOBAL_REL  : 0) |
+                               0100,
+                               /* Looks undefined, but add it in anyway */
+                               symbols[i]->value);
+                }
+            }
+        }
+    }
+
+    if (nsyms)
+        free(symbols);
 }
 
 
@@ -766,19 +887,10 @@ void write_globals(
     FILE *obj)
 {
     GSD             gsd;
-    SYMBOL         *sym;
-    SECTION        *psect;
-    SYMBOL_ITER     sym_iter;
-    int             isect;
 
     if (obj == NULL) {
-        for (isect = 0; isect < sector; isect++) {
-            psect = sections[isect];
-
-            psect->sector = isect;     /* Assign it a sector */
-            psect->pc = 0;             /* Reset its PC for second pass */
-        }
-        return;                        /* Nothing more to do if no OBJ file. */
+        write_psect_globals(NULL);  /* Test the globals and fix up the psect if we don't have an object file */
+        return;
     }
 
     gsd_init(&gsd, obj);
@@ -788,46 +900,27 @@ void write_globals(
     if (ident)
         gsd_ident(&gsd, ident);
 
-    /* write out each PSECT with its global stuff */
-    /* Sections must be written out in the order that they
-       appear in the assembly file.  */
-    for (isect = 0; isect < sector; isect++) {
-        psect = sections[isect];
+    write_psect_globals(&gsd);
 
-        gsd_psect(&gsd, psect->label, psect->flags, psect->size);
-        psect->sector = isect;         /* Assign it a sector */
-        psect->pc = 0;                 /* Reset its PC for second pass */
-
-        sym = first_sym(&symbol_st, &sym_iter);
-        while (sym) {
-            if ((sym->flags & SYMBOLFLAG_GLOBAL) && sym->section == psect) {
-                gsd_global(&gsd, sym->label,
-                           ((sym->flags & SYMBOLFLAG_DEFINITION) ? GLOBAL_DEF  : 0) |
-                           ((sym->flags & SYMBOLFLAG_WEAK)       ? GLOBAL_WEAK : 0) |
-                           ((sym->section->flags & PSECT_REL)    ? GLOBAL_REL  : 0) |
-                           0100,
-                           /* Looks undefined, but add it in anyway */
-                           sym->value);
-            }
-            sym = next_sym(&symbol_st, &sym_iter);
-        }
-    }
-
-    /* Now write out the transfer address */
-    if (xfer_address->type == EX_LIT) {
-        gsd_xfer(&gsd, ". ABS.", xfer_address->data.lit);
+    /* Finally write out the transfer address */
+    if (xfer_address == NULL) {
+        gsd_xfer(&gsd, ". ABS.", 1);
     } else {
-        SYMBOL         *lsym;
-        unsigned        offset;
-
-        if (!express_sym_offset(xfer_address, &lsym, &offset)) {
-            report(NULL, "Illegal program transfer address\n");
+        if (xfer_address->type == EX_LIT) {
+            gsd_xfer(&gsd, ". ABS.", xfer_address->data.lit);
         } else {
-            gsd_xfer(&gsd, lsym->section->label, lsym->value + offset);
+            SYMBOL         *lsym;
+            unsigned        offset;
+
+            if (!express_sym_offset(xfer_address, &lsym, &offset)) {
+                report_err(NULL, "Invalid program transfer address" /* " [set to 1]" */ "\n");
+            /*  gsd_xfer(&gsd, ". ABS.", 1);  */
+            } else {
+                gsd_xfer(&gsd, lsym->section->label, lsym->value + offset);
+            }
         }
     }
 
     gsd_flush(&gsd);
-
     gsd_end(&gsd);
 }

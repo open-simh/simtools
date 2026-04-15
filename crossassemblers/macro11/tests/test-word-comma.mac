@@ -23,3 +23,5 @@ start:  .word   123    ; 1 word
         mov     r0(wait),r2
         mov     wait(r1),r2
         mov     r0(r1),r2
+
+        .end

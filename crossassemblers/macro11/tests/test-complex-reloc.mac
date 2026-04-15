@@ -12,3 +12,5 @@ space:  .word   IE.ITS    ; the only simple relocation
         .word   IE.ITS / IE.MON
         .word   IE.ITS & IE.MON
         .word   IE.ITS ! IE.MON
+
+        .end

@@ -180,8 +180,8 @@ static int gsd_write2(
     *cp++ = radtbl[1] & 0xff;
     *cp++ = (radtbl[1] >> 8) & 0xff;
 
-    *cp++ = flags;
-    *cp++ = type;
+    *cp++ = (char) flags;
+    *cp++ = (char) type;
 
     *cp++ = value & 0xff;
     *cp = (value >> 8) & 0xff;
@@ -834,7 +834,7 @@ static int text_complex_byte(
 
     if (!cp)
         return 0;
-    *cp = byte;
+    *cp = (char) byte;
     return 1;
 }
 

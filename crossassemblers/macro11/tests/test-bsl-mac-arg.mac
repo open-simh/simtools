@@ -1,3 +1,7 @@
+;;;;
+;
+; test backslash-evaluating arguments to macros
+;
         .list me
         .macro test x
         .blkb x               ; test some directive that wants an expression
@@ -22,3 +26,5 @@
         test /size + foo/     ; gets split at the space
         test \/size + foo/    ; invalid expression with division operator
         test \^/size + foo/   ; original dislikes this, but we accept it.
+
+        .end
