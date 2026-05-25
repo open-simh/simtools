@@ -1,4 +1,4 @@
-#simh support/migration tools.
+# simh support/migration tools.
 
 The tools are organized into categories, each of which has a subdirectory.
 
