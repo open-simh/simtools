@@ -1,0 +1,22 @@
+This software waa obtained from http://ftp.dbit.com in
+May of 2026, under the license below, which was copied
+verbatim from putr.asm
+
+Unconfirmed reports indicate that it needs work to run
+satisfactorily under Windows 11.
+
+===============================
+
+; File transfer program, knows many DEC formats.
+;
+; By John Wilson <wilson@dbit.com>.
+;
+; Copyright (C) 1995-2001 By John Wilson.  All rights reserved.
+;
+; This program may be freely distributed provided that no charge is made for
+; distribution and that all versions include this copyright notice and give
+; proper credit to the original author (including first billing in the message
+; displayed when the program is started).  OK so I'm vain, but I put a *lot* of
+; work into this program, and I don't want anyone else taking credit for it.
+;
+
