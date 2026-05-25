@@ -778,7 +778,7 @@ int main( int argc, char *argv[] )
   errors = 0;
   save_error_count = 0;
   pass = 0;             /* This is required for symbol table initialization.  */
-  symtab = (SYM_T *) malloc( sizeof( SYM_T ) * SYMBOL_TABLE_SIZE );
+  symtab = (SYM_T *) calloc( SYMBOL_TABLE_SIZE, sizeof( SYM_T ) );
 
   if( symtab == NULL )
   {
@@ -843,7 +843,7 @@ int main( int argc, char *argv[] )
 
     }
     /* Allocate the necessary space.                                          */
-    xreftab = (WORD32 *) malloc( sizeof( WORD32 ) * space );
+    xreftab = (WORD32 *) calloc( space, sizeof( WORD32 ) );
 
     /* Clear the cross reference space.                                       */
     for( ix = 0; ix < space; ix++ )
@@ -1011,13 +1011,9 @@ void getArgs( int argc, char *argv[] )
   }
 
   /* Add the pathname extensions.                                             */
-  strncpy( objectpathname, pathname, jx );
-  objectpathname[jx] = '\0';
-  strcat( objectpathname, rim_mode ? ".rim" : ".bin" );
+  snprintf( objectpathname, NAMELEN, "%.*s%s", jx, pathname, rim_mode ? ".rim" : ".bin" );
 
-  strncpy( listpathname, pathname, jx );
-  listpathname[jx] = '\0';
-  strcat( listpathname, ".lst" );
+  snprintf( listpathname, NAMELEN, "%.*s%s", jx, pathname, ".lst" );
 
   strncpy( errorpathname, pathname, jx );
   errorpathname[jx] = '\0';
@@ -3239,7 +3235,8 @@ SYM_T *lookup( char *name )
       symbol_top++;
 
       /* Enter the symbol as UNDEFINED with a value of zero.                  */
-      strcpy( symtab[ix].name, name );
+      strncpy( symtab[ix].name, name, SYMLEN - 1 );
+      symtab[ix].name[SYMLEN - 1] = '\0';
       symtab[ix].type = UNDEFINED;
       symtab[ix].val  = 0;
       symtab[ix].xref_count = 0;
