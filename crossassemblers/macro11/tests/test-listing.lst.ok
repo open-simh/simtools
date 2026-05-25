@@ -1,26 +1,114 @@
-       1                                ;;;;;;
-       2                                ;
-       3                                ; Test the (so far very basic) .LIST and .NLIST directives.
-       4                                ;
-       5                                
-       6                                ; This should get listed (list_level 1)
-       9                                	.list
-      10                                ; This should get listed (list_level 1)
-      11                                	.list
-      12                                ; This should get listed (list_level 2)
-      13                                	.nlist
-      14                                ; This should get listed (list_level 1)
-      21                                	.list
-      22                                ; This should get listed (list_level 1)
-      22                                
+      1                                 ;;;;;;
+      2                                 ;
+      3                                 ; Test the .LIST and .NLIST directives.
+      4                                 ;
+      5
+      6                                 ; This should get listed (list_level 0)
+      7 000000  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     12                                 ; This should get listed (list_level 0)
+     13 000014  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     14                                 	; Test some parameters to .list
+000030
+016061  001234  004567
+	.list	src                     ; list source
+	mov	 1234(r0),4567(r1)	; comment
+     33                                 	.list	seq,loc,bin,src         ; reset to list everything
+     34
+                                	.nlist	seq                     ; don't list sequence numbers
+000066  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     37                                 	.list	seq,loc,bin,src
+     38                         	.nlist	loc                     ; don't list location counter
+     39 016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     40                                 	.list	seq,loc,bin,src
+     41         	.nlist	bin                     ; don't list binary code
+     42 000102  	mov	 1234(r0),4567(r1)	; comment
+     43                                 	.list	seq,loc,bin,src
+     44                                 	.nlist	bex                     ; don't list binary extensions
+     45 000110  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     46                                 	.list	seq,loc,bin,src
+     48 000116  016061  001234  004567
+     49                                 	.list	seq,loc,bin,src
+     50                                 	.nlist	com                     ; don't list comments
+     51 000124  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     52                                 	.list	seq,loc,bin,src         ; reset to list everything
+     54                                         .even
+     56              1+                 	.list
+     58 000132  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
+     63                                 	.list	hex                     ; list in hexadecimal
+     64   0060    1C31    029C    0977  	mov	 1234(r0),4567(r1)	; comment; hex
+test-listing.mac:65: ***WARNING Unsupported .LIST option 'LD'
+     65                                 	.list	ld                      ; list in decimal
+     66 000146    7217     668    2423  	mov	 1234(r0),4567(r1)	; comment; dec
+test-listing.mac:67: ***WARNING Unsupported .NLIST option 'LD'
+     67                                 	.nlist	ld,hex
+     68 000154  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment; oct
+     69                         .list   ttm                     ; terminal (narrow)
+     70 000162  016061  	mov	 1234(r0),4567(r1)	; comment
+        000164  001234
+        000166  004567
+     71                                         .nlist  ttm                     ; printer (wide)
+     72                                         .nlist  bex                     ; binary extensions
+     73 000170  000001  000002  000003          .word   1,2,3,4,5,5             ; several binary words
+        000176  000004  000005  000005
+     74                         .list   ttm                     ; terminal (narrow)
+     75 000204  000001          .word   1,2,3,4,5,5             ; just one binary word
+        000206  000002
+        000210  000003
+        000212  000004
+        000214  000005
+        000216  000005
+     76                         .list   bex                     ; binary extensions
+     77 000220  000001          .word   1,2,3,4,5,5             ; show extra lines for extra words
+        000222  000002
+        000224  000003
+        000226  000004
+        000230  000005
+        000232  000005
+     78                                         .nlist  ttm                     ; printer (wide)
+     79                                         .nlist  md                      ; macro definitions
+     84                                         .list   md                      ; macro definitions
+     85                                         .macro  m2
+     86                                         . = . + 2                       ; not listed with only meb but not me
+     87                                         mov     #2,r2
+     88                                         .endm
+     89                                         .nlist  me                      ; macro expansions
+     90 000234                                  m1
+      1         000236                          . = . + 2                       ; not listed with only meb but not me
+      2 000236  012701  000001                  mov     #1,r1
+     91 000242                                  m2
+      1         000244                          . = . + 2                       ; not listed with only meb but not me
+      2 000244  012702  000002                  mov     #2,r2
+     92                                         .list   me
+     93 000250                                  m1
+      1         000252                          . = . + 2                       ; not listed with only meb but not me
+      2 000252  012701  000001                  mov     #1,r1
+     94 000256                                  m2
+      1         000260                          . = . + 2                       ; not listed with only meb but not me
+      2 000260  012702  000002                  mov     #2,r2
+     95                                         .nlist  me
+     96                                         .list   meb
+     97 000264                                  m1
+      1         000266                          . = . + 2                       ; not listed with only meb but not me
+      2 000266  012701  000001                  mov     #1,r1
+     98 000272                                  m2
+      1         000274                          . = . + 2                       ; not listed with only meb but not me
+      2 000274  012702  000002                  mov     #2,r2
+     99                                         .list   me
+    100                                         .nlist  mc
+      1         000302                          . = . + 2                       ; not listed with only meb but not me
+      2 000302  012701  000001                  mov     #1,r1
+      1         000310                          . = . + 2                       ; not listed with only meb but not me
+      2 000310  012702  000002                  mov     #2,r2
+    103                                         ; .list to +1 follows
+    104              1+                         .list
+    106 000314  016061  001234  004567  	mov	 1234(r0),4567(r1)	; level 1
+    109 000322  016061  001234  004567  	mov	 1234(r0),4567(r1)	; level 0
+    113              2-                 	.nlist                          ; to level -2
+    121 000352  016061  001234  004567  	mov	 1234(r0),4567(r1)	; level 0
+    123         000001                          .end
 
 
-Symbol table
+Program sections
 
-.       000000R      001 
-
-
-Program sections:
-
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000000    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000360    001   (RW,I,LCL,REL,CON)

@@ -10,7 +10,7 @@ label:	.blkb		; not recommended, but default argument is 1
 
 	.odd
 
-	.blkw	1	; should maybe be an error: odd address
+	.blkw	1	; warning: odd address
 
 	.even
 
@@ -21,5 +21,7 @@ label2:	.blkb		; not recommended, but default argument is 1
 	.blkb	label2	; error: not an constant expression
 
 
-	.even	1	; error: no argument allowed
-	.odd	1	; error: no argument allowed
+	.even	1	; warning: no argument allowed
+	.odd	1	; warning: no argument allowed
+
+        .end

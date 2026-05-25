@@ -21,12 +21,14 @@ TESTS="test-asciz \
     test-impword \
     test-include \
     test-jmp \
+    test-labels \
     test-listing \
     test-locals \
     test-macro-comma \
     test-mcall-file \
     test-opcodes \
     test-operands \
+    test-packed \
     test-prec \
     test-psect \
     test-rad50 \
@@ -42,56 +44,55 @@ TESTS="test-asciz \
 status=0
 
 assemble() {
-    fmt="$1"
-    t="$2"
+    local opts="$1"
+    local t="$2"
 
-    ../macro11 $fmt -l "$t".lst -o "$t".obj "$t".mac 2>/dev/null
+    local out=$( echo ${t} | sed -e 's;/;-;g' -e 's;\.m11$;;' -e 's;\.mac$;;' )
+
+    ../macro11 -e BMK,ME -dc BEX,ME,MEB ${opts} -l "$out".lst -o "$out".obj "$t" 2>/dev/null
 
     # Ignore error status and messages from the assembler.
     # We check the listing file to see what we expect.
 
-    if [ -e "$t".lst.ok ]
+    if [ -e "$out".lst.ok ]
     then
-        diff -u "$t".lst.ok "$t".lst
-	status=$((status + $?))
+        diff -u "$out".lst.ok "$out".lst
+        status=$((status + $?))
     fi
 
-    if [ -e "$t".objd.ok ]
+    if [ -e "$out".objd.ok ]
     then
-        ../dumpobj $fmt "$t".obj >"$t".objd
-        diff -u "$t".objd.ok "$t".objd
-	status=$((status + $?))
+        ../dumpobj $fmt "$out".obj >"$out".objd
+        diff -u "$out".objd.ok "$out".objd
+        status=$((status + $?))
     fi
 }
 
 assemble_both() {
-    t=$1
+    local opts="$1"
+    local file="$2"
 
-    assemble -rsx "$t"
-    assemble -rt11 "$t"
+    assemble "-rsx  ${opts}" "${file}"
+#    assemble "-rt11 ${opts}" "${file}"
+}
+
+accept() {
+    for t in $*
+    do
+        cp "$t" "$t.ok"
+        git add "$t.ok"
+    done
 }
 
 
 for t in $TESTS
 do
-    assemble_both "$t"
+    assemble_both -stringent "${t}.mac"
 done
 
 for t in 2.11BSD/m11/*.m11
 do
-    fn=$( echo ${t%.m11} | sed 's;/;-;g' )
-
-    cat >${fn}.mac <<EOF
-;;;; Wrapper for $t
-	.list
-	.list
-	.list
-debug	=	1
-	.include "2.11BSD/m11/at.sml"
-	.include "${t}"
-EOF
-    
-    assemble_both "$fn"
+    assemble_both "-strict -ym11 -s debug=1 ./2.11BSD/m11/at.sml" "$t"
 done
 
 exit $status

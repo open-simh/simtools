@@ -1,4 +1,3 @@
-
 #ifndef MACROS__H
 #define MACROS__H
 
@@ -6,6 +5,8 @@
 
 #include "symbols.h"
 #include "stream2.h"
+
+#define DEBUG_MACROS 0
 
 
 typedef struct arg {
@@ -15,6 +16,7 @@ typedef struct arg {
     char           *label;      /* Argument name */
     char           *value;      /* Default or active substitution */
 } ARG;
+
 
 /* A MACRO is a superstructure surrounding a SYMBOL. */
 
@@ -38,6 +40,7 @@ extern STREAM_VTBL macro_stream_vtbl;
 
 MACRO          *new_macro(
     char *label);
+
 void            free_macro(
     MACRO *mac);
 
@@ -55,6 +58,11 @@ STREAM         *expandmacro(
     MACRO *mac,
     char *cp);
 
+#if DEBUG_MACROS
+void            dump_all_macros(
+    void);
+#endif
+
 ARG            *new_arg(
     void);
 
@@ -63,17 +71,21 @@ void            read_body(
     BUFFER *gb,
     char *name,
     int called);
+
 char           *getstring_macarg(
     STREAM *refstr,
     char *cp,
     char **endp);
+
 BUFFER         *subst_args(
     BUFFER *text,
     ARG *args);
 
-int do_mcall (
+int             do_mcall (
     char *label,
     STACK *stack);
- 
 
-#endif
+int             within_macro_expansion(
+    STREAM *str);
+
+#endif  /* MACROS__H */

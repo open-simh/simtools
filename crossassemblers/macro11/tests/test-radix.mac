@@ -22,3 +22,5 @@
 	.WORD	10		;Radix is unchanged after error
 	.RADIX	.
 	.WORD	10
+
+        .END

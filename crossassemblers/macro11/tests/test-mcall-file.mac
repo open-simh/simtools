@@ -6,3 +6,5 @@
         .mcall  (ignored)mafile
 
         mafile
+
+        .end

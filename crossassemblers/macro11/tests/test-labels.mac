@@ -1,0 +1,11 @@
+;;;;;
+;
+; Test labels (other than locals which are in test-locals.mac)
+;
+
+lab1:   beq     lab1
+lab2::	br	lab2
+lab3:	lab4:	br	lab4
+lab5::	lab6::	lab7:	br	lab7
+	
+        .end

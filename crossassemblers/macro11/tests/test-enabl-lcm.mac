@@ -30,3 +30,5 @@
 
     ; Setting is now non-default.
     ; Check if it reverts to default in the next pass.
+
+    .end

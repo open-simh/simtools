@@ -1,22 +1,123 @@
 ;;;;;;
 ;
-; Test the (so far very basic) .LIST and .NLIST directives.
+; Test the .LIST and .NLIST directives.
 ;
 
-; This should get listed (list_level 1)
-	.nlist
-; This should NOT get listed (list_level 0)
-	.list
-; This should get listed (list_level 1)
-	.list
-; This should get listed (list_level 2)
-	.nlist
-; This should get listed (list_level 1)
-	.nlist
-; This should NOT get listed (list_level 0)
+; This should get listed (list_level 0)
+	mov	 1234(r0),4567(r1)	; comment
 	.nlist
 ; This should NOT get listed (list_level -1)
+	mov	 1234(r0),4567(r1)	; comment
 	.list
-; This should NOT get listed (list_level 0)
+; This should get listed (list_level 0)
+	mov	 1234(r0),4567(r1)	; comment
+	; Test some parameters to .list
+	.nlist	seq,loc,bin,src
+	.list	seq                     ; list sequence numbers
+	mov	 1234(r0),4567(r1)	; comment
+	.nlist	seq,loc,bin,src
+	.list	loc                     ; list location counter
+	mov	 1234(r0),4567(r1)	; comment
+	.nlist	seq,loc,bin,src
+	.list	bin                     ; list binary code
+	mov	 1234(r0),4567(r1)	; comment
+	.nlist	seq,loc,bin,src
+	.list	bex                     ; list binary extensions
+	mov	 1234(r0),4567(r1)	; comment
+	.nlist	seq,loc,bin,src
+	.list	src                     ; list source
+	mov	 1234(r0),4567(r1)	; comment
+	.nlist	seq,loc,bin,src
+	.list	com                     ; list comments
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src         ; reset to list everything
+
+	.nlist	seq                     ; don't list sequence numbers
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src
+	.nlist	loc                     ; don't list location counter
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src
+	.nlist	bin                     ; don't list binary code
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src
+	.nlist	bex                     ; don't list binary extensions
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src
+	.nlist	src                     ; don't list source
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src
+	.nlist	com                     ; don't list comments
+	mov	 1234(r0),4567(r1)	; comment
+	.list	seq,loc,bin,src         ; reset to list everything
+
+        .even
+; .list to +1 follows
 	.list
 ; This should get listed (list_level 1)
+	mov	 1234(r0),4567(r1)	; comment
+; .nlist to 0 follows
+	.nlist
+; This should get listed (list_level 0)
+
+	.list	hex                     ; list in hexadecimal
+	mov	 1234(r0),4567(r1)	; comment; hex
+	.list	ld                      ; list in decimal
+	mov	 1234(r0),4567(r1)	; comment; dec
+	.nlist	ld,hex
+	mov	 1234(r0),4567(r1)	; comment; oct
+        .list   ttm                     ; terminal (narrow)
+	mov	 1234(r0),4567(r1)	; comment
+        .nlist  ttm                     ; printer (wide)
+        .nlist  bex                     ; binary extensions
+        .word   1,2,3,4,5,5             ; several binary words
+        .list   ttm                     ; terminal (narrow)
+        .word   1,2,3,4,5,5             ; just one binary word
+        .list   bex                     ; binary extensions
+        .word   1,2,3,4,5,5             ; show extra lines for extra words
+        .nlist  ttm                     ; printer (wide)
+        .nlist  md                      ; macro definitions
+        .macro  m1
+        . = . + 2                       ; not listed with only meb but not me
+        mov     #1,r1
+        .endm
+        .list   md                      ; macro definitions
+        .macro  m2
+        . = . + 2                       ; not listed with only meb but not me
+        mov     #2,r2
+        .endm
+        .nlist  me                      ; macro expansions
+        m1
+        m2
+        .list   me
+        m1
+        m2
+        .nlist  me
+        .list   meb
+        m1
+        m2
+        .list   me
+        .nlist  mc
+        m1                              ; macro call not listed
+        m2                              ; macro call not listed
+        ; .list to +1 follows
+        .list
+; This should get listed (list_level 1)
+	mov	 1234(r0),4567(r1)	; level 1
+	.nlist                          ; to level 0
+; This should get listed (list_level 0)
+	mov	 1234(r0),4567(r1)	; level 0
+	.nlist                          ; to level -1
+; This should NOT get listed (list_level -1)
+	mov	 1234(r0),4567(r1)	; level -1
+	.nlist                          ; to level -2
+; This should NOT get listed (list_level -2)
+	mov	 1234(r0),4567(r1)	; level -2
+	.list                           ; to level -1
+; This should NOT get listed (list_level -1)
+	mov	 1234(r0),4567(r1)	; level -1
+	.list                           ; to level 0
+; This should get listed (list_level 0)
+	mov	 1234(r0),4567(r1)	; level 0
+
+        .end

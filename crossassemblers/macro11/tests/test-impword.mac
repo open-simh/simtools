@@ -10,3 +10,5 @@ start:	3
 	macro	8-BIT,1,2,3
         ; The following can by accident be parsed as an expression.
 	macro	7-BIT,1,2,3
+
+        .end

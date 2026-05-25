@@ -100,6 +100,15 @@ macro11 [options...] files...
 Options:
     -v              Prints program version.
 
+    -a0             Use sections with ABS,OVR for their own local symbol
+                    definitions.
+
+    -nodev          Ignore 'ddn:' style device names in .INCLUDE and
+                    .LIBRARY filenames.
+
+    -nodir          Ignore '[directory]' style names in .INCLUDE and
+                    .LIBRARY filenames.
+
     -e opt          .ENABL option.  Implemented options are AMA, GBL,
                     and also .LIST options ME, BEX, and
                     MD, though the status of listing control is
@@ -136,6 +145,21 @@ Options:
                     (DEV:[DIR]FILE.EXT) then the search is also tried
                     without DEV: and without DEV:[DIR].
 
+    -s              Prepend a <statement> to the source
+                    (e.g. -s "DEBUG\t=\t1\t\t; Enable").
+
+    -se             Shows source line in error after the error message.
+
+    -sp             Shows .PRINT source lines on stderr (similar to -se).
+
+    -fe             Fatal errors will abort assembly.
+
+    -apb            Automatic page-break after 57 listing lines
+                    (also with -xl).
+
+    -ff             Use a form-feed <FF> between listing pages
+                    (also with -apb & -xl).
+
     -o objname      Gives the name of the object file.  No extension
                     is assumed; if you want .OBJ you have to say it.
                     With no -o option, no object file is generated.
@@ -146,7 +170,7 @@ Options:
                     say it.  With no -l option, no listing file is
                     written.
 
-    -x              Tells macro11 not to assemble anything, but rather
+    -xtract         Tells macro11 not to assemble anything, but rather
                     to simply extract all the macros in all the -m
                     macro libraries into individual .MAC files in the
                     current directory.  This should be the last option
@@ -154,12 +178,18 @@ Options:
                     This also works for extracting an object library
                     (.OLB) file.
 
-    -rsx            Tells macro11 to generate rsx style object files.
+    -xl             as -xtract but stores macros to '-l' file. If none, only lists names.
+
+    -rsx            Tells macro11 to generate rsx style object files
+                    and expect libraries in rsx format.
                     This is the default.
 
-    -rt11           Tells macro11 to generate rt11 style object files.
+    -rt11           Tells macro11 to generate rt11 style object files
+                    and expect libraries in rt11 format.
 
     Various options starting with -y enable extensions:
+
+    -yd             Extension: enable debugging
 
     -ysl <num>      Allow longer symbols up to the given length.
                     The maximal allowed value is 64.
@@ -169,6 +199,12 @@ Options:
     -yl1            Include the processing of the first pass in the
                     listing file. This may be useful for finding
                     phase errors.
+
+    -yfl            Force listing of suppressed lines.
+
+    -ylls           List local symbols when used and in the symbol table.
+
+    -ym11           Support BSD m11 language extensions.
 
     files...        Any number of input files.  They will be assembled
                     as if they were concatenated together.

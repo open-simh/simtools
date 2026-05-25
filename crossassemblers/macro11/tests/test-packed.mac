@@ -1,0 +1,49 @@
+;;;;
+;
+; Test the packed decimals.
+;
+        .list   hex
+
+        .packed ,       u0
+        .packed +,      p0
+        .packed -,      n0
+
+        .packed 0,      u0len
+        .packed +0,     p0len
+        .packed -0,     n0len
+
+        .packed 1,      u1len
+        .packed +1,     p1len
+        .packed -1,     n1len
+
+        .packed 12,     u12len
+        .packed -12,    n12len
+        .packed +12,    p12len
+
+        .packed 123,    u123len
+        .packed 1234,   u124len
+        .packed 12345,  u125len
+
+lab:    .packed 31415,  lab     ; M error (multiply defined)
+l2::    .packed 2,l2            ; M error (multiply defined)
+l3 = 3
+        .packed 3,l3            ; redef'n ok
+l4 == 4
+        .packed 4,l4            ; redef'n ok
+l5 =: 5                         ; M error; why???
+        .packed 5,l5            ; M error
+
+        .packed 1234567890123456789012345678901
+        ; too long:
+        .packed 12345678901234567890123456789012
+
+; In the original, .ntype must occur in a macro.
+; As an extension, we allow it also outside macros.
+        .macro  name arg1,arg2
+        .narg   lab             ; redefinition
+        .nchr   lab,//          ; redefinition
+        .ntype  lab,#3          ; redefinition
+        .endm
+
+        name
+        .end

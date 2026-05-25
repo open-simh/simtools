@@ -49,20 +49,23 @@ DAMAGE.
 static MLB     *mlb_rt11_open(
     char *name,
     int allow_object_library);
+
 static BUFFER  *mlb_rt11_entry(
     MLB *mlb,
     char *name);
+
 static void     mlb_rt11_close(
     MLB *mlb);
+
 static void     mlb_rt11_extract(
     MLB *mlb);
 
 struct mlb_vtbl mlb_rt11_vtbl = {
-    .mlb_open    = mlb_rt11_open,
-    .mlb_entry   = mlb_rt11_entry,
-    .mlb_extract = mlb_rt11_extract,
-    .mlb_close   = mlb_rt11_close,
-    .mlb_is_rt11 = 1,
+    /* .mlb_open    = */ mlb_rt11_open,
+    /* .mlb_entry   = */ mlb_rt11_entry,
+    /* .mlb_extract = */ mlb_rt11_extract,
+    /* .mlb_close   = */ mlb_rt11_close,
+    /* .mlb_is_rt11 = */ 1,
 };
 
 /*
@@ -77,7 +80,7 @@ struct mlb_vtbl mlb_rt11_vtbl = {
 
 #define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
 
-/* BYTEPOS calculates the byte position within the macro libray file.
+/* BYTEPOS calculates the byte position within the macro library file.
    I use this to sort the entries by their start position, in order to
    be able to calculate the entries' sizes, which isn't actually
    stored in the directory. */
@@ -190,11 +193,12 @@ MLB            *mlb_rt11_open(
     /* Shift occupied directory entries to the front of the array
        before sorting */
     {
+        unsigned long   max_filepos;
         int             j;
 
         for (i = 0, j = nr_entries; i < j; i++) {
             char           *ent1,
-                           *ent2;
+                           *ent2 = NULL;
             int             w1, w2;
 
             ent1 = buff + (i * entsize);
@@ -238,8 +242,6 @@ MLB            *mlb_rt11_open(
         mlb->directory = memcheck(malloc(sizeof(MLBENT) * mlb->nentries));
         memset(mlb->directory, 0, sizeof(MLBENT) * mlb->nentries);
 
-        unsigned long   max_filepos;
-
         fseek(mlb->fp, 0, SEEK_END);
         max_filepos = ftell(mlb->fp);
 
@@ -272,7 +274,7 @@ MLB            *mlb_rt11_open(
                 mlb->directory[j].length = BYTEPOS(ent + entsize) - BYTEPOS(ent);
             } else {
                 unsigned long   max = max_filepos;
-                char            c;
+                int             c;
 
                 /* Look for last non-zero */
                 do {
@@ -363,7 +365,7 @@ BUFFER         *mlb_rt11_entry(
         if (c == '\r' || c == 0)       /* If it's a carriage return or 0,
                                           discard it. */
             continue;
-        *bp++ = c;
+        *bp++ = (char) c;
     }
     *bp++ = 0;                         /* Store trailing 0 delim */
 
@@ -395,10 +397,12 @@ void mlb_rt11_extract(
         char            name[32];
 
         buf = mlb_entry(mlb, mlb->directory[i].label);
-        sprintf(name, "%s.MAC", mlb->directory[i].label);
-        fp = fopen(name, "w");
-        fwrite(buf->buffer, 1, buf->length, fp);
-        fclose(fp);
-        buffer_free(buf);
+        if (buf != NULL) {
+            sprintf(name, "%s.MAC", mlb->directory[i].label);
+            fp = fopen(name, "w");
+            fwrite(buf->buffer, 1, buf->length, fp);
+            fclose(fp);
+            buffer_free(buf);
+        }
     }
 }

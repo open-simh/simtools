@@ -28,3 +28,5 @@
 	CHR3=3
 	.RAD50	<1><2><3>	; Equivalent to .RAD50 /ABC/
 	.RAD50	<CHR1><CHR2><CHR3>	; Equivalent to .RAD50 /ABC/
+
+        .end

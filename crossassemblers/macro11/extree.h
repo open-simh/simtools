@@ -1,4 +1,3 @@
-
 #ifndef EXTREE__H
 #define EXTREE__H
 
@@ -56,29 +55,41 @@ typedef struct ex_tree {
 
 EX_TREE        *new_ex_tree(
     int type);
+
 void            free_tree(
     EX_TREE *tp);
 
 EX_TREE        *new_ex_lit(
     unsigned value);
+
 EX_TREE        *ex_err(
     EX_TREE *tp,
     char *cp);
+
 EX_TREE        *new_ex_bin(
     int type,
     EX_TREE *left,
     EX_TREE *right);
+
 EX_TREE        *new_ex_una(
     int type,
     EX_TREE *left);
+
 int num_subtrees(
     EX_TREE *tp);
+
 EX_TREE        *evaluate(
     EX_TREE *tp,
     int flags);
 
-#define EVALUATE_DEFINEDNESS                  1
+#define DISABLE_EXTREE_IF_DF_NDF        1  /* 0=extree may be used to evaluate definedness, 1=extree NEVER used */
+                                           /* TODO: If we want to permanently disable this, we could remove the
+                                            *       'flags' from parse_expr() and evaluate() etc. */
 
-#define EVALUATE_OUT_IS_REGISTER              1
-
+#if !DISABLE_EXTREE_IF_DF_NDF
+#define EVALUATE_DEFINEDNESS            1  /* Flag used by parse_expr() to evaluate definedness */
 #endif
+
+#define EVALUATE_OUT_IS_REGISTER        1
+
+#endif /* EXTREE__H */

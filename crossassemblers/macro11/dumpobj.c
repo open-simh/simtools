@@ -1,4 +1,5 @@
 /* Dump and interpret an object file. */
+/* Optionally create a paper-tape (LDA) file. */
 
 /*
 Copyright (c) 2001, Richard Krehbiel
@@ -41,26 +42,120 @@ DAMAGE.
 #include <ctype.h>
 #include <assert.h>
 
-#include "rad50.h"
+#ifdef WIN32
+#define strcasecmp stricmp 
+#if !__STDC__
+#define stricmp _stricmp
+#endif
+#endif
 
+#include "rad50.h"
 #include "util.h"
 
-#define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
+#ifndef SKIP_GIT_INFO
+#include "git-info.h"
+#endif
+
+#define VERSION "February 13, 2023"     /* Also check the text above the "Usage:" section below */
 
 #define NPSECTS 256
+#define MAX_LDA_ADDR 0175777            /* Higher addresses will not be written to the LDA */
+                                        /* TODO: If we 'variablize' MAX_LDA_ADDR force it to odd */
 
 #ifndef DEFAULT_OBJECTFORMAT_RT11
-#define DEFAULT_OBJECTFORMAT_RT11       0
+#define DEFAULT_OBJECTFORMAT_RT11 -1    /* -1 = Auto-detect, 0 = RSX-11M/PLUS, 1 = RT-11 */
 #endif
+
+#ifndef DEFAULT_ALIGNMENT
+#define DEFAULT_ALIGNMENT ' '           /* Default output text alignment: choose ' ' or '\t' */
+#endif
+
+#ifndef BADBIN_XFERAD
+#define BADBIN_XFERAD 0                 /* xferad to use if badbin > 0: choose 0 or 1 */
+#endif
+
+#ifndef XFERAD_WHEN_ZERO
+#define XFERAD_WHEN_ZERO 2              /* xferad to use if the <inputfile> provides XFER=0 */
+#endif                                  /* Set to zero to disable this functionality (keep 0=0) */
+
+#define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
 
 int             psectid = 0;
 char           *psects[NPSECTS];
 FILE           *bin = NULL;
+int             badfmt = 0;
 int             badbin = 0;
 int             xferad = 1;
+unsigned        highest_addr = 0;
+int             psects_with_data = 0;
+
+int             loud = 1;                         /* Set to 0 by  '-q'                */
+int             loudtxt = 1;                      /* Set to 0 by  '-qt'               */
+char            alignment = DEFAULT_ALIGNMENT;    /* Set with the '-[no]align' option */
+int             sortgsd = 1;                      /* Set to 0 by  '-nosort'           */
+unsigned        origin = 0;                       /* Set with the '-o[f]' option      */
+int             reloc_internal = 1;               /* Set to 0 by  '-of' & 1 by '-o'   */
+char           *word_patch = NULL;                /* Set with the '-w' option         */
+unsigned        new_xferad = MAX_LDA_ADDR+1;      /* Set with the '-x' option         */
+
+/**** Summary [ '-s' option ] name strings and counters  ****/
+/*    Strings starting with "*" may cause binary errors     */
+
+char           *blkname[] = {
+                              "*"  "Unused ",  /* 00 */
+                              " "  "GSD    ",  /* 01 */  /* Must be first in OBJ */
+                              " "  "ENDGSD ",  /* 02 */  /* Only one - must be before ENDMOD and no more GSDs follow */
+                              " "  "TXT    ",  /* 03 */  /* At least one RLD must precede the first TXT (i.e. psect)*/
+                              " "  "RLD    ",  /* 04 */
+                              " "  "ISD    ",  /* 05 */  /* The RT-11 linker ignores this */
+                              " "  "ENDMOD ",  /* 06 */  /* Only one - must be last in OBJ */
+                              "*"  "LIBHDR ",  /* 07 */
+                              "*"  "LIBEND "   /* 10 */
+                            };
+
+char           *gsdname[] = {
+                              " "  "MODNAME",  /* 00 */
+                              "*"  "CSECT  ",  /* 01 */
+                              " "  "ISD    ",  /* 02 */  /* The RT-11 linker ignores this */
+                              " "  "XFER   ",  /* 03 */
+                              " "  "GLOBAL ",  /* 04 */  /* Each name ought to be unique */
+                              " "  "PSECT  ",  /* 05 */  /* This seems to work if not unique */
+                              " "  "IDENT  ",  /* 06 */
+                              "*"  "VSECT  ",  /* 07 */
+                              "*"  "COMPRTN"   /* 10 */
+                            };
+
+char           *rldname[] = {
+                              "*"  "Not used (0)  ",  /* 00 */
+                              " "  "Internal reloc",  /* 01 */
+                              "*"  "Global   reloc",  /* 02 */
+                              "*"  "Internal Disp ",  /* 03 */
+                              "*"  "Global   Disp ",  /* 04 */
+                              "*"  "Global + Off  ",  /* 05 */
+                              "*"  "Gbl + Off Disp",  /* 06 */
+                              " "  "Loc (.) Def   ",  /* 07 */
+                              " "  "Loc (.) Mod   ",  /* 10 */
+                              "*"  ".LIMIT        ",  /* 11 */
+                              "*"  "Psect         ",  /* 12 */
+                              "*"  "Not used (13) ",  /* 13 */
+                              "*"  "Psect Disp    ",  /* 14 */
+                              "*"  "Psect + Off   ",  /* 15 */
+                              "*"  "Psect+Off Disp",  /* 16 */
+                              "*"  "Complex       "   /* 17 */
+                            };
+
+#define BLKSIZ (sizeof(blkname) / sizeof(blkname[0]))
+#define GSDSIZ (sizeof(gsdname) / sizeof(gsdname[0]))
+#define RLDSIZ (sizeof(rldname) / sizeof(rldname[0]))
+
+int             blkcnt[BLKSIZ] = { 0 };
+int             gsdcnt[GSDSIZ] = { 0 };
+int             rldcnt[RLDSIZ] = { 0 };
 
 /* memcheck - crash out if a pointer (returned from malloc) is NULL. */
+/*          - this routine is already [unchanged] in util.c          */
 
+#if 0
 void           *memcheck(
     void *ptr)
 {
@@ -71,6 +166,7 @@ void           *memcheck(
 
     return ptr;
 }
+#endif
 
 char           *readrec(
     FILE *fp,
@@ -92,6 +188,7 @@ char           *readrec(
 
         if (c != 1) {
             fprintf(stderr, "Improperly formatted OBJ file (1)\n");
+            badfmt++;
             return NULL;               /* Not a properly formatted file. */
         }
 
@@ -100,6 +197,7 @@ char           *readrec(
         c = fgetc(fp);
         if (c != 0) {
             fprintf(stderr, "Improperly formatted OBJ file (2)\n");
+            badfmt++;
             return NULL;               /* Not properly formatted */
         }
 
@@ -110,6 +208,7 @@ char           *readrec(
     if (c == EOF) {
         if (rt11) {
             fprintf(stderr, "Improperly formatted OBJ file (3)\n");
+            badfmt++;
         }
         return NULL;
     }
@@ -120,6 +219,7 @@ char           *readrec(
     c = fgetc(fp);
     if (c == EOF) {
         fprintf(stderr, "Improperly formatted OBJ file (4)\n");
+        badfmt++;
         return NULL;
     }
 
@@ -133,12 +233,14 @@ char           *readrec(
 
     if (*len < 0) {
         fprintf(stderr, "Improperly formatted OBJ file (5)\n");
+        badfmt++;
         return NULL;
     }
 
     buf = malloc(*len);
     if (buf == NULL) {
         fprintf(stderr, "Out of memory allocating %d bytes\n", *len);
+        badfmt++;
         return NULL;                   /* Bad alloc */
     }
 
@@ -146,6 +248,7 @@ char           *readrec(
     if (i < *len) {
         free(buf);
         fprintf(stderr, "Improperly formatted OBJ file (6)\n");
+        badfmt++;
         return NULL;
     }
 
@@ -159,7 +262,8 @@ char           *readrec(
 
         if (c != chksum) {
             free(buf);
-            fprintf(stderr, "Bad record checksum, " "calculated=$%04x, recorded=$%04x\n", chksum, c);
+            fprintf(stderr, "Bad record checksum, calculated=$%04x, recorded=$%04x\n", chksum, c);
+            badfmt++;
             return NULL;
         }
     } else {
@@ -169,9 +273,9 @@ char           *readrec(
             if (c == EOF) {
                 free(buf);
                 fprintf(stderr, "EOF where padding byte should be\n");
+                badfmt++;
                 return NULL;
             }
-
         }
     }
 
@@ -184,6 +288,8 @@ void dump_bytes(
 {
     int             i,
                     j;
+
+    if (!loud) return;  /* Nothing to do for -q[uiet] */
 
     for (i = 0; i < len; i += 8) {
         printf("\t%3.3o: ", i);
@@ -211,6 +317,8 @@ void dump_words(
 {
     int             i,
                     j;
+
+    if (!loud) return;  /* Nothing to do for -q[uiet] */
 
     for (i = 0; i < len; i += 8) {
         printf("\t%6.6o: ", addr);
@@ -246,9 +354,27 @@ void dump_bin(
     int             chksum;     /* Checksum is negative sum of all
                                    bytes including header and length */
     int             FBR_LEAD1 = 1,
-            FBR_LEAD2 = 0;
+                    FBR_LEAD2 = 0;
     int             i;
-    unsigned        hdrlen = len + 6;
+    unsigned        hdrlen;
+
+    if (addr + len - 1 > highest_addr)
+        highest_addr = addr + len - 1;
+
+    if (addr > MAX_LDA_ADDR) {
+        /* We can't write anything at all */
+    /*  badbin++;    // We do this ONCE later */
+        return;
+    }
+
+    if (addr + len - 1 > MAX_LDA_ADDR) {
+        len = MAX_LDA_ADDR - addr + 1;  /* Write as much as we can */
+    /*  badbin++;    // We do this ONCE later */
+    }
+
+    if (!bin) return;  /* Nothing more to do if no <outputfile> */
+
+    hdrlen = len + 6;
 
     for (i = 0; i < 8; i++)
         fputc(0, bin);
@@ -336,6 +462,7 @@ void got_gsd(
         char            name[8];
         unsigned        value;
         unsigned        flags;
+        char           *equals = (alignment == '\t') ? " = " : "=";
 
         gsdline = memcheck(malloc(256));
 
@@ -346,22 +473,25 @@ void got_gsd(
         value = WORD(cp + i + 6);
         flags = cp[i + 4] & 0xff;
 
+        if ((cp[i + 5] & 0xff) < GSDSIZ) gsdcnt[cp[i + 5] & 0xff]++;
         switch (cp[i + 5] & 0xff) {
         case 0:
-            sprintf(gsdline, "\tMODNAME %s=%o flags=%o\n", name, value, flags);
+            sprintf(gsdline, "\tMODNAME%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
             break;
         case 1:
-            sprintf(gsdline, "\tCSECT %s=%o flags=%o\n", name, value, flags);
+            sprintf(gsdline, "\tCSECT%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
+            badbin++;
             break;
         case 2:
-            sprintf(gsdline, "\tISD %s=%o flags=%o\n", name, value, flags);
+            sprintf(gsdline, "\tISD%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
             break;
         case 3:
-            sprintf(gsdline, "\tXFER %s=%o flags=%o\n", name, value, flags);
-            xferad = value;
+            sprintf(gsdline, "\tXFER%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
+            xferad = origin + value;
             break;
         case 4:
-            sprintf(gsdline, "\tGLOBAL %s=%o %s%s%s %s flags=%o\n", name, value,
+            sprintf(gsdline, "\tGLOBAL%c%s%s"
+                    "%o%c%s%s%s %s flags=%o\n", alignment, name, equals, value, alignment,
                     flags &   01 ? "WEAK " : "",
                     flags &   04 ? "LIB "  : "",
                     flags &  010 ? "DEF"   : "REF",
@@ -369,7 +499,10 @@ void got_gsd(
                     flags);
             break;
         case 5:
-            sprintf(gsdline, "\tPSECT %s=%o %s%s %s %s %s %s %s flags=%o\n", name, value,
+            if (value) psects_with_data++;
+            sprintf(gsdline, "\tPSECT%c%s%s"
+                    "%o%c%s%s%s%s %s %s %s %s flags=%o\n", alignment, name, equals, value, alignment,
+                    (alignment == '\t') ? "" : " ",    /* For backwards compatibility with original dumpobj */
                     flags &   01 ? "SAV " : "",
                     flags &   02 ? "LIB " : "",
                     flags &   04 ? "OVR"  : "CON",
@@ -383,16 +516,21 @@ void got_gsd(
             psectid %= NPSECTS;
             break;
         case 6:
-            sprintf(gsdline, "\tIDENT %s=%o flags=%o\n", name, value, flags);
+            sprintf(gsdline, "\tIDENT%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
             break;
         case 7:
-            sprintf(gsdline, "\tVSECT %s=%o flags=%o\n", name, value, flags);
+            sprintf(gsdline, "\tVSECT%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
+            badbin++;
             break;
         case 010:
-            sprintf(gsdline, "\tCompletion Routine Name %s=%o flags=%o\n", name, value, flags);
+            sprintf(gsdline, "\t" "COMPRTN" /* "Completion Routine Name" */
+                    "%c%s%s%o%cflags=%o\n", alignment, name, equals, value, alignment, flags);
+            badbin++;
             break;
         default:
             sprintf(gsdline, "\t***Unknown GSD entry type %d flags=%o\n", cp[i + 5] & 0xff, flags);
+            if (!loud) fprintf(stderr, "%s", gsdline+1);
+            badfmt++;
             break;
         }
 
@@ -424,16 +562,17 @@ void got_endgsd(
         return;
     }
 
-    qsort(all_gsds, nr_gsds, sizeof(char *), compare_gsdlines);
+    if (loud && sortgsd)
+        qsort(all_gsds, nr_gsds, sizeof(char *), compare_gsdlines);
 
-    printf("GSD:\n");
+    if (loud) printf("GSD:\n");
 
     for (i = 0; i < nr_gsds; i++) {
-        fputs(all_gsds[i], stdout);
+        if (loud) fputs(all_gsds[i], stdout);
         free(all_gsds[i]);
     }
 
-    printf("ENDGSD\n");
+    if (loud) printf("ENDGSD\n");
 
     free(all_gsds);
     all_gsds = NULL;
@@ -451,12 +590,14 @@ void got_text(
 
     last_text_addr = addr;
 
-    printf("TEXT ADDR=%o LEN=%o\n", last_text_addr, len - 4);
+    if (loud) {
+        printf("TEXT ADDR=%o LEN=%o\n", last_text_addr, len - 4);
+        if (loudtxt)
+            dump_words(last_text_addr, cp + 4, len - 4);
+    }
 
-    dump_words(last_text_addr, cp + 4, len - 4);
-
-    if (bin)
-        dump_bin(last_text_addr, cp + 4, len - 4);
+    if (bin || word_patch)
+        dump_bin(origin + last_text_addr, cp + 4, len - 4);
 }
 
 void rad50name(
@@ -475,7 +616,7 @@ void got_rld(
 {
     int             i;
 
-    printf("RLD\n");
+    if (loud) printf("RLD\n");
 
     for (i = 2; i < len;) {
         unsigned        addr;
@@ -490,92 +631,106 @@ void got_rld(
         if (cp[i] & 0200)
             byte = " byte";
 
+        if ((cp[i] & 0x7f) < RLDSIZ) rldcnt[cp[i] & 0x7f]++;
         switch (cp[i] & 0x7f) {
         case 01:
-            printf("\tInternal%s %o=%o\n", byte, addr, WORD(cp + i + 2));
+            word = WORD(cp + i + 2);
+            if (loud) printf("\tInternal%s %o=%o\n", byte, addr, word);
+            if (bin || word_patch) {
+                char bytes[2];
+
+                if (reloc_internal)
+                    word += origin;
+
+                bytes[0] = word & 0xff;
+                bytes[1] = (word >> 8) & 0xff;
+                dump_bin(origin + addr, bytes, 2);
+            }
             i += 4;
             break;
         case 02:
             rad50name(cp + i + 2, name);
-            printf("\tGlobal%s %o=%s\n", byte, addr, name);
+            if (loud) printf("\tGlobal%s %o=%s\n", byte, addr, name);
             i += 6;
+            badbin++;
             break;
         case 03:
-            printf("\tInternal displaced%s %o=%o\n", byte, addr, WORD(cp + i + 2));
+            if (loud) printf("\tInternal displaced%s %o=%o\n", byte, addr, WORD(cp + i + 2));
             i += 4;
-            badbin = 1;
+            badbin++;
             break;
         case 04:
             rad50name(cp + i + 2, name);
-            printf("\tGlobal displaced%s %o=%s\n", byte, addr, name);
+            if (loud) printf("\tGlobal displaced%s %o=%s\n", byte, addr, name);
             i += 6;
-            badbin = 1;
+            badbin++;
             break;
         case 05:
             rad50name(cp + i + 2, name);
             word = WORD(cp + i + 6);
-            printf("\tGlobal plus offset%s %o=%s+%o\n", byte, addr, name, word);
+            if (loud) printf("\tGlobal plus offset%s %o=%s+%o\n", byte, addr, name, word);
             i += 8;
-            badbin = 1;
+            badbin++;
             break;
         case 06:
             rad50name(cp + i + 2, name);
             word = WORD(cp + i + 6);
-            printf("\tGlobal plus offset displaced%s %o=%s+%o\n", byte, addr, name, word);
+            if (loud) printf("\tGlobal plus offset displaced%s %o=%s+%o\n", byte, addr, name, word);
             i += 8;
-            badbin = 1;
+            badbin++;
             break;
         case 07:
             rad50name(cp + i + 2, name);
             word = WORD(cp + i + 6);
-            printf("\tLocation counter definition %s+%o\n", name, word);
+            if (loud) printf("\tLocation counter definition %s+%o\n", name, word);
             i += 8;
 
             last_text_addr = word;
             break;
         case 010:
             word = WORD(cp + i + 2);
-            printf("\tLocation counter modification %o\n", word);
+            if (loud) printf("\tLocation counter modification %o\n", word);
             i += 4;
 
             last_text_addr = word;
             break;
         case 011:
-            printf("\t.LIMIT %o\n", addr);
+            if (loud) printf("\t.LIMIT %o\n", addr);
             i += 2;
+            badbin++;  /* .LIMIT will not be filled in by us */
             break;
 
         case 012:
             rad50name(cp + i + 2, name);
-            printf("\tPSECT%s %o=%s\n", byte, addr, name);
+            if (loud) printf("\tPSECT%s %o=%s\n", byte, addr, name);
             i += 6;
-            badbin = 1;
+            badbin++;
             break;
         case 014:
             rad50name(cp + i + 2, name);
 
-            printf("\tPSECT displaced%s %o=%s\n", byte, addr, name);
+            if (loud) printf("\tPSECT displaced%s %o=%s\n", byte, addr, name);
             i += 6;
-            badbin = 1;
+            badbin++;
             break;
         case 015:
             rad50name(cp + i + 2, name);
             word = WORD(cp + i + 6);
-            printf("\tPSECT plus offset%s %o=%s+%o\n", byte, addr, name, word);
+            if (loud) printf("\tPSECT plus offset%s %o=%s+%o\n", byte, addr, name, word);
             i += 8;
-            badbin = 1;
+            badbin++;
             break;
         case 016:
             rad50name(cp + i + 2, name);
             word = WORD(cp + i + 6);
-            printf("\tPSECT plus offset displaced%s %o=%s+%o\n", byte, addr, name, word);
+            if (loud) printf("\tPSECT plus offset displaced%s %o=%s+%o\n", byte, addr, name, word);
             i += 8;
-            badbin = 1;
+            badbin++;
             break;
 
         case 017:
-            badbin = 1;
-            printf("\tComplex%s %o=", byte, addr);
+            badbin++;
+            if (loud) printf("\tComplex%s %o=", byte, addr);
             i += 2; {
                 char           *xp = cp + i;
                 int             size;
@@ -584,57 +739,59 @@ void got_rld(
                     size = 1;
                     switch (*xp) {
                     case 000:
-                        fputs("nop ", stdout);
+                        if (loud) fputs("nop ", stdout);
                         break;
                     case 001:
-                        fputs("+ ", stdout);
+                        if (loud) fputs("+ ", stdout);
                         break;
                     case 002:
-                        fputs("- ", stdout);
+                        if (loud) fputs("- ", stdout);
                         break;
                     case 003:
-                        fputs("* ", stdout);
+                        if (loud) fputs("* ", stdout);
                         break;
                     case 004:
-                        fputs("/ ", stdout);
+                        if (loud) fputs("/ ", stdout);
                         break;
                     case 005:
-                        fputs("& ", stdout);
+                        if (loud) fputs("& ", stdout);
                         break;
                     case 006:
-                        fputs("! ", stdout);
+                        if (loud) fputs("! ", stdout);
                         break;
                     case 010:
-                        fputs("neg ", stdout);
+                        if (loud) fputs("neg ", stdout);
                         break;
                     case 011:
-                        fputs("^C ", stdout);
+                        if (loud) fputs("^C ", stdout);
                         break;
                     case 012:
-                        fputs("store ", stdout);
+                        if (loud) fputs("store ", stdout);
                         break;
                     case 013:
-                        fputs("store{disp} ", stdout);
+                        if (loud) fputs("store{disp} ", stdout);
                         break;
 
                     case 016:
                         rad50name(xp + 1, name);
-                        printf("%s ", name);
+                        if (loud) printf("%s ", name);
                         size = 5;
                         break;
 
                     case 017:
                         assert((xp[1] & 0377) < psectid);
-                        printf("%s:%o ", psects[xp[1] & 0377], WORD(xp + 2));
+                        if (loud) printf("%s:%o ", psects[xp[1] & 0377], WORD(xp + 2));
                         size = 4;
                         break;
 
                     case 020:
-                        printf("%o ", WORD(xp + 1));
+                        if (loud) printf("%o ", WORD(xp + 1));
                         size = 3;
                         break;
+
                     default:
-                        printf("**UNKNOWN COMPLEX CODE** %o\n", *xp & 0377);
+                        fprintf(stderr, "***UNKNOWN COMPLEX CODE** %o\n", *xp & 0377);
+                        badfmt++;
                         return;
                     }
                     i += size;
@@ -642,12 +799,13 @@ void got_rld(
                         break;
                     xp += size;
                 }
-                fputc('\n', stdout);
+                if (loud) fputc('\n', stdout);
                 break;
             }
 
         default:
-            printf("\t***Unknown RLD code %o\n", cp[i] & 0xff);
+            fprintf(stderr, "%s***Unknown RLD code %o\n", (loud) ? "\t" : "", cp[i] & 0xff);
+            badfmt++;
             return;
         }
     }
@@ -658,7 +816,7 @@ void got_isd(
     int len)
 {
     (void)cp;
-    printf("ISD len=%o\n", len);
+    if (loud) printf("ISD len=%o\n", len);
 }
 
 void got_endmod(
@@ -667,7 +825,7 @@ void got_endmod(
 {
     (void)cp;
     (void)len;
-    printf("ENDMOD\n");
+    if (loud) printf("ENDMOD\n");
 }
 
 void got_libhdr(
@@ -676,7 +834,7 @@ void got_libhdr(
 {
     (void)cp;
     (void)len;
-    printf("LIBHDR\n");
+    if (loud) printf("LIBHDR\n");
 }
 
 void got_libend(
@@ -685,7 +843,7 @@ void got_libend(
 {
     (void)cp;
     (void)len;
-    printf("LIBEND\n");
+    if (loud) printf("LIBEND\n");
 }
 
 int main(
@@ -695,47 +853,187 @@ int main(
     int             len;
     FILE           *fp;
     int             arg;
+    int             summary = 0;    /* Set to 1 by '-s' option */
     int             rt11 = DEFAULT_OBJECTFORMAT_RT11;
-    char            *infile = 0;
-    char            *outfile = 0;
+    char           *infile = NULL;
+    char           *outfile = NULL;
+    char           *cp;
 
     for (arg = 1; arg < argc; arg++) {
         if (*argv[arg] == '-') {
-            char           *cp;
-
             cp = argv[arg] + 1;
-            if (!strcasecmp(cp, "rt11")) {
+            if (!strcasecmp(cp, "h")) {
+                infile = NULL;
+                break;
+            } else if (!strcasecmp(cp, "q")) {
+                loud = 0;
+            } else if (!strcasecmp(cp, "qt")) {
+                loudtxt = 0;
+            } else if (!strcasecmp(cp, "align")) {
+                alignment = '\t';
+            } else if (!strcasecmp(cp, "noalign")) {
+                alignment = ' ';
+            } else if (!strcasecmp(cp, "nosort")) {
+                sortgsd = 0;
+            } else if (!strcasecmp(cp, "s")) {
+                summary = 1;
+            } else if (!strcasecmp(cp, "rt11")) {
                 rt11 = 1;
             } else if (!strcasecmp(cp, "rsx")) {
                 rt11 = 0;
+            } else if (!strcasecmp(cp, "o") || !strcasecmp(cp, "of")) {
+                char           *endptr;
+
+                if (++arg >= argc) {
+                    fprintf(stderr, "Missing <origin> to '-%s'\n", cp);
+                    return /* exit */ (EXIT_FAILURE);
+                }
+
+                if (cp[1] == 'f') {
+                    reloc_internal = 0;    /* Don't relocate Internal RLD addresses */
+                } else {
+                    reloc_internal = 1;    /* Relocate Internal RLD addresses */
+                }
+
+                origin = strtoul(argv[arg], &endptr, 8);
+                /* strtoul() accepts "-" but, unless "-0", this creates a very big unsigned number */
+                if (*endptr != '\0' || origin > MAX_LDA_ADDR || (origin & 1)) {
+                    fprintf(stderr, "Invalid <origin> '%s'\n", argv[arg]);
+                    return /* exit */ (EXIT_FAILURE);
+                }
+            } else if (!strcasecmp(cp, "w")) {
+                if (++arg >= argc) {
+                    fprintf(stderr, "Missing parameter to '-w'\n");
+                    return /* exit */ (EXIT_FAILURE);
+                }
+                if (word_patch)    /* Note: we replace invalid '-w' entries without parsing them  */
+                    fprintf(stderr, "'-w %s' replaced by '-w %s'\n", word_patch, argv[arg]);
+                word_patch = argv[arg];
+            } else if (!strcasecmp(cp, "x")) {
+                char           *endptr;
+
+                if (++arg >= argc) {
+                    fprintf(stderr, "Missing <xfer> address to '-x'\n");
+                    return /* exit */ (EXIT_FAILURE);
+                }
+
+                new_xferad = strtoul(argv[arg], &endptr, 8);
+                if (*endptr != '\0' || new_xferad > MAX_LDA_ADDR) {
+                    fprintf(stderr, "Invalid <xfer> address '%s'\n", argv[arg]);
+                    return /* exit */ (EXIT_FAILURE);
+                }
             } else {
-                fprintf(stderr, "Unknown option %s\n", argv[arg]);
-                exit(EXIT_FAILURE);
+                fprintf(stderr, "Unknown option '%s'\n", argv[arg]);
+                return /* exit */ (EXIT_FAILURE);
             }
         }
-        else if (infile == 0) {
+        else if (infile == NULL) {
             infile = argv[arg];
         }
-        else if (outfile == 0) {
+        else if (outfile == NULL) {
             outfile = argv[arg];
         }
         else {
-            fprintf(stderr, "Extra parameter %s\n", argv[arg]);
-            exit(EXIT_FAILURE);
+            fprintf(stderr, "Extra parameter '%s'\n", argv[arg]);
+            return /* exit */ (EXIT_FAILURE);
         }
     }
 
-    if (infile == 0) {
-        fprintf(stderr, "Usage: dumpobj [ -rt11 ] [ -rsx ] input.obj [ output.obj ]\n");
-        exit(1);
+    /**** Display the usage ****/  
+
+    if (infile == NULL) {
+        fprintf(stderr, "\n"
+                        "dumpobj - portable OBJECT file dumper for DEC PDP-11\n");
+        fprintf(stderr, "  Version from " VERSION " compiled on " __DATE__ " at " __TIME__ "\n");
+#ifdef GIT_VERSION
+        fprintf(stderr, "      (git version: " GIT_VERSION ",\n"
+                        "       git author date: " GIT_AUTHOR_DATE ")\n");
+#endif
+        fprintf(stderr, "  Copyright 2001 by Richard Krehbiel,\n");
+        fprintf(stderr, "  modified  2013,2015,2020,2021 by Olaf 'Rhialto' Seibert,\n");
+        fprintf(stderr, "  modified  2023 by Mike Hill.\n");
+        fprintf(stderr, "\n"
+                        "Usage:\n");
+        fprintf(stderr, "  dumpobj [-h] [-q|-qt] [-[no]align] [-nosort] [-s] [-rt11|-rsx] <inputfile>\n");
+        fprintf(stderr, "          [ [-o[f] <origin>] [" /*-b|*/ "-w [<addr>=]<data>] [-x <xfer>] <outputfile> ]\n");
+        fprintf(stderr, "\n"
+                        "Arguments:\n");
+        fprintf(stderr, "  -h            show this help text%s\n", (argc <= 1) ? " with added examples" : "");
+        fprintf(stderr, "  -q            quiet output - only errors will be shown\n");
+        fprintf(stderr, "  -qt           quiet-text - omit the contents of TXT records\n");
+#if (DEFAULT_ALIGNMENT != '\t')
+        fprintf(stderr, "  -align        align fields when dumping GSD entries\n");
+#else
+        fprintf(stderr, "  -noalign      do not align fields when dumping GSD entries\n");
+#endif
+        fprintf(stderr, "  -nosort       do not sort the GSD entries (dump them in input order)\n");
+        fprintf(stderr, "  -s            show a summary of all record types seen in the object file\n");
+        fprintf(stderr, "  -rt11         expects object file to be in RT-11 format\n");
+        fprintf(stderr, "  -rsx          expects object file to be in RSX-11M/PLUS format\n");
+#if DEFAULT_OBJECTFORMAT_RT11 < 0
+        fprintf(stderr, "  <inputfile>   required .OBJ input file (format can be auto-detected)\n");
+#elif DEFAULT_OBJECTFORMAT_RT11 > 0
+        fprintf(stderr, "  <inputfile>   required .OBJ input file (default is RT-11)\n");
+#else
+        fprintf(stderr, "  <inputfile>   required .OBJ input file (default is RSX-11M/PLUS)\n");
+#endif
+        fprintf(stderr, "\n"
+                        "  -o <origin>   sets the octal origin for relocatable LDA code (default is 0)\n");
+        fprintf(stderr, "  -of <origin>  as -o but keep 'internal relocations' fixed not origin based\n");
+/*      fprintf(stderr, "  -b <a>=<d>,.. write bytes to the <outputfile> - [<addr>=]<data>[,...]]\n");  */
+        fprintf(stderr, "  -w <a>=<d>,.. write words to the <outputfile> - [<addr>=]<data>[,...]]\n");
+        fprintf(stderr, "  -x <xfer>     writes the octal transfer address to the <outputfile>\n");
+        fprintf(stderr, "  <outputfile>  optional .LDA output file (in PDP-11 punched-tape format)\n");
+
+        /* Only display the examples if at least one argument was on the command line */
+
+        if (argc <= 1)
+            return /* exit */ (EXIT_FAILURE);
+
+        fprintf(stderr, "\n"
+                        "Examples:\n");
+        fprintf(stderr, "  dumpobj OBJECT.OBJ                            Dump contents of OBJECT.OBJ\n");
+        fprintf(stderr, "  dumpobj -qt -align -nosort -s OBJECT.OBJ      Now dump in object file order\n");
+        fprintf(stderr, "  dumpobj -q -s OBJECT.OBJ                      Only show a summary of records\n");
+        fprintf(stderr, "  dumpobj -q -s OBJECT.OBJ -w 0                 Show errors ready for LDA o/p\n");
+        fprintf(stderr, "  dumpobj -q OBJECT.OBJ PTAPE.LDA               Only create an LDA file\n");
+        fprintf(stderr, "  dumpobj -q OBJECT.OBJ -o 1000 PTAPE.LDA       Relocate code to address 1000\n");
+        fprintf(stderr, "  dumpobj EMPTY.OBJ -w 0,40=0,5237,0,774 -x 40  0:0,40:HALT,42:INC @#0,46:BR 40\n");
+        fprintf(stderr, "  dumpobj EMPTY.OBJ -w ... -x ... PTAPE.LDA     Create an LDA file with data\n");
+
+        return /* exit */ (EXIT_FAILURE);
     }
+
+    /**** Start dumping the object file ****/
 
     fp = fopen(infile, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Unable to open %s\n", infile);
         return EXIT_FAILURE;
     }
-    if (outfile != 0) {
+
+    /* Auto-detect the format of the object file (if enabled)
+     * If the first non-zero byte in <inputfile> > 1 assume RSX-11M/PLUS */
+
+#if DEFAULT_OBJECTFORMAT_RT11 < 0
+    if (rt11 < 0) {
+        int             c;
+
+        rt11 = 1;    /* Assume RT-11 (including empty or zero-filled file) */
+
+        while (c = fgetc(fp), /* c != EOF && */ c == 0) /* continue */;
+        if (c > 1) rt11 = 0;  /* Force to RSX-11M/PLUS */
+
+        if (/* rewind */ fseek(fp, 0L, SEEK_SET)) {
+            fprintf(stderr, "Unable to rewind %s\n", infile);
+            return EXIT_FAILURE;
+        }
+#endif
+
+    /*  if (loud) printf("Detected %s formatted object file\n", (rt11) ? "RT-11" : "RSX-11M/PLUS");  */
+    }
+
+    if (outfile != NULL) {
         bin = fopen(outfile, "wb");
         if (bin == NULL) {
             fprintf(stderr, "Unable to open %s\n", outfile);
@@ -743,9 +1041,8 @@ int main(
         }
     }
 
-    char           *cp;
-
     while ((cp = readrec(fp, &len, rt11)) != NULL) {
+        if ((cp[0] & 0xff) < BLKSIZ) blkcnt[cp[0] & 0xff]++;
         switch (cp[0] & 0xff) {
         case 1:
             got_gsd(cp, len);
@@ -767,25 +1064,219 @@ int main(
             break;
         case 7:
             got_libhdr(cp, len);
+            badbin++;
             break;
-        case 8:
+        case 010:
             got_libend(cp, len);
+            badbin++;
             break;
         default:
-            printf("Unknown record type %o\n", cp[0] & 0xff);
+            fprintf(stderr, "***Unknown record type %o\n", cp[0] & 0xff);
+            badfmt++;
             break;
         }
 
         free(cp);
     }
 
+    fclose(fp);  /* We don't need the <inputfile> any more */
+
+    /**** Display the summary ****/
+
+    if (summary) {
+        unsigned        i;
+        int             stars = 0;
+        int             showbin = (bin || word_patch);  /* Show LDA errors */
+
+        for (i=0; i<BLKSIZ; i++) {
+            if (blkcnt[i]) {
+                printf("\nBLK:\n");
+                break;
+            }
+        }
+        for (i=0; i<BLKSIZ; i++) {
+           if (blkcnt[i]) {
+               if (*blkname[i] == '*') stars += blkcnt[i];
+               printf("   %c%2.2o: %s = %-d\n", (showbin) ? *blkname[i] : ' ', i, &blkname[i][1], blkcnt[i]);
+           }
+        }
+
+        if (blkcnt[1])
+            printf("\nGSD:\n");
+        for (i=0; i<GSDSIZ; i++) {
+           if (gsdcnt[i]) {
+               if (*gsdname[i] == '*') stars += gsdcnt[i];
+               printf("   %c%2.2o: %s = %-d\n", (showbin) ? *gsdname[i] : ' ', i, &gsdname[i][1], gsdcnt[i]);
+           }
+        }
+
+        if (blkcnt[4])
+            printf("\nRLD:\n");
+        for (i=0; i<RLDSIZ; i++) {
+           if (rldcnt[i]) {
+               if (*rldname[i] == '*') stars += rldcnt[i];
+               printf("   %c%2.2o: %s = %-d\n", (showbin) ? *rldname[i] : ' ', i, &rldname[i][1], rldcnt[i]);
+           }
+        }
+
+        if (showbin && stars) {
+            printf("\n   *Lines above starting with an asterisk may cause binary output errors\n");
+            if (!badbin) badbin = stars;
+        }
+
+#if 0
+        if (psectid > 0) {
+            printf("\nPSECTs:\n");
+            for (i=0; i<psectid; i++) {
+                printf("   %3d: %-6s\n", i, psects[i]);
+                /* TODO: If we store more info about PSECTS, output it here */
+            }
+        }
+#endif
+    }
+
+    /**** Warn about possible command line mistakes ****/
+
+    if (summary || (loud && badfmt) || (loud && bin))
+        printf("\n");
+
+    if (!bin) {
+        if (origin || !reloc_internal)
+            fprintf(stderr, "With no <outputfile> '-o%s %o' is ignored\n", (reloc_internal) ? "" : "f", origin);
+
+        if (new_xferad <= MAX_LDA_ADDR)
+            fprintf(stderr, "With no <outputfile> '-x %o' is ignored\n", new_xferad);
+
+        if (word_patch)
+            fprintf(stderr, "With no <outputfile> '-w %s' is ignored\n", word_patch);
+    }
+
+    /**** Process the '-w' parameter ****/
+
+    if (word_patch) {
+        char           *endptr;
+        unsigned        address = 0;
+        unsigned        data;
+        int             wantdata = 0;
+
+        cp = word_patch;
+        do {
+            while (*cp == ' ') cp++;    /* Skip leading spaces if -w "addr=data" is used */
+
+            data = strtoul(cp, &endptr, 8);    /* This accepts leading "+" or "-" but we catch "-n" below */
+            if (endptr == cp) {
+                if (*endptr)
+                    fprintf(stderr, "Unexpected character in -w at '%s'\n", endptr);
+                else
+                    fprintf(stderr, "Missing -w <data> at end of '%s'\n", word_patch);
+                badbin++;
+                break;
+            }
+            if (*endptr == '=') {
+                if (wantdata) {
+                    fprintf(stderr, "Missing -w <data> or unexpected '=' at '%s'\n", --cp);
+                    badbin++;
+                    break;
+                }
+                wantdata++;
+                address = data;
+                cp = endptr + 1;
+                if (*cp != '\0') endptr++;
+                continue;
+            }
+            if (address >= MAX_LDA_ADDR || address & 1) {
+                fprintf(stderr, "Invalid -w <addr> '%o' at '%s'\n", address, cp);
+                badbin++;
+                break;
+            }
+            if (data > 0xffff) {
+                fprintf(stderr, "Invalid -w <data> '%o' at '%s'\n", data, cp);
+                badbin++;
+                break;
+            }
+            if (*endptr != ',' && *endptr != '\0') {
+                fprintf(stderr, "Unexpected character in -w at '%s'\n", endptr);
+                badbin++;
+                break;
+            }
+         /* if (showbin) */ {
+                char bytes[2];
+
+                bytes[0] = data & 0xff;
+                bytes[1] = (data >> 8) & 0xff;
+                dump_bin(address, bytes, 2);
+            }
+
+            if (!bin)
+                printf("-w would have patched %6.6o to %6.6o\n", address, data);
+
+            wantdata = 0;
+            address += 2;
+            cp = endptr + 1;
+        } while (*endptr != '\0');
+    }
+
+    /**** Process and report actual and potential errors ****/
+
+    if (!bin)
+        outfile = "<none>";
+
+    if (bin || word_patch) {
+        if (psects_with_data > 1) {
+            fprintf(stderr, "More than one (%d) PSECT contains data\n", psects_with_data);
+            badbin++;
+        }
+
+        if (new_xferad <= MAX_LDA_ADDR) {
+            xferad = new_xferad;
+        } else {
+#if XFERAD_WHEN_ZERO
+            if (xferad == 0) {
+                fprintf(stderr, "Transfer address 0 has been modified to %d\n", XFERAD_WHEN_ZERO);
+                xferad = XFERAD_WHEN_ZERO;
+            }
+#endif
+        }
+
+        if (highest_addr == 0)  /* If -w is specified, there will always be data */
+            fprintf(stderr, "No data bytes written to binary file '%s'\n", outfile);
+
+        if (origin < 0160000 && highest_addr >= 0160000)
+            fprintf(stderr, "Binary file '%s' overlaps I/O space (160000-%o)\n",
+                    outfile, (highest_addr > MAX_LDA_ADDR) ? MAX_LDA_ADDR : highest_addr);
+
+        if (highest_addr > MAX_LDA_ADDR) {
+            fprintf(stderr, "Binary file '%s' skipped data from %o-%o\n",
+                    outfile, MAX_LDA_ADDR + 1, highest_addr);
+            badbin++;
+        }
+    }
+
+    if (badfmt) {
+        fprintf(stderr, "Detected %d errors in the object file '%s'\n", badfmt, infile);
+        xferad = BADBIN_XFERAD;
+    }
+
+    if (badbin && (bin || word_patch)) {
+        fprintf(stderr, "Possibly %d mistake%s in the binary file '%s'\n",
+                badbin, (badbin == 1) ? "" : "s", outfile);
+        if (!summary)
+            fprintf(stderr, "Try 'dumpobj -q -s ...' to see a summary of records with mistakes\n");
+        xferad = BADBIN_XFERAD;
+    }
+
+    /* Write the transfer address and close the LDA file */
+
     if (bin) {
         dump_bin(xferad, NULL, 0);
         fclose(bin);
+
         if (badbin)
-            fprintf(stderr, "Probable errors in binary file\n");
+            return EXIT_FAILURE;
     }
 
-    fclose(fp);
+    if (badfmt)
+        return EXIT_FAILURE;
+
     return EXIT_SUCCESS;
 }

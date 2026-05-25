@@ -1,34 +1,32 @@
-
 #define MACROS__C
 
-
 /*
- Dealing with MACROs
-*/
+ * Dealing with MACROs
+ */
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
-#include "macros.h"                    /* my own definitions */
+#include "macros.h"                    /* My own definitions */
 
-#include "util.h"
-#include "assemble_globals.h"
 #include "assemble_aux.h"
+#include "assemble_globals.h"
 #include "listing.h"
 #include "parse.h"
+#include "rept_irpc.h"
 #include "stream2.h"
 #include "symbols.h"
+#include "util.h"
 
 
-/* Here's where I pretend I'm a C++ compiler.  :-/ */
+/* Here's where I pretend I'm a C++ compiler. */
 
 /* *** derive a MACRO_STREAM from a BUFFER_STREAM with a few other args */
 
-
 /* macro_stream_delete is called when a macro expansion is
-   exhausted.  The unique behavior is to unwind any stacked
-   conditionals.  This allows a nested .MEXIT to work.  */
+ * exhausted.  The unique behavior is to unwind any stacked
+ * conditionals.  This allows a nested .MEXIT to work.  */
 
 void macro_stream_delete(
     STREAM *str)
@@ -39,9 +37,11 @@ void macro_stream_delete(
     buffer_stream_delete(str);
 }
 
+
 STREAM_VTBL     macro_stream_vtbl = {
     macro_stream_delete, buffer_stream_getline, buffer_stream_rewind
 };
+
 
 STREAM         *new_macro_stream(
     STREAM *refstr,
@@ -49,8 +49,9 @@ STREAM         *new_macro_stream(
     MACRO *mac,
     int nargs)
 {
-    MACRO_STREAM   *mstr = memcheck(malloc(sizeof(MACRO_STREAM))); {
-        char           *name = memcheck(malloc(strlen(refstr->name) + 32));
+    MACRO_STREAM   *mstr = memcheck(malloc(sizeof(MACRO_STREAM)));
+    {
+        char           *name = memcheck(malloc(strlen(refstr->name) + SYMMAX_MAX + 10));
 
         sprintf(name, "%s:%d->%s", refstr->name, refstr->line, mac->sym.label);
         buffer_stream_construct(&mstr->bstr, buf, name);
@@ -63,8 +64,8 @@ STREAM         *new_macro_stream(
     return &mstr->bstr.stream;
 }
 
-/* read_body fetches the body of .MACRO, .REPT, .IRP, or .IRPC into a
-   BUFFER. */
+
+/* read_body fetches the body of .MACRO, .REPT, .IRP, or .IRPC into a BUFFER. */
 
 void read_body(
     STACK *stack,
@@ -73,6 +74,8 @@ void read_body(
     int called)
 {
     int             nest;
+    char           *mac_name = memcheck(strdup(stack->top->name));
+    int             mac_line = stack->top->line;
 
     /* Read the stream in until the end marker is hit */
 
@@ -85,15 +88,24 @@ void read_body(
         char           *nextline;
         char           *cp;
 
+        if (!(called & CALLED_NOLIST) &&
+                (list_level + LIST(MD)) > 0) {
+            list_flush();
+        }
+
         nextline = stack_getline(stack);  /* Now read the line */
         if (nextline == NULL) {        /* End of file. */
-            report(stack->top, "Macro body of '%s' not closed\n", name);
-            break;
+            report_fatal(stream_here(mac_name, mac_line), "Body of '%s' (here) has missing .ENDM\n", name);
+#if TODO
+            free(mac_name);
+            return;
+#else
+            exit(EXIT_FAILURE);  /* TODO: remove this when .IRP/.IRPC/.REPT are not "fatal" */
+#endif
         }
 
         if (!(called & CALLED_NOLIST) &&
-                (list_level - 1 + list_md) > 0) {
-            list_flush();
+                (list_level + LIST(MD)) > 0) {
             list_source(stack->top, nextline);
         }
 
@@ -103,9 +115,17 @@ void read_body(
             buffer_append_line(gb, nextline);
             continue;
         }
+
         if (op->section->type == SECTION_PSEUDO) {
             if (op->value == P_MACRO || op->value == P_REPT || op->value == P_IRP || op->value == P_IRPC) {
                 nest++;
+            }
+
+            if (op->value == P_END) {
+                if (STRICT) {
+                    report_warn(stack->top, ".END seen in body of %s\n", name);
+                /*  TODO: Would be nice to 'errcnt++' or similar  */
+                }
             }
 
             if (op->value == P_ENDM || op->value == P_ENDR) {
@@ -116,33 +136,46 @@ void read_body(
                  * Since we don't keep a stack of nested
                  * .MACRO names, just check for the outer one.
                  */
-                if (nest == 0 && name && op->value == P_ENDM) {
-                    cp = skipwhite(cp);
-                    if (!EOL(*cp)) {
+
+                cp = skipwhite(cp);
+                if (!EOL(*cp)) {
+                    if (op->value == P_ENDR) {
+                        if (STRICT)
+                            check_eol(stack, cp);
+                    } else {
                         char           *label = get_symbol(cp, &cp, NULL);
 
                         if (label) {
-                            if (strcmp(label, name) != 0) {
-                                report(stack->top, ".ENDM '%s' does not match .MACRO '%s'\n", label, name);
+                            if (nest == 0 && name /* && op->value == P_ENDM */) {
+                                if (strcmp(label, name) != 0) {
+                                    report_err(stack->top, ".ENDM '%s' does not match .MACRO '%s'\n", label, name);
+                                }
                             }
                             free(label);
+                        } else {
+                            if (STRICT)
+                                check_eol(stack, cp);
                         }
                     }
                 }
             }
 
-            if (nest == 0)
+            if (nest == 0) {
+                free(mac_name);
                 return;                /* All done. */
+            }
         }
-
         buffer_append_line(gb, nextline);
     }
+    /* NOT REACHED */
 }
+
 
 /* Diagnostic: dumpmacro dumps a macro definition to stdout.
    I used this for debugging; it's not called at all right now, but
    I hate to delete good code. */
 
+#if DEBUG_MACROS
 void dumpmacro(
     MACRO *mac,
     FILE *fp)
@@ -165,6 +198,8 @@ void dumpmacro(
 
     fputs(".ENDM\n", fp);
 }
+#endif
+
 
 /* defmacro - define a macro. */
 /* Also used by .MCALL to pull macro definitions from macro libraries */
@@ -180,9 +215,14 @@ MACRO          *defmacro(
     char           *label;
 
     cp = skipwhite(cp);
-    label = get_symbol(cp, &cp, NULL);
+
+    if (*cp == '.' && !issym((unsigned char) cp[1]))
+        label = NULL;
+    else
+        label = get_symbol(cp, &cp, NULL);
+
     if (label == NULL) {
-        report(stack->top, "Invalid macro definition\n");
+        report_err(stack->top, "Invalid .MACRO definition\n");
         return NULL;
     }
 
@@ -213,15 +253,29 @@ MACRO          *defmacro(
         arg->label = get_symbol(cp, &cp, NULL);
         if (arg->label == NULL) {
             /* It turns out that I have code which is badly formatted
-               but which MACRO.SAV assembles.  Sigh.  */
-            /* So, just quit defining arguments. */
-            break;
-#if 0
-            report(str, "Illegal macro argument\n");
-            remove_sym(&mac->sym, &macro_st);
-            free_macro(mac);
-            return NULL;
+             * but which MACRO.SAV assembles.  Sigh.  */
+            if (STRICT) {
+                report_warn(stack->top, "Invalid .MACRO argument\n");
+#if NODO
+                remove_sym(&mac->sym, &macro_st);
+                free_macro(mac);
+                return NULL;
 #endif
+            }
+            break;  /* So, just quit defining arguments. */
+        }
+
+        /* DOC: 7.1.1 - check for duplicate dummy argument names */
+        {
+            ARG *argp = mac->args;
+
+            while (argp != NULL) {
+                if (strcmp(arg->label, argp->label) == 0) {
+                    report_err(stack->top, "Duplicate .MACRO argument '%s'\n", arg->label);
+                    return NULL;
+                }
+                argp = argp->next;
+            }
         }
 
         cp = skipwhite(cp);
@@ -229,7 +283,7 @@ MACRO          *defmacro(
             /* Default substitution given */
             arg->value = getstring(cp + 1, &cp);
             if (arg->value == NULL) {
-                report(stack->top, "Illegal macro argument\n");
+                report_err(stack->top, "Invalid .MACRO argument\n");
                 remove_sym(&mac->sym, &macro_st);
                 free_macro(mac);
                 return NULL;
@@ -244,13 +298,14 @@ MACRO          *defmacro(
         cp = skipdelim(cp);
     }
 
-    /* Read the stream in until the end marker is hit */  {
+    /* Read the stream in until the end marker is hit */
+    {
         BUFFER         *gb;
         int             levelmod = 0;
 
         gb = new_buffer();
 
-        if ((called & CALLED_NOLIST) && !list_md) {
+        if ((called & CALLED_NOLIST) && !LIST(MD)) {
             list_level--;
             levelmod = 1;
         }
@@ -267,7 +322,6 @@ MACRO          *defmacro(
 
     return mac;
 }
-
 
 
 /* Allocate a new ARG */
@@ -322,6 +376,7 @@ static ARG     *find_arg(
     return NULL;
 }
 
+
 /* subst_args - given a BUFFER and a list of args, generate a new
    BUFFER with argument replacement having taken place. */
 
@@ -346,7 +401,8 @@ BUFFER         *subst_args(
         if (issym((unsigned char)*in)) {
             label = get_symbol(in, &next, NULL);
             if (label) {
-                if ((arg = find_arg(args, label))) {
+                arg = find_arg(args, label);
+                if (arg) {
                     /* An apostrophe may appear before or after the symbol. */
                     /* In either case, remove it from the expansion. */
 
@@ -376,6 +432,7 @@ BUFFER         *subst_args(
     return gb;                         /* Done. */
 }
 
+
 /* eval_str - the language allows an argument expression to be given
    as "\expression" which means, evaluate the expression and
    substitute the numeric value in the current radix. */
@@ -389,7 +446,7 @@ char *eval_str(
     char            temp[10];
 
     if (value->type != EX_LIT) {
-        report(refstr, "Constant value required\n");
+        report_err(refstr, "Constant value required\n");
     } else
         word = value->data.lit;
 
@@ -401,6 +458,7 @@ char *eval_str(
     arg = memcheck(strdup(temp));
     return arg;
 }
+
 
 /* getstring_macarg - parse a string that possibly starts with a backslash.
  * If so, performs expression evaluation.
@@ -448,6 +506,7 @@ char           *getstring_macarg(
     }
 }
 
+
 /* expandmacro - return a STREAM containing the expansion of a macro */
 
 STREAM         *expandmacro(
@@ -476,7 +535,13 @@ STREAM         *expandmacro(
 
         /* Check for named argument */
         label = get_symbol(cp, &nextcp, NULL);
-        if (label && (nextcp = skipwhite(nextcp), *nextcp == '=') && (macarg = find_arg(mac->args, label))) {
+        macarg = NULL;
+        if (label) {
+            nextcp = skipwhite(nextcp);
+            if (*nextcp == '=')
+                macarg = find_arg(mac->args, label);
+        }
+        if (/* label && *nextcp && */ macarg) {
             /* Check if I've already got a value for it */
             if ((arg = find_arg(args, label)) != NULL) {
                 /* Duplicate is legal; the last one wins. */
@@ -529,7 +594,7 @@ STREAM         *expandmacro(
         int             locsym;
 
         if (last_macro_lsb != lsb)
-            locsym = last_locsym = 32768;
+            locsym = last_locsym /* = START_LOCSYM */;  /* MACRO-11 uses a continuous range of '?' local symbols */
         else
             locsym = last_locsym;
         last_macro_lsb = lsb;
@@ -578,6 +643,7 @@ STREAM         *expandmacro(
 /* dump_all_macros is a diagnostic function that's currently not
    used.  I used it while debugging, and I haven't removed it. */
 
+#if DEBUG_MACROS
 void dump_all_macros(
     void)
 {
@@ -590,6 +656,7 @@ void dump_all_macros(
         fprintf(lstfile, "\n\n");
     }
 }
+#endif
 
 
 /* Allocate a new macro */
@@ -622,7 +689,25 @@ void free_macro(
     free_sym(&mac->sym);
 }
 
-int do_mcall (char *label, STACK *stack)
+#ifdef WIN32
+#define stpncpy my_stpncpy
+char *my_stpncpy(char *dest, const char *src, size_t n)
+{
+    size_t size = strnlen (src, n);
+
+    memcpy(dest, src, size);
+    dest += size;
+    if (size == n)
+        return dest;
+
+    return memset(dest, '\0', n - size);
+}
+#endif
+
+
+int do_mcall(
+    char *label,
+    STACK *stack)
 {
     SYMBOL         *op;         /* The operation SYMBOL */
     STREAM         *macstr;
@@ -634,21 +719,21 @@ int do_mcall (char *label, STACK *stack)
     char            macfile[FILENAME_MAX];
     char            hitfile[FILENAME_MAX];
 
-    /* Find the macro in the list of included
-       macro libraries */
+    /* Find the macro in the list of included macro libraries (search LAST to FIRST) */
     macbuf = NULL;
-    for (i = 0; i < nr_mlbs; i++)
+    for (i = nr_mlbs - 1; i >= 0; i--)
         if ((macbuf = mlb_entry(mlbs[i], label)) != NULL)
             break;
     if (macbuf != NULL) {
         macstr = new_buffer_stream(macbuf, label);
         buffer_free(macbuf);
     } else {
-        char *bufend = &macfile[sizeof(macfile)],
-                       *end;
+        char           *bufend = &macfile[sizeof(macfile)];
+        char           *end;
+
         end = stpncpy(macfile, label, sizeof(macfile) - 5);
         if (end >= bufend - 5) {
-            report(stack->top, ".MCALL: name too long: '%s'\n", label);
+            report_err(stack->top, ".MCALL: name too long: '%s'\n", label);
             return 0;
         }
         stpncpy(end, ".MAC", bufend - end);
@@ -678,16 +763,15 @@ int do_mcall (char *label, STACK *stack)
         }
 
         if (maccp != NULL) {
-            STACK           macstack = {
-                macstr
-            };
+            STACK           macstack;
             int             savelist = list_level;
 
+            macstack.top = macstr;
             saveline = stmtno;
             list_level = -1;
             mac = defmacro(maccp, &macstack, CALLED_NOLIST);
             if (mac == NULL) {
-                report(stack->top, "Failed to define macro called %s\n", label);
+                report_err(stack->top, "Failed to define macro called %s\n", label);
             }
 
             stmtno = saveline;
@@ -698,4 +782,18 @@ int do_mcall (char *label, STACK *stack)
         return 1;
     }
     return 0;
+}
+
+
+/* within_macro_expansion - returns TRUE if 'str' is directly within a macro expansion (including .REPT, .IRP, .IRPC) */
+
+int within_macro_expansion(
+    STREAM *str)
+{
+    int             ok = ((str->vtbl == &macro_stream_vtbl) ||
+                          (str->vtbl ==  &rept_stream_vtbl) ||
+                          (str->vtbl ==   &irp_stream_vtbl) ||
+                          (str->vtbl ==  &irpc_stream_vtbl));
+
+    return ok;
 }

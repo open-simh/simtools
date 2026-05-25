@@ -1,5 +1,5 @@
-#ifndef RAD50_H
-#define RAD50_H
+#ifndef RAD50__H
+#define RAD50__H
 
 /*
 Copyright (c) 2001, Richard Krehbiel
@@ -34,6 +34,9 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 
+extern void     rad50_enable_underscore(
+    void);
+
 extern unsigned rad50(
     char *cp,
     char **endp);
@@ -46,11 +49,11 @@ extern void     unrad50(
     unsigned word,
     char *cp);
 
-int ascii2rad50(
+int             ascii2rad50(
     char c);
 
-unsigned packrad50word(
+unsigned        packrad50word(
     char *cp,
     int len);
 
-#endif /* RAD50_H */
+#endif /* RAD50__H */

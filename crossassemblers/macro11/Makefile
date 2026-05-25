@@ -8,7 +8,8 @@ OBJFORMAT ?= -DDEFAULT_OBJECTFORMAT_RT11=0
 #SANITIZE  ?= -fsanitize=address -fsanitize=undefined -fsanitize-recover=all -fno-omit-frame-pointer
 DEBUG     ?= -ggdb $(SANITIZE)
 OPT       ?= -O3
-CFLAGS    ?= -std=gnu99 $(WARNS) $(DEBUG) $(OPT) $(OBJFORMAT)
+CFLAGS    ?= -std=gnu99 $(WARNS) $(DEBUG) $(OPT)
+LDFLAGS   ?=
 
 MACRO11_SRCS = macro11.c \
 	assemble.c assemble_globals.c assemble_aux.c	\
@@ -17,21 +18,24 @@ MACRO11_SRCS = macro11.c \
 
 MACRO11_OBJS = $(MACRO11_SRCS:.c=.o)
 
-DUMPOBJ_SRCS = dumpobj.c rad50.c
+DUMPOBJ_SRCS = dumpobj.c rad50.c util.c
 
 DUMPOBJ_OBJS = $(DUMPOBJ_SRCS:.c=.o)
 
+# object.c has some special extra flags.
+CFLAGS.object = ${OBJFORMAT}
+
 ALL_SRCS = $(MACRO11_SRCS) $(DUMPOBJ_SRCS)
 
-all: macro11 dumpobj
+all: macro11 dumpobj readme.lst
 
 tags: macro11 dumpobj
 	ctags *.c *.h
 
 macro11: git-info.h $(MACRO11_OBJS) Makefile
-	$(CC) $(CFLAGS) -o macro11 $(MACRO11_OBJS) -lm
+	$(CC) $(CFLAGS) $(LDFLAGS) -o macro11 $(MACRO11_OBJS) -lm
 
-dumpobj: $(DUMPOBJ_OBJS) Makefile
+dumpobj: git-info.h $(DUMPOBJ_OBJS) Makefile
 	$(CC) $(CFLAGS) -o dumpobj $(DUMPOBJ_OBJS)
 
 $(MACRO11_OBJS): Makefile
@@ -41,9 +45,12 @@ git-info.h:
 	./make-git-info
 
 # Bootstrap dependency on the git header file, which otherwise
-# gets generated too late.
+# (sometime) gets generated too late.
 macro11.o: git-info.h
-macro11.c: git-info.h
+dumpobj.o: git-info.h
+
+readme.lst: macro11 README.MAC
+	./macro11 README.MAC -l readme.lst -ysl 8 -e BMK
 
 clean:
 	-rm -f $(MACRO11_OBJS) $(DUMPOBJ_OBJS) macro11 dumpobj
@@ -63,9 +70,9 @@ argtests: macro11
 	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
 	  echo "  $$OPT fol. by option"; \
 	  done
-	@ ./macro11 foo.mac $$OPT -x -v 2> /dev/null; \
+	@ ./macro11 foo.mac $$OPT -xtract -v 2> /dev/null; \
 	  if [ $$? = 1 ]; then echo PASS; else echo FAIL; fi; \
-	   echo "  -x must be the last option"
+	   echo "  -xtract must be the last option"
 
 LSAN_OPTIONS=suppressions=../macro11.supp
 
@@ -80,7 +87,7 @@ endif
 
 # Make .d files as side effect of compiling .c to .o
 %.d %.o: %.c
-	$(CC) $(CFLAGS) -c -o $*.o $<
+	$(CC) $(CFLAGS) $(CFLAGS.$*) -c -o $*.o $<
 	@set -e; rm -f $*.d; \
 	    $(CC) -MM $(CPPFLAGS) $< > $@.$$$$; \
 	    sed 's,\($*\)\.o[ :]*,\1.o \1.d : ,g' < $@.$$$$ > $*.d; \

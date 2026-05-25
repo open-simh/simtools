@@ -15,3 +15,4 @@ label = .
         .restore                ; . gets restored to 53
         .byte   53
 
+        .end

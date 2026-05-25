@@ -35,7 +35,18 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 
 */
+
 #include <stdio.h>
+
+#ifndef STREAM2__C
+
+/* GLOBAL VARIABLES */
+
+extern int      stack_depth;    /* The current stack depth */
+
+#endif
+
+#define MAX_STACK_DEPTH 1024    /* The maximum allowed stack depth */
 
 struct stream;
 
@@ -81,19 +92,25 @@ typedef struct stack {
 } STACK;
 
 #define STREAM_BUFFER_SIZE 1024 /* This limits the max size of an input line. */
+
 BUFFER         *new_buffer(
     void);
+
 BUFFER         *buffer_clone(
     BUFFER *from);
+
 void            buffer_resize(
     BUFFER *buff,
     int size);
+
 void            buffer_free(
     BUFFER *buf);
+
 void            buffer_appendn(
     BUFFER *buf,
     char *str,
     int len);
+
 void            buffer_append_line(
     BUFFER *buf,
     char *str);
@@ -101,6 +118,7 @@ void            buffer_append_line(
 STREAM         *new_buffer_stream(
     BUFFER *buf,
     char *name);
+
 void            buffer_stream_set_buffer(
     BUFFER_STREAM * bstr,
     BUFFER *buf);
@@ -111,24 +129,45 @@ void            buffer_stream_construct(
     BUFFER_STREAM * bstr,
     BUFFER *buf,
     char *name);
+
 char           *buffer_stream_getline(
     STREAM *str);
+
 void            buffer_stream_delete(
     STREAM *str);
+
 void            buffer_stream_rewind(
     STREAM *str);
 
 STREAM         *new_file_stream(
     char *filename);
 
+int             from_file_stream(
+    STREAM *str);
+
 void            stack_init(
     STACK *stack);
+
 void            stack_push(
     STACK *stack,
     STREAM *str);
+
 void            stack_pop(
     STACK *stack);
+
 char           *stack_getline(
     STACK *stack);
+
+STREAM         *stream_here(
+    char *name,
+    int   line);
+
+void            inject_source(
+    const char *fmt,
+    ...);
+
+void            stack_injected_source(
+    STACK *stack,
+    char *name);
 
 #endif /* STREAM2_H */

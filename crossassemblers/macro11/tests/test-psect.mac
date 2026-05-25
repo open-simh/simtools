@@ -10,3 +10,5 @@
 
 ; and ends up with
 ; $PDATA  000000    002   (RO,D,LCL,REL,CON)
+
+        .end

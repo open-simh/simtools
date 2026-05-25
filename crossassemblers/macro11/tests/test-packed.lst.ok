@@ -1,0 +1,78 @@
+      1                                 ;;;;
+      2                                 ;
+      3                                 ; Test the packed decimals.
+      4                                 ;
+      5                                         .list   hex
+      6
+      7   0000      0F                          .packed ,       u0
+      8   0001      0C                          .packed +,      p0
+      9   0002      0D                          .packed -,      n0
+     10
+     11   0003      0F                          .packed 0,      u0len
+     12   0004      0C                          .packed +0,     p0len
+     13   0005      0D                          .packed -0,     n0len
+     14
+     15   0006      1F                          .packed 1,      u1len
+     16   0007      1C                          .packed +1,     p1len
+     17   0008      1D                          .packed -1,     n1len
+     18
+     19   0009      01      2F                  .packed 12,     u12len
+     20   000B      01      2D                  .packed -12,    n12len
+     21   000D      01      2C                  .packed +12,    p12len
+     22
+     23   000F      12      3F                  .packed 123,    u123len
+     24   0011      01      23      4F          .packed 1234,   u124len
+     25   0014      12      34      5F          .packed 12345,  u125len
+     26
+test-packed.mac:27: ***WARNING Redefining permanent symbol 'LAB'
+     27   0017      31      41      5F  lab:    .packed 31415,  lab     ; M error (multiply defined)
+test-packed.mac:28: ***WARNING Redefining permanent symbol 'L2'
+     28   001A      2F                  l2::    .packed 2,l2            ; M error (multiply defined)
+     29           0003                  l3 = 3
+     30   001B      3F                          .packed 3,l3            ; redef'n ok
+     31           0004                  l4 == 4
+     32   001C      4F                          .packed 4,l4            ; redef'n ok
+     33           0005                  l5 =: 5                         ; M error; why???
+test-packed.mac:34: ***WARNING Redefining permanent symbol 'L5'
+     34   001D      5F                          .packed 5,l5            ; M error
+     35
+     36   001E      12      34      56          .packed 1234567890123456789012345678901
+          0021      78      90      12
+          0024      34      56      78
+          0027      90      12      34
+          002A      56      78      90
+          002D      1F
+     37                                         ; too long:
+test-packed.mac:38: ***ERROR Too many packed decimal digits
+     38                                         .packed 12345678901234567890123456789012
+     39
+     40                                 ; In the original, .ntype must occur in a macro.
+     41                                 ; As an extension, we allow it also outside macros.
+     42                                         .macro  name arg1,arg2
+     43                                         .narg   lab             ; redefinition
+     44                                         .nchr   lab,//          ; redefinition
+     45                                         .ntype  lab,#3          ; redefinition
+     46                                         .endm
+     47
+     48   002E                                  name
+test-packed.mac:48->NAME:1: ***WARNING Redefining permanent symbol 'LAB'
+      1           0000                          .narg   lab             ; redefinition
+test-packed.mac:48->NAME:2: ***WARNING Redefining permanent symbol 'LAB'
+      2           0002                          .nchr   lab,//          ; redefinition
+test-packed.mac:48->NAME:3: ***WARNING Redefining permanent symbol 'LAB'
+      3           0017                          .ntype  lab,#3          ; redefinition
+     49           0001                          .end
+
+
+Symbol table
+
+LAB     0017R            L5    = 0005             N12LEN= 0002             P12LEN= 0002             U12LEN= 0002        
+L2      001ARG           N0    = 0000             P0    = 0000             U0    = 0000             U123LE= 0003        
+L3    = 0001             N0LEN = 0001             P0LEN = 0001             U0LEN = 0001             U124LE= 0004        
+L4    = 0001 G           N1LEN = 0001             P1LEN = 0001             U1LEN = 0001             U125LE= 0005        
+
+
+Program sections
+
+. ABS.  0000    00      (RW,I,GBL,ABS,OVR)
+        002E    01      (RW,I,LCL,REL,CON)
